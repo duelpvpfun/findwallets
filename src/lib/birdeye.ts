@@ -30,6 +30,27 @@ function apiKey(): string {
   return key;
 }
 
+// Birdeye Lite tier allows 15 req/sec account-wide. Stay under it with a simple
+// token-bucket gate so a 500-wallet fetch (50 paginated calls) can't burst into 429s.
+const MAX_RPS = 10;
+const requestTimes: number[] = [];
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquireRateLimitSlot(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    while (requestTimes.length > 0 && now - requestTimes[0] >= 1000) requestTimes.shift();
+    if (requestTimes.length < MAX_RPS) {
+      requestTimes.push(now);
+      return;
+    }
+    await sleep(1000 - (now - requestTimes[0]) + 20);
+  }
+}
+
 async function beFetch<T>(
   chain: EvmChain,
   path: string,
@@ -41,15 +62,29 @@ async function beFetch<T>(
       if (v !== undefined) url.searchParams.set(k, String(v));
     }
   }
-  const res = await fetch(url, {
-    headers: { "X-API-KEY": apiKey(), "x-chain": chain },
-    cache: "no-store",
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok || body?.success === false) {
-    throw new BirdeyeError(body?.message ?? `Birdeye request failed (${res.status})`, res.status);
+
+  const MAX_ATTEMPTS = 4;
+  for (let attempt = 1; ; attempt++) {
+    await acquireRateLimitSlot();
+    const res = await fetch(url, {
+      headers: { "X-API-KEY": apiKey(), "x-chain": chain },
+      cache: "no-store",
+    });
+    const body = await res.json().catch(() => null);
+
+    if (res.status === 429 && attempt < MAX_ATTEMPTS) {
+      await sleep(500 * 2 ** (attempt - 1));
+      continue;
+    }
+    if (!res.ok || body?.success === false) {
+      const message =
+        res.status === 429
+          ? "Birdeye rate limit reached. Try a smaller wallet count or wait a moment."
+          : body?.message ?? `Birdeye request failed (${res.status})`;
+      throw new BirdeyeError(message, res.status);
+    }
+    return body.data as T;
   }
-  return body.data as T;
 }
 
 export function isBirdeyeConfigured(): boolean {
@@ -182,7 +217,7 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
 }
 
 const PAGE_SIZE = 10; // Hard API limit, confirmed live — see module doc comment.
-const MAX_CONCURRENT_PAGES = 5;
+const MAX_CONCURRENT_PAGES = 10; // Pacing is enforced by acquireRateLimitSlot().
 
 export async function fetchEvmTopTraders(
   chain: EvmChain,

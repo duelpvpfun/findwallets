@@ -220,6 +220,12 @@ export default function Home() {
               <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-800/60 bg-neutral-900/30 px-4 py-24 text-center">
                 <Spinner className="h-6 w-6 text-blue-400" />
                 <p className="text-sm text-neutral-500">Fetching top traders…</p>
+                {chain !== "solana" && limit > 100 && (
+                  <p className="text-xs text-neutral-600">
+                    Large {CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at
+                    a time and can take up to ~30s.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
