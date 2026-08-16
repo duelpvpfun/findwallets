@@ -1,13 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import type { TokenMeta, WalletTrader } from "@/lib/types";
+import type { Chain, TokenMeta, WalletTrader } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 
 const LIMIT_OPTIONS = [100, 150, 250, 500] as const;
-const EXAMPLE_CA = "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN";
+
+const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }> = [
+  { value: "solana", label: "Solana", short: "SOL", dot: "bg-violet-400" },
+  { value: "bsc", label: "BNB Chain", short: "BNB", dot: "bg-yellow-400" },
+  { value: "base", label: "Base", short: "BASE", dot: "bg-blue-400" },
+];
+
+const EXAMPLES: Record<Chain, { address: string; label: string }> = {
+  solana: { address: "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN", label: "$TRUMP" },
+  bsc: { address: "0x55d398326f99059fF775485246999027B3197955", label: "$USDT" },
+  base: { address: "0x4200000000000000000000000000000000000006", label: "$WETH" },
+};
+
+const PLACEHOLDERS: Record<Chain, string> = {
+  solana: "Paste token contract address (CA)…",
+  bsc: "Paste BEP-20 token contract address (0x…)…",
+  base: "Paste Base token contract address (0x…)…",
+};
 
 export default function Home() {
+  const [chain, setChain] = useState<Chain>("solana");
   const [address, setAddress] = useState("");
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
   const [loading, setLoading] = useState(false);
@@ -18,13 +36,13 @@ export default function Home() {
     isDemoData: boolean;
   } | null>(null);
 
-  async function runSearch(ca: string) {
+  async function runSearch(ca: string, searchChain: Chain) {
     if (!ca.trim()) return;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/top-traders?address=${encodeURIComponent(ca.trim())}&limit=${limit}`
+        `/api/top-traders?address=${encodeURIComponent(ca.trim())}&limit=${limit}&chain=${searchChain}`
       );
       const data = await res.json();
       if (!res.ok) {
@@ -42,7 +60,7 @@ export default function Home() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await runSearch(address);
+    await runSearch(address, chain);
   }
 
   return (
@@ -61,7 +79,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-semibold leading-tight text-neutral-50">Alpha Wallet Finder</h1>
-              <p className="text-[11px] leading-tight text-neutral-500">Solana top-trader lookup</p>
+              <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
             </div>
           </div>
           <a
@@ -82,9 +100,21 @@ export default function Home() {
               Find the wallets behind every winning trade
             </h2>
             <p className="mt-2 text-sm text-neutral-400 sm:text-base">
-              Paste any Solana memecoin contract address — Pump.fun, Raydium, or Token-2022 — and
-              instantly rank its top 100 to 500 traders by realized PNL.
+              Paste any memecoin contract address and instantly rank its top 100 to 500 traders by
+              realized PNL.
             </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <span className="text-xs text-neutral-500">Supported chains:</span>
+              {CHAINS.map((c) => (
+                <span
+                  key={c.value}
+                  className="flex items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-900/60 px-2.5 py-1 text-xs font-medium text-neutral-300"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+                  {c.label}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -92,12 +122,30 @@ export default function Home() {
           onSubmit={handleSubmit}
           className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 shadow-xl shadow-black/20 backdrop-blur-sm sm:flex-row sm:items-center sm:p-3"
         >
+          <div className="flex overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950">
+            {CHAINS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setChain(c.value)}
+                title={c.label}
+                className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors ${
+                  chain === c.value
+                    ? "bg-blue-500/20 text-blue-200"
+                    : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-300"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+                {c.short}
+              </button>
+            ))}
+          </div>
           <div className="relative flex-1">
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Paste token contract address (CA)…"
+              placeholder={PLACEHOLDERS[chain]}
               spellCheck={false}
               className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none transition-colors placeholder:font-sans focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
             />
@@ -139,13 +187,19 @@ export default function Home() {
             <span>Try:</span>
             <button
               onClick={() => {
-                setAddress(EXAMPLE_CA);
-                runSearch(EXAMPLE_CA);
+                setAddress(EXAMPLES[chain].address);
+                runSearch(EXAMPLES[chain].address, chain);
               }}
               className="rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1 font-mono text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
             >
-              $TRUMP
+              {EXAMPLES[chain].label}
             </button>
+            {chain !== "solana" && (
+              <span className="text-neutral-600">
+                Note: on {CHAINS.find((c) => c.value === chain)?.label}, ranking covers the last 90
+                days only (not all-time) and wallet balance data isn&apos;t available.
+              </span>
+            )}
           </div>
         )}
 

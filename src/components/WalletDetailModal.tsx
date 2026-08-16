@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { WalletDetail, WalletTrader } from "@/lib/types";
+import type { Chain, WalletDetail, WalletTrader } from "@/lib/types";
 import { buildWalletDetail } from "@/lib/mockData";
 import {
   formatCompactNumber,
@@ -13,20 +13,24 @@ import {
   shortenAddress,
 } from "@/lib/format";
 
+const NATIVE_UNIT: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
+
 interface WalletDetailModalProps {
+  chain: Chain;
   tokenAddress: string;
   tokenName: string;
   estimatedSupply: number;
-  solPriceUsd: number;
+  nativePriceUsd: number;
   trader: WalletTrader;
   onClose: () => void;
 }
 
 export default function WalletDetailModal({
+  chain,
   tokenAddress,
   tokenName,
   estimatedSupply,
-  solPriceUsd,
+  nativePriceUsd,
   trader,
   onClose,
 }: WalletDetailModalProps) {
@@ -39,7 +43,7 @@ export default function WalletDetailModal({
   useEffect(() => {
     let cancelled = false;
     fetch(
-      `/api/wallet-detail?token=${tokenAddress}&wallet=${trader.address}&estimatedSupply=${estimatedSupply}`
+      `/api/wallet-detail?token=${tokenAddress}&wallet=${trader.address}&estimatedSupply=${estimatedSupply}&chain=${chain}`
     )
       .then((r) => r.json())
       .then((data) => {
@@ -60,7 +64,7 @@ export default function WalletDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [tokenAddress, trader, estimatedSupply]);
+  }, [tokenAddress, trader, estimatedSupply, chain]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -151,15 +155,27 @@ export default function WalletDetailModal({
               {/* Top summary cards */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <Card title="Wallet Value">
-                  <div className="text-2xl font-semibold tabular-nums text-neutral-50">
-                    {formatUsd(detail.totalValueUsd)}
-                  </div>
-                  <div className="mt-1 text-xs text-neutral-500">SOL Balance</div>
-                  <div className="text-sm font-medium tabular-nums text-neutral-300">
-                    {detail.solBalance.toFixed(2)} SOL
-                  </div>
-                  <Divider />
-                  <Row label="Avg Hold Time" value={formatDuration(detail.avgHoldTimeSecs / 3600)} />
+                  {detail.totalValueUsd !== null ? (
+                    <>
+                      <div className="text-2xl font-semibold tabular-nums text-neutral-50">
+                        {formatUsd(detail.totalValueUsd)}
+                      </div>
+                      <div className="mt-1 text-xs text-neutral-500">{NATIVE_UNIT[chain]} Balance</div>
+                      <div className="text-sm font-medium tabular-nums text-neutral-300">
+                        {detail.nativeBalance?.toFixed(2)} {NATIVE_UNIT[chain]}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-neutral-500">
+                      Wallet balance isn&apos;t available on {chain === "bsc" ? "BNB Chain" : "Base"} yet.
+                    </div>
+                  )}
+                  {detail.avgHoldTimeSecs !== null && (
+                    <>
+                      <Divider />
+                      <Row label="Avg Hold Time" value={formatDuration(detail.avgHoldTimeSecs / 3600)} />
+                    </>
+                  )}
                 </Card>
 
                 <Card title="Wallet Lifetime PNL">
@@ -189,37 +205,45 @@ export default function WalletDetailModal({
                 </Card>
 
                 <Card title="ROI Distribution (closed)">
-                  <Row
-                    label="Positions"
-                    value={`${detail.positionsHolding} holding / ${detail.positionsSold} sold`}
-                  />
-                  <Row
-                    label="Closed W/L"
-                    value={
-                      <>
-                        <span className="text-emerald-400">{detail.tokensWinning}</span>/
-                        <span className="text-rose-400">{detail.tokensLosing}</span>
-                      </>
-                    }
-                  />
-                  <div className="mt-3 space-y-1.5">
-                    {detail.distribution.map((bucket) => {
-                      const isLoss = bucket.label.startsWith("<") || bucket.label.includes("-50");
-                      const max = Math.max(...detail.distribution.map((d) => d.count), 1);
-                      return (
-                        <div key={bucket.label} className="flex items-center gap-2 text-[11px]">
-                          <span className="w-16 shrink-0 text-neutral-500">{bucket.label}</span>
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
-                            <div
-                              className={`h-full rounded-full ${isLoss ? "bg-rose-500" : "bg-emerald-500"}`}
-                              style={{ width: `${(bucket.count / max) * 100}%` }}
-                            />
+                  {detail.positionsHolding !== null && detail.positionsSold !== null && (
+                    <Row
+                      label="Positions"
+                      value={`${detail.positionsHolding} holding / ${detail.positionsSold} sold`}
+                    />
+                  )}
+                  {detail.tokensWinning !== null && detail.tokensLosing !== null && (
+                    <Row
+                      label="Closed W/L"
+                      value={
+                        <>
+                          <span className="text-emerald-400">{detail.tokensWinning}</span>/
+                          <span className="text-rose-400">{detail.tokensLosing}</span>
+                        </>
+                      }
+                    />
+                  )}
+                  {detail.distribution.length > 0 ? (
+                    <div className="mt-3 space-y-1.5">
+                      {detail.distribution.map((bucket) => {
+                        const isLoss = bucket.label.startsWith("<") || bucket.label.includes("-50");
+                        const max = Math.max(...detail.distribution.map((d) => d.count), 1);
+                        return (
+                          <div key={bucket.label} className="flex items-center gap-2 text-[11px]">
+                            <span className="w-16 shrink-0 text-neutral-500">{bucket.label}</span>
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
+                              <div
+                                className={`h-full rounded-full ${isLoss ? "bg-rose-500" : "bg-emerald-500"}`}
+                                style={{ width: `${(bucket.count / max) * 100}%` }}
+                              />
+                            </div>
+                            <span className="w-5 shrink-0 text-right text-neutral-400">{bucket.count}</span>
                           </div>
-                          <span className="w-5 shrink-0 text-right text-neutral-400">{bucket.count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-sm text-neutral-500">Not available on this chain.</div>
+                  )}
                 </Card>
               </div>
 
@@ -272,23 +296,28 @@ export default function WalletDetailModal({
                   <Stat label="Sold" value={formatUsd(trader.soldUsd)} />
                 </div>
 
-                <div className="mt-4 border-t border-neutral-800/80 pt-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-neutral-500" title="Tokens still held, not yet sold">
-                      Remaining Position {trader.isHolding ? "(still holding)" : "(fully exited)"}
-                    </span>
-                    <span className="tabular-nums text-neutral-300">
-                      {formatSol(solPriceUsd > 0 ? trader.remainingValueUsd / solPriceUsd : 0)} ·{" "}
-                      {trader.remainingPercent.toFixed(0)}% of supply bought
-                    </span>
+                {trader.remainingPercent !== null && trader.remainingValueUsd !== null && (
+                  <div className="mt-4 border-t border-neutral-800/80 pt-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-neutral-500" title="Tokens still held, not yet sold">
+                        Remaining Position {trader.isHolding ? "(still holding)" : "(fully exited)"}
+                      </span>
+                      <span className="tabular-nums text-neutral-300">
+                        {formatSol(
+                          nativePriceUsd > 0 ? trader.remainingValueUsd / nativePriceUsd : 0,
+                          NATIVE_UNIT[chain]
+                        )}{" "}
+                        · {trader.remainingPercent.toFixed(0)}% of supply bought
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+                      <div
+                        className={`h-full rounded-full ${trader.isHolding ? "bg-blue-500" : "bg-neutral-600"}`}
+                        style={{ width: `${Math.min(100, trader.remainingPercent)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
-                    <div
-                      className={`h-full rounded-full ${trader.isHolding ? "bg-blue-500" : "bg-neutral-600"}`}
-                      style={{ width: `${Math.min(100, trader.remainingPercent)}%` }}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Activity table */}

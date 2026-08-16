@@ -61,10 +61,12 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
       if (!Number.isNaN(maxPnlPercent) && t.realizedPnlPercent > maxPnlPercent) return false;
       if (!Number.isNaN(minPnlUsd) && t.realizedPnlUsd < minPnlUsd) return false;
       if (!Number.isNaN(maxPnlUsd) && t.realizedPnlUsd > maxPnlUsd) return false;
-      if (filters.holdingOnly && !t.isHolding) return false;
+      if (filters.holdingOnly && t.isHolding !== true) return false;
       return true;
     });
   }, [traders, filters]);
+
+  const hasHoldingData = traders.some((t) => t.isHolding !== null);
 
   const allSelected = selected.size > 0 && selected.size === filteredTraders.length;
 
@@ -148,9 +150,10 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
                 {token.source === "pumpfun" ? "Pump.fun" : token.source === "raydium" ? "Raydium" : token.market ?? "Unknown"}
               </Badge>
               {token.isToken2022 && <Badge tone="amber">Token-2022</Badge>}
-              {isDemoData && (
-                <Badge tone="yellow">Demo data — set SOLANA_TRACKER_API_KEY for live data</Badge>
+              {token.rankingWindow !== "all_time" && (
+                <Badge tone="neutral">Ranked over last {token.rankingWindow}, not all-time</Badge>
               )}
+              {isDemoData && <Badge tone="yellow">Demo data — API key not configured for this chain</Badge>}
             </div>
           </div>
         </div>
@@ -254,15 +257,17 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
               minPlaceholder="0"
               maxPlaceholder="∞"
             />
-            <label className="flex items-center gap-1.5 pb-1.5 text-xs text-neutral-400">
-              <input
-                type="checkbox"
-                checked={filters.holdingOnly}
-                onChange={(e) => updateFilter("holdingOnly", e.target.checked)}
-                className="h-3.5 w-3.5 accent-blue-500"
-              />
-              Holding only
-            </label>
+            {hasHoldingData && (
+              <label className="flex items-center gap-1.5 pb-1.5 text-xs text-neutral-400">
+                <input
+                  type="checkbox"
+                  checked={filters.holdingOnly}
+                  onChange={(e) => updateFilter("holdingOnly", e.target.checked)}
+                  className="h-3.5 w-3.5 accent-blue-500"
+                />
+                Holding only
+              </label>
+            )}
             {activeFilterCount > 0 && (
               <button
                 onClick={() => setFilters(EMPTY_FILTERS)}
@@ -296,7 +301,7 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
               <th className="py-2.5 font-medium">% PNL</th>
               <th className="py-2.5 font-medium">$ PNL</th>
               <th className="py-2.5 pr-5 font-medium" title="Tokens still held, not yet sold">
-                Remaining
+                {hasHoldingData ? "Remaining" : "Remaining (n/a)"}
               </th>
             </tr>
           </thead>
@@ -378,7 +383,7 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
                   {formatUsd(t.realizedPnlUsd)}
                 </td>
                 <td className="py-3 pr-5">
-                  <RemainingCell trader={t} solPriceUsd={token.solPriceUsd} />
+                  <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} />
                 </td>
               </tr>
             ))}
@@ -388,10 +393,11 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
 
       {activeWallet && (
         <WalletDetailModal
+          chain={token.chain}
           tokenAddress={token.address}
           tokenName={token.name}
           estimatedSupply={token.estimatedSupply}
-          solPriceUsd={token.solPriceUsd}
+          nativePriceUsd={token.nativePriceUsd}
           trader={traders.find((t) => t.address === activeWallet)!}
           onClose={() => setActiveWallet(null)}
         />
@@ -467,12 +473,15 @@ function FilterRangeInput({
   );
 }
 
-function RemainingCell({ trader, solPriceUsd }: { trader: WalletTrader; solPriceUsd: number }) {
-  const remainingSol = solPriceUsd > 0 ? trader.remainingValueUsd / solPriceUsd : 0;
+function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativePriceUsd: number }) {
+  if (trader.remainingPercent === null || trader.remainingValueUsd === null) {
+    return <span className="text-xs text-neutral-600">—</span>;
+  }
+  const remainingNative = nativePriceUsd > 0 ? trader.remainingValueUsd / nativePriceUsd : 0;
   return (
     <div className="min-w-[110px]">
       <div className="flex items-center justify-between text-xs">
-        <span className="tabular-nums text-neutral-300">{formatSol(remainingSol)}</span>
+        <span className="tabular-nums text-neutral-300">{formatSol(remainingNative)}</span>
         <span className="tabular-nums text-neutral-500">{trader.remainingPercent.toFixed(0)}%</span>
       </div>
       <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-800">

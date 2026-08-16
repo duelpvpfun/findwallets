@@ -1,6 +1,7 @@
 // Server-only client for the Solana Tracker Data API (https://docs.solanatracker.io).
 // Never import this from a "use client" component — it reads the API key from env.
 import "server-only";
+import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
 
 const BASE_URL = "https://data.solanatracker.io";
 const RPC_URL = "https://api.mainnet-beta.solana.com";
@@ -55,23 +56,6 @@ interface TokenInfoResponse {
     price: { usd: number };
     marketCap: { usd: number };
   }>;
-}
-
-export interface TokenMeta {
-  address: string;
-  name: string;
-  symbol: string;
-  imageUrl: string | null;
-  priceUsd: number;
-  marketCapUsd: number;
-  /** Estimated circulating supply, derived from marketCapUsd / priceUsd. Used to
-   * convert any historical price into an equivalent market cap for display. */
-  estimatedSupply: number;
-  /** Current SOL/USD price, used to convert remaining position value to SOL. */
-  solPriceUsd: number;
-  isToken2022: boolean;
-  source: "pumpfun" | "raydium" | "other";
-  market: string | null;
 }
 
 const PUMPFUN_MARKETS = new Set(["pumpfun", "pumpfun-amm"]);
@@ -131,6 +115,7 @@ export async function fetchTokenMeta(address: string): Promise<TokenMeta> {
   const estimatedSupply = priceUsd > 0 ? marketCapUsd / priceUsd : 0;
 
   return {
+    chain: "solana",
     address,
     name: info.token.name,
     symbol: info.token.symbol,
@@ -138,10 +123,11 @@ export async function fetchTokenMeta(address: string): Promise<TokenMeta> {
     priceUsd,
     marketCapUsd,
     estimatedSupply,
-    solPriceUsd,
+    nativePriceUsd: solPriceUsd,
     isToken2022,
     source,
     market,
+    rankingWindow: "all_time",
   };
 }
 
@@ -181,40 +167,6 @@ interface TokenTradersResponse {
   meta: { symbol: string; name: string; image?: string; price: number; marketCap: number };
   traders: HolderApi[];
   pagination: { hasMore: boolean; nextCursor?: string; count: number; total: number };
-}
-
-export interface WalletTrader {
-  rank: number;
-  address: string;
-  nickname: string | null;
-  twitter: string | null;
-  /** Identity tags from Solana Tracker, e.g. "kol", "developer", "bot", "arbitrage". */
-  tags: string[];
-  avgBuyPriceUsd: number;
-  avgSellPriceUsd: number;
-  /** Avg entry/exit expressed as market cap (price * token's estimated supply). */
-  avgBuyMcapUsd: number;
-  avgSellMcapUsd: number;
-  buyTxns: number;
-  sellTxns: number;
-  boughtTokenAmount: number;
-  soldTokenAmount: number;
-  boughtUsd: number;
-  soldUsd: number;
-  realizedPnlUsd: number;
-  realizedPnlPercent: number;
-  avgMultipleX: number;
-  /** % of purchased tokens still held (not sold). */
-  remainingPercent: number;
-  /** Current USD value of the remaining (unsold) position, from the API's live position data. */
-  remainingValueUsd: number;
-  isHolding: boolean;
-  lastTradeMs: number | null;
-  firstTradeMs: number | null;
-  // Free bonus fields already present in the traders response (no extra credits).
-  walletLifetimeRealizedPnlUsd: number | null;
-  walletLifetimeTotalTrades: number | null;
-  walletLifetimeTokensTraded: number | null;
 }
 
 function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletTrader {
@@ -316,37 +268,6 @@ interface TokenTradesResponse {
   trades: TokenTradeApi[];
 }
 
-export interface WalletDetail {
-  address: string;
-  twitter: string | null;
-  tags: string[];
-  totalValueUsd: number;
-  solBalance: number;
-  walletRealizedPnlUsd: number;
-  walletUnrealizedPnlUsd: number;
-  winRatePercent: number | null;
-  avgPnlPerAssetUsd: number | null;
-  avgBuyValueUsd: number | null;
-  tokensClosed: number;
-  tokensWinning: number;
-  tokensLosing: number;
-  isArbitrage: boolean;
-  platforms: string[];
-  distribution: Array<{ label: string; count: number }>;
-  positionsHolding: number;
-  positionsSold: number;
-  avgHoldTimeSecs: number;
-  activity: Array<{
-    type: "Buy" | "Sell";
-    amountTokens: number;
-    amountUsd: number;
-    priceUsd: number;
-    mcapUsd: number;
-    timeMs: number;
-    txSignature: string;
-  }>;
-}
-
 export async function fetchWalletDetail(
   tokenAddress: string,
   walletAddress: string,
@@ -365,7 +286,7 @@ export async function fetchWalletDetail(
     twitter: summary.identity?.twitter ?? null,
     tags: summary.identity?.tags ?? [],
     totalValueUsd: basic.total ?? 0,
-    solBalance: basic.totalSol ?? 0,
+    nativeBalance: basic.totalSol ?? 0,
     walletRealizedPnlUsd: summary.summary?.pnl?.realized ?? 0,
     walletUnrealizedPnlUsd: summary.summary?.pnl?.unrealized ?? 0,
     winRatePercent: summary.analysis?.winRate ?? null,
@@ -389,6 +310,7 @@ export async function fetchWalletDetail(
       timeMs: t.time,
       txSignature: t.tx,
     })),
+    isDemoData: false,
   };
 }
 

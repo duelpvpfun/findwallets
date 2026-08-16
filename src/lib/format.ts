@@ -25,12 +25,12 @@ export function formatMultiple(value: number): string {
   return `${value.toFixed(2)}x`;
 }
 
-export function formatSol(value: number): string {
+export function formatSol(value: number, unit = "SOL"): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K SOL`;
-  if (abs >= 1) return `${sign}${abs.toFixed(2)} SOL`;
-  return `${sign}${abs.toFixed(4)} SOL`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K ${unit}`;
+  if (abs >= 1) return `${sign}${abs.toFixed(2)} ${unit}`;
+  return `${sign}${abs.toFixed(4)} ${unit}`;
 }
 
 export function formatDuration(hours: number): string {

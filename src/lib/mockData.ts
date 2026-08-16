@@ -1,5 +1,5 @@
 import { createRng, pick, randRange, randomBase58Address } from "./rng";
-import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
+import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 
 // Fallback data used only when SOLANA_TRACKER_API_KEY is not configured, so the
 // UI stays usable during setup. Deterministic per-CA (same input -> same output).
@@ -45,13 +45,14 @@ function isLikelyToken2022(address: string): boolean {
   return createRng(address + ":ext")() > 0.8;
 }
 
-export function buildTokenMeta(address: string): TokenMeta {
+export function buildTokenMeta(address: string, chain: Chain = "solana"): TokenMeta {
   const rng = createRng(address);
   const name = pick(rng, TOKEN_NAME_ADJ);
   const priceUsd = randRange(rng, 0.000001, 0.05);
   const marketCapUsd = randRange(rng, 20_000, 8_000_000);
   const source = rng() > 0.5 ? "pumpfun" : "raydium";
   return {
+    chain,
     address,
     name,
     symbol: name.slice(0, 4).toUpperCase(),
@@ -59,10 +60,11 @@ export function buildTokenMeta(address: string): TokenMeta {
     priceUsd,
     marketCapUsd,
     estimatedSupply: priceUsd > 0 ? marketCapUsd / priceUsd : 0,
-    solPriceUsd: randRange(rng, 100, 250),
-    isToken2022: isLikelyToken2022(address),
-    source,
-    market: source,
+    nativePriceUsd: chain === "solana" ? randRange(rng, 100, 250) : randRange(rng, 400, 800),
+    isToken2022: chain === "solana" && isLikelyToken2022(address),
+    source: chain === "solana" ? source : "other",
+    market: chain === "solana" ? source : null,
+    rankingWindow: chain === "solana" ? "all_time" : "90d",
   };
 }
 
@@ -126,8 +128,12 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
   };
 }
 
-export function buildTopTraders(address: string, limit: number): { token: TokenMeta; traders: WalletTrader[] } {
-  const token = buildTokenMeta(address);
+export function buildTopTraders(
+  address: string,
+  limit: number,
+  chain: Chain = "solana"
+): { token: TokenMeta; traders: WalletTrader[] } {
+  const token = buildTokenMeta(address, chain);
   const rng = createRng(address + ":traders");
   const traders: WalletTrader[] = [];
 
@@ -172,7 +178,7 @@ export function buildWalletDetail(tokenAddress: string, trader: WalletTrader): W
     twitter: trader.twitter,
     tags: trader.tags,
     totalValueUsd,
-    solBalance: randRange(rng, 0.1, 30),
+    nativeBalance: randRange(rng, 0.1, 30),
     walletRealizedPnlUsd: trader.walletLifetimeRealizedPnlUsd ?? trader.realizedPnlUsd,
     walletUnrealizedPnlUsd: unrealizedPnlUsd,
     winRatePercent: randRange(rng, 30, 85),
