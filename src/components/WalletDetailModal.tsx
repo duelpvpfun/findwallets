@@ -320,6 +320,61 @@ export default function WalletDetailModal({
                 )}
               </div>
 
+              {/* Track record on other tokens */}
+              <div className="mt-4">
+                <div className="mb-2 flex items-baseline justify-between border-b border-neutral-800 pb-2">
+                  <span className="text-sm font-medium text-neutral-100">Best trades on other tokens</span>
+                  <span className="text-[11px] text-neutral-500">
+                    Is this wallet consistently profitable?
+                  </span>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-neutral-800/80">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-neutral-800/80 bg-neutral-900/40 text-[11px] uppercase tracking-wide text-neutral-500">
+                        <th className="py-2 pl-3 font-medium">Token</th>
+                        <th className="py-2 font-medium">Avg Entry</th>
+                        <th className="py-2 font-medium">Avg Exit</th>
+                        <th className="py-2 font-medium">X</th>
+                        <th className="py-2 font-medium">% PNL</th>
+                        <th className="py-2 pr-3 font-medium">$ PNL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.topPositions.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-neutral-500">
+                            No other token history found for this wallet.
+                          </td>
+                        </tr>
+                      )}
+                      {detail.topPositions.map((p) => (
+                        <tr key={p.tokenAddress} className="border-t border-neutral-900 text-neutral-300">
+                          <td className="py-2 pl-3 font-medium text-neutral-200">{p.symbol}</td>
+                          <td className="py-2 tabular-nums">${p.avgBuyPriceUsd.toPrecision(3)}</td>
+                          <td className="py-2 tabular-nums">${p.avgSellPriceUsd.toPrecision(3)}</td>
+                          <td className="py-2 tabular-nums">{formatMultiple(p.multipleX)}</td>
+                          <td
+                            className={`py-2 tabular-nums font-medium ${
+                              p.roiPercent >= 0 ? "text-emerald-400" : "text-rose-400"
+                            }`}
+                          >
+                            {formatPercent(p.roiPercent)}
+                          </td>
+                          <td
+                            className={`py-2 pr-3 tabular-nums font-medium ${
+                              p.realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+                            }`}
+                          >
+                            {formatUsd(p.realizedPnlUsd)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               {/* Activity table */}
               <div className="mt-4">
                 <div className="mb-2 border-b border-neutral-800 pb-2 text-sm font-medium text-neutral-100">

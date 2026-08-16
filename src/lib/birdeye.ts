@@ -54,7 +54,8 @@ async function acquireRateLimitSlot(): Promise<void> {
 async function beFetch<T>(
   chain: EvmChain,
   path: string,
-  params?: Record<string, string | number | undefined>
+  params?: Record<string, string | number | undefined>,
+  jsonBody?: unknown
 ): Promise<T> {
   const url = new URL(path, BASE_URL);
   if (params) {
@@ -67,7 +68,13 @@ async function beFetch<T>(
   for (let attempt = 1; ; attempt++) {
     await acquireRateLimitSlot();
     const res = await fetch(url, {
-      headers: { "X-API-KEY": apiKey(), "x-chain": chain },
+      method: jsonBody ? "POST" : "GET",
+      headers: {
+        "X-API-KEY": apiKey(),
+        "x-chain": chain,
+        ...(jsonBody ? { "Content-Type": "application/json" } : {}),
+      },
+      body: jsonBody ? JSON.stringify(jsonBody) : undefined,
       cache: "no-store",
     });
     const body = await res.json().catch(() => null);
@@ -287,13 +294,27 @@ interface TokenTxsResponse {
   has_next: boolean;
 }
 
+interface PnlDetailsToken {
+  address: string;
+  symbol: string;
+  last_trade_unix_time: number | null;
+  counts: { total_trade: number };
+  cashflow_usd: { total_invested: number; total_sold: number };
+  pnl: { realized_profit_usd: number; realized_profit_percent: number };
+  pricing: { avg_buy_cost: number; avg_sell_cost: number };
+}
+
+interface PnlDetailsResponse {
+  tokens: PnlDetailsToken[];
+}
+
 export async function fetchEvmWalletDetail(
   chain: EvmChain,
   tokenAddress: string,
   walletAddress: string,
   estimatedSupply: number
 ): Promise<WalletDetail> {
-  const [summary, txs] = await Promise.all([
+  const [summary, txs, details] = await Promise.all([
     beFetch<WalletPnlSummaryResponse>(chain, "/wallet/v2/pnl/summary", { wallet: walletAddress }),
     beFetch<TokenTxsResponse>(chain, "/defi/v3/token/txs", {
       address: tokenAddress,
@@ -302,6 +323,9 @@ export async function fetchEvmWalletDetail(
       sort_type: "desc",
       limit: 20,
     }),
+    beFetch<PnlDetailsResponse>(chain, "/wallet/v2/pnl/details", undefined, {
+      wallet: walletAddress,
+    }).catch(() => ({ tokens: [] })),
   ]);
 
   return {
@@ -338,6 +362,28 @@ export async function fetchEvmWalletDetail(
         txSignature: tx.tx_hash,
       };
     }),
+    topPositions: (details.tokens ?? [])
+      .filter((t) => t.address.toLowerCase() !== tokenAddress.toLowerCase())
+      .sort((a, b) => (b.pnl?.realized_profit_usd ?? 0) - (a.pnl?.realized_profit_usd ?? 0))
+      .slice(0, 10)
+      .map((t) => {
+        const avgBuyPriceUsd = t.pricing?.avg_buy_cost ?? 0;
+        const avgSellPriceUsd = t.pricing?.avg_sell_cost ?? 0;
+        return {
+          tokenAddress: t.address,
+          symbol: t.symbol,
+          realizedPnlUsd: t.pnl?.realized_profit_usd ?? 0,
+          roiPercent: t.pnl?.realized_profit_percent ?? 0,
+          investedUsd: t.cashflow_usd?.total_invested ?? 0,
+          proceedsUsd: t.cashflow_usd?.total_sold ?? 0,
+          avgBuyPriceUsd,
+          avgSellPriceUsd,
+          multipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+          tradeCount: t.counts?.total_trade ?? 0,
+          holdTimeSecs: null,
+          lastTradeMs: t.last_trade_unix_time ? t.last_trade_unix_time * 1000 : null,
+        };
+      }),
     isDemoData: false,
   };
 }

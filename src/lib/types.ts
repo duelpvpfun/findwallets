@@ -69,6 +69,22 @@ export interface WalletActivityRow {
   txSignature: string;
 }
 
+/** A wallet's historical performance on one other token, for judging consistency. */
+export interface WalletTokenPosition {
+  tokenAddress: string;
+  symbol: string;
+  realizedPnlUsd: number;
+  roiPercent: number;
+  investedUsd: number;
+  proceedsUsd: number;
+  avgBuyPriceUsd: number;
+  avgSellPriceUsd: number;
+  multipleX: number;
+  tradeCount: number;
+  holdTimeSecs: number | null;
+  lastTradeMs: number | null;
+}
+
 export interface WalletDetail {
   address: string;
   twitter: string | null;
@@ -92,6 +108,8 @@ export interface WalletDetail {
   positionsSold: number | null;
   avgHoldTimeSecs: number | null;
   activity: WalletActivityRow[];
+  /** This wallet's best other trades, to gauge whether it's consistently profitable. */
+  topPositions: WalletTokenPosition[];
   isDemoData: boolean;
 }
 

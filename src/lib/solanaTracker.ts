@@ -268,17 +268,38 @@ interface TokenTradesResponse {
   trades: TokenTradeApi[];
 }
 
+interface WalletPositionApi {
+  token: string;
+  pnl: { realized: number };
+  invested: number | null;
+  proceeds: number | null;
+  roi: number | null;
+  volume: { tokensBought: number | null; tokensSold: number | null; buyUsd: number | null; sellUsd: number | null };
+  counts: { total: number };
+  timing: { holdTimeSecs: number | null; lastTrade: number | null };
+  meta?: { symbol?: string | null };
+}
+
+interface WalletPositionsResponse {
+  positions: WalletPositionApi[];
+}
+
 export async function fetchWalletDetail(
   tokenAddress: string,
   walletAddress: string,
   estimatedSupply: number
 ): Promise<WalletDetail> {
-  const [basic, summary, trades] = await Promise.all([
+  const [basic, summary, trades, positions] = await Promise.all([
     stFetch<WalletBasicResponse>(`/wallet/${walletAddress}/basic`),
     stFetch<WalletSummaryResponse>(`/v2/pnl/wallets/${walletAddress}`),
     stFetch<TokenTradesResponse>(`/trades/${tokenAddress}/by-wallet/${walletAddress}`, {
       sortDirection: "DESC",
     }),
+    stFetch<WalletPositionsResponse>(`/v2/pnl/wallets/${walletAddress}/positions`, {
+      sort: "pnl",
+      direction: "desc",
+      limit: 10,
+    }).catch(() => ({ positions: [] })),
   ]);
 
   return {
@@ -310,6 +331,28 @@ export async function fetchWalletDetail(
       timeMs: t.time,
       txSignature: t.tx,
     })),
+    topPositions: (positions.positions ?? [])
+      .filter((p) => p.token !== tokenAddress)
+      .map((p) => {
+        const tokensBought = p.volume?.tokensBought ?? 0;
+        const tokensSold = p.volume?.tokensSold ?? 0;
+        const avgBuyPriceUsd = tokensBought > 0 ? (p.volume?.buyUsd ?? 0) / tokensBought : 0;
+        const avgSellPriceUsd = tokensSold > 0 ? (p.volume?.sellUsd ?? 0) / tokensSold : 0;
+        return {
+          tokenAddress: p.token,
+          symbol: p.meta?.symbol ?? p.token.slice(0, 4),
+          realizedPnlUsd: p.pnl?.realized ?? 0,
+          roiPercent: p.roi ?? 0,
+          investedUsd: p.invested ?? 0,
+          proceedsUsd: p.proceeds ?? 0,
+          avgBuyPriceUsd,
+          avgSellPriceUsd,
+          multipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+          tradeCount: p.counts?.total ?? 0,
+          holdTimeSecs: p.timing?.holdTimeSecs ?? null,
+          lastTradeMs: p.timing?.lastTrade ?? null,
+        };
+      }),
     isDemoData: false,
   };
 }

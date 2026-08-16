@@ -196,6 +196,26 @@ export function buildWalletDetail(tokenAddress: string, trader: WalletTrader): W
       { label: "-50-0%", count: Math.floor(randRange(rng, 5, 35)) },
       { label: "<-50%", count: Math.floor(randRange(rng, 0, 10)) },
     ],
+    topPositions: Array.from({ length: 5 }, () => {
+      const avgBuyPriceUsd = randRange(rng, 0.0000005, 0.02);
+      const multipleX = randRange(rng, 1.2, 25);
+      const investedUsd = randRange(rng, 200, 20_000);
+      const proceedsUsd = investedUsd * multipleX;
+      return {
+        tokenAddress: randomBase58Address(rng),
+        symbol: pick(rng, TOKEN_NAME_ADJ).slice(0, 4).toUpperCase(),
+        realizedPnlUsd: proceedsUsd - investedUsd,
+        roiPercent: (multipleX - 1) * 100,
+        investedUsd,
+        proceedsUsd,
+        avgBuyPriceUsd,
+        avgSellPriceUsd: avgBuyPriceUsd * multipleX,
+        multipleX,
+        tradeCount: Math.floor(randRange(rng, 2, 80)),
+        holdTimeSecs: randRange(rng, 60, 800_000),
+        lastTradeMs: Date.now() - randRange(rng, 1, 200) * 86_400_000,
+      };
+    }).sort((a, b) => b.realizedPnlUsd - a.realizedPnlUsd),
     positionsHolding: Math.floor(randRange(rng, 1, 20)),
     positionsSold: Math.floor(randRange(rng, 10, 400)),
     avgHoldTimeSecs: randRange(rng, 60, 500_000),
