@@ -264,6 +264,35 @@ export async function fetchEvmTopTraders(
   return traders.slice(0, limit).map((t, i) => ({ ...t, rank: i + 1 }));
 }
 
+/**
+ * Lifetime PNL per wallet. Birdeye has no many-wallets batch equivalent on EVM,
+ * so this costs one 35 CU call per wallet — only enrich the top N of a scan.
+ */
+export async function fetchEvmWalletLifetime(
+  chain: EvmChain,
+  addresses: string[]
+): Promise<Array<{ address: string; pnlUsd: number | null; winRate: number | null; trades: number | null; tokensTraded: number | null }>> {
+  const results = await Promise.all(
+    addresses.map(async (address) => {
+      try {
+        const res = await beFetch<WalletPnlSummaryResponse>(chain, "/wallet/v2/pnl/summary", {
+          wallet: address,
+        });
+        return {
+          address,
+          pnlUsd: res.summary?.pnl?.realized_profit_usd ?? null,
+          winRate: res.summary?.counts?.win_rate ?? null,
+          trades: res.summary?.counts?.total_trade ?? null,
+          tokensTraded: null,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
 // --- Wallet detail (on-demand, single wallet) ---
 
 interface WalletPnlSummaryResponse {

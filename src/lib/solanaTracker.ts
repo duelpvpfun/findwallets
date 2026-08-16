@@ -21,7 +21,11 @@ function apiKey(): string {
   return key;
 }
 
-async function stFetch<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+async function stFetch<T>(
+  path: string,
+  params?: Record<string, string | number | undefined>,
+  jsonBody?: unknown
+): Promise<T> {
   const url = new URL(path, BASE_URL);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -29,7 +33,12 @@ async function stFetch<T>(path: string, params?: Record<string, string | number 
     }
   }
   const res = await fetch(url, {
-    headers: { "x-api-key": apiKey() },
+    method: jsonBody ? "POST" : "GET",
+    headers: {
+      "x-api-key": apiKey(),
+      ...(jsonBody ? { "Content-Type": "application/json" } : {}),
+    },
+    body: jsonBody ? JSON.stringify(jsonBody) : undefined,
     // Trader/PNL data changes fast; avoid stale cached responses.
     cache: "no-store",
   });
@@ -359,4 +368,49 @@ export async function fetchWalletDetail(
 
 export function isSolanaTrackerConfigured(): boolean {
   return Boolean(process.env.SOLANA_TRACKER_API_KEY);
+}
+
+interface BatchWalletsResponse {
+  wallets: Array<{
+    wallet: string;
+    summary?: {
+      pnl?: { realized?: number };
+      counts?: { trades?: number; tokensTraded?: number };
+      winRate?: number | null;
+    };
+    analysis?: { winRate?: number | null };
+  }>;
+}
+
+/**
+ * Lifetime PNL for many wallets, 100 per request — cheap enough to enrich every
+ * scanned wallet. Used to detect survivorship bias (big win on one token but
+ * negative lifetime PNL = lucky, not alpha).
+ */
+export async function fetchWalletLifetimeBatch(
+  addresses: string[]
+): Promise<Array<{ address: string; pnlUsd: number | null; winRate: number | null; trades: number | null; tokensTraded: number | null }>> {
+  const BATCH_SIZE = 100;
+  const out: Array<{ address: string; pnlUsd: number | null; winRate: number | null; trades: number | null; tokensTraded: number | null }> = [];
+
+  for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+    const chunk = addresses.slice(i, i + BATCH_SIZE);
+    try {
+      const res = await stFetch<BatchWalletsResponse>("/v2/pnl/wallets/batch", undefined, {
+        wallets: chunk,
+      });
+      for (const w of res.wallets ?? []) {
+        out.push({
+          address: w.wallet,
+          pnlUsd: w.summary?.pnl?.realized ?? null,
+          winRate: w.analysis?.winRate ?? w.summary?.winRate ?? null,
+          trades: w.summary?.counts?.trades ?? null,
+          tokensTraded: w.summary?.counts?.tokensTraded ?? null,
+        });
+      }
+    } catch {
+      // Enrichment is best-effort; a failure must not break the scan.
+    }
+  }
+  return out;
 }
