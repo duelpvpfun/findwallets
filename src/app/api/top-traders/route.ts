@@ -33,6 +33,8 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { issueScanSession } from "@/lib/scanSession";
 import type { TokenMeta, WalletTrader } from "@/lib/types";
 
+// 50 is retired from the pricing table but still accepted, so anyone holding an
+// unspent 50-credit from before it was pulled can still redeem it.
 const ALLOWED_LIMITS = [50, 100, 250, 500];
 // Birdeye has no batch lifetime endpoint, so each EVM wallet costs 35 CU. Cap
 // enrichment to the top ranks; the rest still get stored with per-token data.

@@ -44,6 +44,9 @@ export async function recordScan(
       symbol: token.symbol,
       name: token.name,
       imageUrl: token.imageUrl,
+      priceUsd: token.priceUsd,
+      marketCapUsd: token.marketCapUsd,
+      nativePriceUsd: token.nativePriceUsd,
       scanCount: 1,
     })
     .onConflictDoUpdate({
@@ -52,6 +55,9 @@ export async function recordScan(
         symbol: token.symbol,
         name: token.name,
         imageUrl: token.imageUrl,
+        priceUsd: token.priceUsd,
+        marketCapUsd: token.marketCapUsd,
+        nativePriceUsd: token.nativePriceUsd,
         lastScannedAt: new Date(),
         scanCount: sql`${tokens.scanCount} + 1`,
       },

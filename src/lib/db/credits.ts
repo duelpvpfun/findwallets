@@ -4,19 +4,20 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits } from "./schema";
 
-export const TIERS = [50, 100, 250, 500] as const;
+export const TIERS = [100, 250, 500] as const;
 export type Tier = (typeof TIERS)[number];
 
 /** Maps each Helio paylink to the tier it unlocks. Server-side only — the
- * browser never decides which tier it bought. */
-export const PAYLINK_TIERS: Record<string, Tier> = {
+ * browser never decides which tier it bought. The retired 50 paylink stays
+ * mapped so anyone who bought one before it was pulled can still redeem. */
+export const PAYLINK_TIERS: Record<string, number> = {
   "6a8215d1f6597f12ce9fbea6": 50,
   "6a821074f6597f12ce9f98c4": 100,
   "6a8214f8a9d7742eda4f78b5": 250,
   "6a82154181e40c11230808b0": 500,
 };
 
-export function tierForPaylink(paylinkId: string): Tier | null {
+export function tierForPaylink(paylinkId: string): number | null {
   return PAYLINK_TIERS[paylinkId] ?? null;
 }
 
@@ -32,7 +33,7 @@ export function hashNonce(nonce: string): string {
 export interface CreateCreditInput {
   paymentId: string;
   paylinkId: string;
-  tier: Tier;
+  tier: number;
   nonceHash?: string | null;
   email?: string | null;
   payerWallet?: string | null;

@@ -8,7 +8,6 @@ export interface TierInfo {
 }
 
 export const TIER_OPTIONS: TierInfo[] = [
-  { limit: 50, paylinkId: "6a8215d1f6597f12ce9fbea6", price: "$1.99", label: "Top 50" },
   { limit: 100, paylinkId: "6a821074f6597f12ce9f98c4", price: "$2.99", label: "Top 100" },
   { limit: 250, paylinkId: "6a8214f8a9d7742eda4f78b5", price: "$4.45", label: "Top 250" },
   { limit: 500, paylinkId: "6a82154181e40c11230808b0", price: "$5.99", label: "Top 500" },

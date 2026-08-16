@@ -21,6 +21,13 @@ export const tokens = pgTable(
     symbol: text("symbol"),
     name: text("name"),
     imageUrl: text("image_url"),
+    /** Snapshot of the last scan's pricing, used to render cached previews and
+     * the wallet ticker without re-hitting a paid upstream API. */
+    priceUsd: doublePrecision("price_usd"),
+    marketCapUsd: doublePrecision("market_cap_usd"),
+    nativePriceUsd: doublePrecision("native_price_usd"),
+    /** Hand-picked tokens offered as a free sample scan. */
+    showcase: boolean("showcase").notNull().default(false),
     firstScannedAt: timestamp("first_scanned_at", { withTimezone: true }).notNull().defaultNow(),
     lastScannedAt: timestamp("last_scanned_at", { withTimezone: true }).notNull().defaultNow(),
     scanCount: integer("scan_count").notNull().default(0),

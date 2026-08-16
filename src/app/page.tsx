@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import PaywallDialog from "@/components/PaywallDialog";
+import WalletTicker from "@/components/WalletTicker";
+import ProductPreview from "@/components/ProductPreview";
 import { CLAIM_STORAGE_KEY, OWNER_STORAGE_KEY, TIER_OPTIONS } from "@/lib/tiers";
 
-const LIMIT_OPTIONS = [50, 100, 250, 500] as const;
+const LIMIT_OPTIONS = [100, 250, 500] as const;
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
 
 const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }> = [
@@ -15,11 +17,14 @@ const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }>
   { value: "base", label: "Base", short: "BASE", dot: "bg-blue-400" },
 ];
 
-const EXAMPLES: Record<Chain, { address: string; label: string }> = {
-  solana: { address: "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN", label: "$TRUMP" },
-  bsc: { address: "0x55d398326f99059fF775485246999027B3197955", label: "$USDT" },
-  base: { address: "0x4200000000000000000000000000000000000006", label: "$WETH" },
-};
+/** A token we've already scanned, replayable from cache as a free sample. */
+interface ShowcaseToken {
+  chain: Chain;
+  address: string;
+  symbol: string;
+  name: string;
+  walletCount: number;
+}
 
 const PLACEHOLDERS: Record<Chain, string> = {
   solana: "Paste token contract address (CA)…",
@@ -40,10 +45,13 @@ export default function Home() {
     histories?: Record<string, WalletHistory>;
     note?: string;
     scanSession?: string;
+    isPreview?: boolean;
+    previewLimit?: number;
   } | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [samples, setSamples] = useState<ShowcaseToken[]>([]);
 
   // Restore owner key / unused credit, and let the owner install their key via ?key=…
   useEffect(() => {
@@ -134,6 +142,48 @@ export default function Home() {
     [ownerKey]
   );
 
+  // Tokens we've already scanned, offered as free samples.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/showcase")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.tokens)) setSamples(data.tokens);
+      })
+      .catch(() => {
+        /* samples are optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Replays a cached scan. Never touches a credit or a paid upstream API, so
+   * visitors can see the real product before deciding to buy.
+   */
+  const runPreview = useCallback(async (sample: ShowcaseToken) => {
+    setLoading(true);
+    setError(null);
+    setChain(sample.chain);
+    setAddress(sample.address);
+    try {
+      const qs = new URLSearchParams({ chain: sample.chain, address: sample.address });
+      const res = await fetch(`/api/preview?${qs}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Preview unavailable.");
+        setResult(null);
+        return;
+      }
+      setResult(data);
+    } catch {
+      setError("Failed to reach the server.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   /** Owners scan free; everyone else needs an unspent credit covering the size. */
   function startSearch(ca: string, searchChain: Chain) {
     if (!ca.trim()) return;
@@ -172,10 +222,10 @@ export default function Home() {
 
       <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 text-sm font-bold text-white shadow-lg shadow-blue-500/20">
+          <div className="flex items-center gap-3">
+            <span className="alpha-glow select-none text-3xl leading-none font-semibold text-white">
               α
-            </div>
+            </span>
             <div>
               <h1 className="text-sm font-semibold leading-tight text-neutral-50">Alpha Wallet Finder</h1>
               <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
@@ -296,16 +346,31 @@ export default function Home() {
 
         {!result && !error && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-            <span>Try:</span>
-            <button
-              onClick={() => {
-                setAddress(EXAMPLES[chain].address);
-                startSearch(EXAMPLES[chain].address, chain);
-              }}
-              className="rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1 font-mono text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
-            >
-              {EXAMPLES[chain].label}
-            </button>
+            {samples.length > 0 && (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+                    Free
+                  </span>
+                  Try a real scan:
+                </span>
+                {samples.map((s) => (
+                  <button
+                    key={`${s.chain}-${s.address}`}
+                    onClick={() => void runPreview(s)}
+                    title={`${s.name} · ${s.walletCount} wallets already scanned`}
+                    className="flex items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1 font-mono text-neutral-400 transition-colors hover:border-emerald-700/60 hover:text-neutral-200"
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        CHAINS.find((c) => c.value === s.chain)?.dot ?? "bg-neutral-500"
+                      }`}
+                    />
+                    ${s.symbol}
+                  </button>
+                ))}
+              </>
+            )}
             {chain !== "solana" && (
               <span className="text-neutral-600">
                 Note: on {CHAINS.find((c) => c.value === chain)?.label}, ranking covers the last 90
@@ -325,6 +390,26 @@ export default function Home() {
         <div className="mt-8">
           {result ? (
             <div className="animate-fade-in">
+              {result.isPreview && (
+                <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-4 py-3">
+                  <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+                    Free sample
+                  </span>
+                  <span className="text-sm text-neutral-300">
+                    Real results from a previous scan, capped at {result.previewLimit ?? 25}{" "}
+                    wallets.
+                  </span>
+                  <button
+                    onClick={() => {
+                      setResult(null);
+                      setAddress("");
+                    }}
+                    className="ml-auto text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                  >
+                    Scan your own token →
+                  </button>
+                </div>
+              )}
               <TradersTable
                 token={result.token}
                 traders={result.traders}
@@ -346,23 +431,27 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <FeatureCard
-                  icon={<TargetIcon />}
-                  title="Precise entry & exit"
-                  description="Avg buy/sell price, market cap, and average multiple per wallet."
-                />
-                <FeatureCard
-                  icon={<ChartIcon />}
-                  title="Real PNL ranking"
-                  description="Ranked by realized profit — not just holdings or activity."
-                />
-                <FeatureCard
-                  icon={<ExportIcon />}
-                  title="One-click export"
-                  description="Select wallets and export straight to your tracking bot format."
-                />
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <FeatureCard
+                    icon={<TargetIcon />}
+                    title="Precise entry & exit"
+                    description="Avg buy/sell price, market cap, and average multiple per wallet."
+                  />
+                  <FeatureCard
+                    icon={<ChartIcon />}
+                    title="Real PNL ranking"
+                    description="Ranked by realized profit — not just holdings or activity."
+                  />
+                  <FeatureCard
+                    icon={<ExportIcon />}
+                    title="One-click export"
+                    description="Select wallets and export straight to your tracking bot format."
+                  />
+                </div>
+                <WalletTicker />
+                <ProductPreview />
+              </>
             )
           )}
         </div>
