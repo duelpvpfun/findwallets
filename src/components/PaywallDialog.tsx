@@ -24,6 +24,11 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [status, setStatus] = useState<"idle" | "confirming" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
+  // A secret only this browser knows, sent through Helio and required to redeem
+  // the purchase. Without it the public transaction signature would be enough
+  // for anyone watching the merchant wallet to steal the buyer's scan.
+  const [nonce] = useState(() => crypto.randomUUID());
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -39,7 +44,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
     setMessage(null);
     for (let attempt = 0; attempt < 20; attempt++) {
       try {
-        const res = await fetch(`/api/claim?paymentId=${encodeURIComponent(paymentId)}`);
+        const res = await fetch(
+          `/api/claim?paymentId=${encodeURIComponent(paymentId)}&nonce=${encodeURIComponent(nonce)}`
+        );
         if (res.ok) {
           const data = await res.json();
           if (data.claimToken) {
@@ -136,6 +143,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                   primaryColor: "#6400CC",
                   neutralColor: "#5A6578",
                   display: "inline",
+                  additionalJSON: { nonce },
                   onSuccess: (event: Record<string, unknown>) => {
                     const paymentId =
                       (event?.transaction as string) ||

@@ -38,6 +38,8 @@ export default function Home() {
     traders: WalletTrader[];
     isDemoData: boolean;
     histories?: Record<string, WalletHistory>;
+    note?: string;
+    scanSession?: string;
   } | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
@@ -97,10 +99,12 @@ export default function Home() {
           limit: String(searchLimit),
           chain: searchChain,
         });
-        if (claimToken) qs.set("claim", claimToken);
-        const res = await fetch(`/api/top-traders?${qs}`, {
-          headers: ownerKey ? { "x-owner-key": ownerKey } : undefined,
-        });
+        // Credentials go in headers, never the query string, so they can't leak
+        // through access logs, proxies or Referer headers.
+        const headers: Record<string, string> = {};
+        if (claimToken) headers["x-claim-token"] = claimToken;
+        if (ownerKey) headers["x-owner-key"] = ownerKey;
+        const res = await fetch(`/api/top-traders?${qs}`, { headers });
         const data = await res.json();
         if (!res.ok) {
           if (res.status === 402) {
@@ -117,6 +121,9 @@ export default function Home() {
           localStorage.removeItem(CLAIM_STORAGE_KEY);
           setClaim(null);
         }
+        // A valid address on the wrong chain returns nothing; the credit is
+        // untouched, so tell the user rather than leaving them guessing.
+        if (data.note) setError(data.note);
         setResult(data);
       } catch {
         setError("Failed to reach the server.");
@@ -323,6 +330,7 @@ export default function Home() {
                 traders={result.traders}
                 isDemoData={result.isDemoData}
                 histories={result.histories}
+                scanSession={result.scanSession}
               />
             </div>
           ) : (

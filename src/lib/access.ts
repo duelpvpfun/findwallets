@@ -4,7 +4,7 @@ import { checkCredit, type Tier } from "./db/credits";
 
 /** Free unlimited access for the owner. Compared in constant time so the key
  * can't be recovered by timing the endpoint. */
-function isOwnerKey(key: string | null): boolean {
+export function isOwnerKey(key: string | null): boolean {
   const expected = process.env.OWNER_ACCESS_KEY;
   if (!expected || !key) return false;
   const a = Buffer.from(key);

@@ -131,6 +131,12 @@ export const scanCredits = pgTable(
     tier: integer("tier").notNull(),
     /** Random token handed to the buyer; required to redeem. */
     claimToken: text("claim_token").notNull(),
+    /** Browser-generated nonce echoed back through Helio. The claim token is
+     * only released to a caller that presents it, so the public on-chain
+     * transaction signature alone is not enough to steal someone's purchase. */
+    claimNonceHash: text("claim_nonce_hash"),
+    /** Set once the claim token has been handed to the browser. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     email: text("email"),
     payerWallet: text("payer_wallet"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),

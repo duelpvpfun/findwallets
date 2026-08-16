@@ -22,15 +22,23 @@ import { fetchWalletHistories } from "@/lib/db/history";
 import { filterNeedsEnrichment } from "@/lib/db/enriched";
 import { consumeCredit } from "@/lib/db/credits";
 import { resolveAccess, type AccessResult } from "@/lib/access";
+import {
+  addressMismatchMessage,
+  isChain,
+  isValidAddressForChain,
+  siblingEvmChain,
+  CHAIN_LABELS,
+} from "@/lib/chains";
+import { clientIp, rateLimit } from "@/lib/rateLimit";
+import { issueScanSession } from "@/lib/scanSession";
 import type { TokenMeta, WalletTrader } from "@/lib/types";
 
-const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const ALLOWED_LIMITS = [50, 100, 250, 500];
-const ALLOWED_CHAINS: Chain[] = ["solana", "bsc", "base"];
 // Birdeye has no batch lifetime endpoint, so each EVM wallet costs 35 CU. Cap
 // enrichment to the top ranks; the rest still get stored with per-token data.
 const EVM_ENRICH_LIMIT = 25;
+// Generous for a human (each scan is a paid action) but stops scripted hammering.
+const MAX_SCANS_PER_MINUTE = 12;
 
 async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   if (!isDbConfigured()) return;
@@ -65,20 +73,42 @@ async function settleCredit(
   traderCount: number
 ) {
   if (!access.claimToken || traderCount === 0) return;
-  await consumeCredit(access.claimToken, chain, address);
+  const consumed = await consumeCredit(access.claimToken, chain, address);
+  if (!consumed) {
+    // The scan was still delivered; surface it so unbilled usage is visible.
+    console.error("[settleCredit] credit not consumed", { chain, address });
+  }
 }
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(`scan:${clientIp(request)}`, MAX_SCANS_PER_MINUTE, 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many scans from this connection. Wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
   const searchParams = request.nextUrl.searchParams;
   const address = searchParams.get("address")?.trim() ?? "";
   const limitParam = Number(searchParams.get("limit") ?? "100");
   const chainParam = searchParams.get("chain") ?? "solana";
-  const chain: Chain = ALLOWED_CHAINS.includes(chainParam as Chain) ? (chainParam as Chain) : "solana";
 
-  const addressRe = chain === "solana" ? SOLANA_ADDRESS_RE : EVM_ADDRESS_RE;
-  if (!addressRe.test(address)) {
+  // Never silently substitute a chain — that would scan a token the user didn't ask for.
+  if (!isChain(chainParam)) {
+    return NextResponse.json({ error: "Unsupported chain." }, { status: 400 });
+  }
+  const chain: Chain = chainParam;
+
+  // Rejecting a wrong-chain address here means a misplaced CA can never reach
+  // a paid upstream call, let alone consume the buyer's credit.
+  if (!isValidAddressForChain(chain, address)) {
     return NextResponse.json(
-      { error: `Invalid contract address for ${chain}.` },
+      {
+        error:
+          addressMismatchMessage(chain, address) ??
+          `Invalid contract address for ${CHAIN_LABELS[chain]}.`,
+      },
       { status: 400 }
     );
   }
@@ -86,10 +116,11 @@ export async function GET(request: NextRequest) {
   const requestedLimit = ALLOWED_LIMITS.includes(limitParam) ? limitParam : 100;
 
   // Entitlement is resolved server-side; the client can ask for 500 but only
-  // receives what its credit (or owner key) allows.
+  // receives what its credit (or owner key) allows. The claim token travels in a
+  // header so it stays out of access logs, proxies and Referer headers.
   const access = await resolveAccess(
     request.headers.get("x-owner-key"),
-    searchParams.get("claim")
+    request.headers.get("x-claim-token")
   );
   if (!access.allowed) {
     return NextResponse.json(
@@ -121,7 +152,13 @@ export async function GET(request: NextRequest) {
       const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
       await persistScan(token, traders);
       await settleCredit(access, chain, address, traders.length);
-      return NextResponse.json({ token, traders, histories, isDemoData: false });
+      return NextResponse.json({
+        token,
+        traders,
+        histories,
+        isDemoData: false,
+        scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
+      });
     } catch (err) {
       const message = err instanceof SolanaTrackerError ? err.message : "Failed to fetch trader data.";
       const status = err instanceof SolanaTrackerError && err.status ? err.status : 502;
@@ -140,7 +177,24 @@ export async function GET(request: NextRequest) {
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
     await persistScan(token, traders);
     await settleCredit(access, chain, address, traders.length);
-    return NextResponse.json({ token, traders, histories, isDemoData: false });
+
+    // An EVM address is valid on every EVM chain, so a token pasted under the
+    // wrong one looks like an empty result. Say so instead of leaving the buyer
+    // thinking they paid for nothing — the credit is untouched at zero traders.
+    const sibling = siblingEvmChain(chain);
+    const note =
+      traders.length === 0 && sibling
+        ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${CHAIN_LABELS[sibling]}, switch chains and search again — you have not been charged for this scan.`
+        : undefined;
+
+    return NextResponse.json({
+      token,
+      traders,
+      histories,
+      isDemoData: false,
+      note,
+      scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
+    });
   } catch (err) {
     const message = err instanceof BirdeyeError ? err.message : "Failed to fetch trader data.";
     const status = err instanceof BirdeyeError && err.status ? err.status : 502;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Chain, WalletDetail, WalletTrader } from "@/lib/types";
 import { buildWalletDetail } from "@/lib/mockData";
+import { OWNER_STORAGE_KEY } from "@/lib/tiers";
 import {
   formatCompactNumber,
   formatDuration,
@@ -21,6 +22,8 @@ interface WalletDetailModalProps {
   tokenName: string;
   estimatedSupply: number;
   nativePriceUsd: number;
+  /** Proves this scan was paid for; required by the wallet-detail endpoint. */
+  scanSession?: string;
   trader: WalletTrader;
   onClose: () => void;
 }
@@ -31,6 +34,7 @@ export default function WalletDetailModal({
   tokenName,
   estimatedSupply,
   nativePriceUsd,
+  scanSession,
   trader,
   onClose,
 }: WalletDetailModalProps) {
@@ -42,9 +46,18 @@ export default function WalletDetailModal({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(
-      `/api/wallet-detail?token=${tokenAddress}&wallet=${trader.address}&estimatedSupply=${estimatedSupply}&chain=${chain}`
-    )
+    const query = new URLSearchParams({
+      token: tokenAddress,
+      wallet: trader.address,
+      estimatedSupply: String(estimatedSupply),
+      chain,
+    });
+    const ownerKey = typeof window === "undefined" ? null : localStorage.getItem(OWNER_STORAGE_KEY);
+    const headers: Record<string, string> = {};
+    if (scanSession) headers["x-scan-session"] = scanSession;
+    if (ownerKey) headers["x-owner-key"] = ownerKey;
+
+    fetch(`/api/wallet-detail?${query.toString()}`, { headers })
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -64,7 +77,7 @@ export default function WalletDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [tokenAddress, trader, estimatedSupply, chain]);
+  }, [tokenAddress, trader, estimatedSupply, chain, scanSession]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

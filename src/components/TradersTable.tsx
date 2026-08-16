@@ -19,6 +19,8 @@ interface TradersTableProps {
   traders: WalletTrader[];
   isDemoData: boolean;
   histories?: Record<string, WalletHistory>;
+  /** Proves this scan was paid for; required by the wallet-detail endpoint. */
+  scanSession?: string;
 }
 
 interface Filters {
@@ -41,7 +43,13 @@ const EMPTY_FILTERS: Filters = {
   holdingOnly: false,
 };
 
-export default function TradersTable({ token, traders, isDemoData, histories = {} }: TradersTableProps) {
+export default function TradersTable({
+  token,
+  traders,
+  isDemoData,
+  histories = {},
+  scanSession,
+}: TradersTableProps) {
   const [now] = useState(() => Date.now());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeWallet, setActiveWallet] = useState<string | null>(null);
@@ -413,6 +421,7 @@ export default function TradersTable({ token, traders, isDemoData, histories = {
           tokenName={token.name}
           estimatedSupply={token.estimatedSupply}
           nativePriceUsd={token.nativePriceUsd}
+          scanSession={scanSession}
           trader={traders.find((t) => t.address === activeWallet)!}
           onClose={() => setActiveWallet(null)}
         />

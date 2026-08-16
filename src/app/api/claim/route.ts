@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
-import { scanCredits } from "@/lib/db/schema";
-import { checkCredit } from "@/lib/db/credits";
+import { bindNonceToPayment, checkCredit, hashNonce, releaseClaim } from "@/lib/db/credits";
+import { clientIp, rateLimit } from "@/lib/rateLimit";
 
 /**
  * After Helio's widget reports success the browser polls here with the payment
- * id, because the server-to-server webhook can land a moment later. Returns the
- * claim token only once the webhook has actually confirmed the payment.
+ * id, because the server-to-server webhook can land a moment later.
+ *
+ * The payment id is a public on-chain signature, so it is never sufficient on
+ * its own — the caller must also present the nonce it generated before paying.
  */
+const MAX_REQUESTS_PER_MINUTE = 60;
+
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(`claim:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Slow down." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSeconds) } }
+    );
+  }
+
   const paymentId = request.nextUrl.searchParams.get("paymentId")?.trim();
   const claim = request.nextUrl.searchParams.get("claim")?.trim();
+  const nonce = request.nextUrl.searchParams.get("nonce")?.trim();
 
   // Lets the UI show remaining entitlement for a token it already holds.
   if (claim) {
@@ -19,21 +30,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(status);
   }
 
-  if (!paymentId) {
-    return NextResponse.json({ error: "Missing paymentId" }, { status: 400 });
+  if (!paymentId || !nonce) {
+    return NextResponse.json({ error: "Missing paymentId or nonce" }, { status: 400 });
   }
 
-  const db = getDb();
-  if (!db) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  const nonceHash = hashNonce(nonce);
+  let result = await releaseClaim(paymentId, nonce);
 
-  const rows = await db
-    .select({ claimToken: scanCredits.claimToken, tier: scanCredits.tier })
-    .from(scanCredits)
-    .where(eq(scanCredits.paymentId, paymentId))
-    .limit(1);
-
-  if (rows.length === 0) {
-    return NextResponse.json({ pending: true }, { status: 202 });
+  // Helio may not echo our nonce back, leaving the credit unbound; adopt it for
+  // the first caller inside the short post-checkout window, then re-resolve.
+  if (result.status === "forbidden" && (await bindNonceToPayment(paymentId, nonceHash))) {
+    result = await releaseClaim(paymentId, nonce);
   }
-  return NextResponse.json({ claimToken: rows[0].claimToken, tier: rows[0].tier });
+
+  switch (result.status) {
+    case "ok":
+      return NextResponse.json({ claimToken: result.claimToken, tier: result.tier });
+    case "pending":
+      return NextResponse.json({ pending: true }, { status: 202 });
+    case "no_db":
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    default:
+      return NextResponse.json({ error: "Claim not available." }, { status: 403 });
+  }
 }

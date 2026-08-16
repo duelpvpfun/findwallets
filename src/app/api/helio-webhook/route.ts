@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { createCredit, tierForPaylink } from "@/lib/db/credits";
+import { createCredit, hashNonce, tierForPaylink } from "@/lib/db/credits";
 import { isDbConfigured } from "@/lib/db";
 
 /**
@@ -66,13 +66,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unknown paylink" }, { status: 400 });
   }
 
+  // The buyer's browser passes a nonce through Helio's additionalJSON; storing
+  // it hashed is what stops anyone else redeeming a payment they merely observed.
+  const additional = parseAdditional(data.additionalJSON ?? body.additionalJSON);
+  const nonce = str(additional?.nonce);
+
   const claimToken = await createCredit({
     paymentId,
     paylinkId,
     tier,
+    nonceHash: nonce ? hashNonce(nonce) : null,
     email: str(data.email) ?? null,
     payerWallet: str(data.senderPK) ?? str(data.sender) ?? null,
   });
 
-  return NextResponse.json({ ok: true, claimToken, tier });
+  // The claim token is intentionally not echoed back: this response goes to
+  // Helio's infrastructure, not the buyer.
+  return NextResponse.json({ ok: Boolean(claimToken), tier });
+}
+
+function parseAdditional(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
