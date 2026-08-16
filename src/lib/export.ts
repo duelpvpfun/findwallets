@@ -1,5 +1,5 @@
 import type { ExportGroup, WalletTrader } from "./types";
-import { formatMultiple, tokenNameForExport } from "./format";
+import { formatMultiple, formatUsd, shortenAddress, tokenNameForExport } from "./format";
 
 const EMOJIS = ["🧓", "👻", "🐍", "🦅", "🧙", "🐉", "🥷", "🦈", "🐺", "🦊", "🐯", "🦁"];
 
@@ -9,16 +9,68 @@ function emojiForAddress(address: string): string {
   return EMOJIS[hash % EMOJIS.length];
 }
 
-export function buildExportEntries(tokenSymbol: string, traders: WalletTrader[]): ExportGroup[] {
+export type NameStyle = "multiple" | "pnl" | "rank" | "address";
+
+export interface ExportOptions {
+  /** "" means keep the auto-assigned per-wallet emoji. */
+  emoji: string;
+  alertsOnToast: boolean;
+  alertsOnBubble: boolean;
+  alertsOnFeed: boolean;
+  group: string;
+  sound: string;
+  nameStyle: NameStyle;
+  /** Prepended to every generated name, e.g. "alpha " -> "alpha 25.00x - TRUMP". */
+  namePrefix: string;
+  /** Use the wallet's known nickname/KOL name when one exists. */
+  preferNickname: boolean;
+  filename: string;
+}
+
+export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  emoji: "",
+  alertsOnToast: false,
+  alertsOnBubble: true,
+  alertsOnFeed: true,
+  group: "Main",
+  sound: "default",
+  nameStyle: "multiple",
+  namePrefix: "",
+  preferNickname: true,
+  filename: "",
+};
+
+function buildName(
+  trader: WalletTrader,
+  tokenSymbol: string,
+  opts: ExportOptions
+): string {
+  if (opts.preferNickname && trader.nickname) return `${opts.namePrefix}${trader.nickname}`;
+  const base =
+    opts.nameStyle === "pnl"
+      ? `${formatUsd(trader.realizedPnlUsd)} - ${tokenSymbol}`
+      : opts.nameStyle === "rank"
+      ? `#${trader.rank} - ${tokenSymbol}`
+      : opts.nameStyle === "address"
+      ? shortenAddress(trader.address)
+      : `${formatMultiple(trader.avgMultipleX)} - ${tokenSymbol}`;
+  return `${opts.namePrefix}${base}`;
+}
+
+export function buildExportEntries(
+  tokenSymbol: string,
+  traders: WalletTrader[],
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+): ExportGroup[] {
   return traders.map((t) => ({
     trackedWalletAddress: t.address,
-    name: t.nickname ?? `${formatMultiple(t.avgMultipleX)} - ${tokenSymbol}`,
-    emoji: emojiForAddress(t.address),
-    alertsOnToast: false,
-    alertsOnBubble: true,
-    alertsOnFeed: true,
-    groups: ["Main"],
-    sound: "default",
+    name: buildName(t, tokenSymbol, options),
+    emoji: options.emoji || emojiForAddress(t.address),
+    alertsOnToast: options.alertsOnToast,
+    alertsOnBubble: options.alertsOnBubble,
+    alertsOnFeed: options.alertsOnFeed,
+    groups: [options.group || "Main"],
+    sound: options.sound || "default",
   }));
 }
 
@@ -36,8 +88,13 @@ export function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
-export function exportTraders(tokenName: string, tokenSymbol: string, traders: WalletTrader[]) {
-  const entries = buildExportEntries(tokenSymbol, traders);
-  const filename = tokenNameForExport(tokenName);
+export function exportTraders(
+  tokenName: string,
+  tokenSymbol: string,
+  traders: WalletTrader[],
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+) {
+  const entries = buildExportEntries(tokenSymbol, traders, options);
+  const filename = options.filename.trim() || tokenNameForExport(tokenName);
   downloadJson(filename, entries);
 }

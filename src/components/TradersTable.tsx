@@ -10,8 +10,8 @@ import {
   formatUsd,
   shortenAddress,
 } from "@/lib/format";
-import { exportTraders } from "@/lib/export";
 import WalletDetailModal from "./WalletDetailModal";
+import ExportDialog from "./ExportDialog";
 
 interface TradersTableProps {
   token: TokenMeta;
@@ -100,13 +100,7 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
     [traders, selected]
   );
 
-  function handleExportSelected() {
-    exportTraders(token.name, token.symbol, selectedTraders);
-  }
-
-  function handleExportAll() {
-    exportTraders(token.name, token.symbol, filteredTraders);
-  }
+  const [exportTargets, setExportTargets] = useState<WalletTrader[] | null>(null);
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -163,14 +157,14 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <button
-            onClick={handleExportSelected}
+            onClick={() => setExportTargets(selectedTraders)}
             disabled={selected.size === 0}
             className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-700 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Export Selected
           </button>
           <button
-            onClick={handleExportAll}
+            onClick={() => setExportTargets(filteredTraders)}
             className="flex items-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500"
           >
             <DownloadIcon />
@@ -400,6 +394,15 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
           nativePriceUsd={token.nativePriceUsd}
           trader={traders.find((t) => t.address === activeWallet)!}
           onClose={() => setActiveWallet(null)}
+        />
+      )}
+
+      {exportTargets && (
+        <ExportDialog
+          tokenName={token.name}
+          tokenSymbol={token.symbol}
+          traders={exportTargets}
+          onClose={() => setExportTargets(null)}
         />
       )}
     </div>

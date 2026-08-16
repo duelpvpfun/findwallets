@@ -1,0 +1,1202 @@
+[
+  {
+    "trackedWalletAddress": "0x6B90462A5c692532f5d18b100eEB217984C662f3",
+    "name": "340.92x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3d5D31A38ce978a7E4121bc6cBaE6AFFC87457c9",
+    "name": "16.60x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x639cF6961B227d73FC4015380104249571c73Da4",
+    "name": "1423.28x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x6c3617d9B685B9515329E0dA2a1799469b61Db1D",
+    "name": "245.16x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xacEEE6D9A561c0E4F5e8A19A40A98CB896d17219",
+    "name": "15.48x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa67D7Eb4dc68fa6ce8e34Ef8CaDaF075b9893FBb",
+    "name": "2.15x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xbFD997AC744d1a031bA0c8674F215E567e65EDCb",
+    "name": "348.41x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x6c9Ae6B9a81343680e4C90B710958112C1109B9e",
+    "name": "4.06x - 牛来",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xe0fbf2413b6340654106aa289a22A45f4C6613C3",
+    "name": "81.57x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1D0d51E544F5747c6BB030D939EeEEcb928f7bC8",
+    "name": "26.74x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x56c262027e0De4aeA31d2489529CB25D23E58a8B",
+    "name": "2.08x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9267533a56a1C4A1A796372797e6f292Bfb2a373",
+    "name": "29.31x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x06Dfa2a93eAF9aa3dfBC57dBD55826016f40895C",
+    "name": "13.11x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8967A4EaE571E9049a8f50Ac9e9fd34D5cDc8E36",
+    "name": "259.41x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xF930DEb33e6E269f91A6445A90DFf8c83BEA1116",
+    "name": "68.18x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xAbad3DF94539A6362EDcceb5ed7cA16EFc4eF22B",
+    "name": "4.29x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x506C24325faA94A57B55f57CeC49E08b180Cce16",
+    "name": "2.81x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x60099Bf5FaED621a9559D43ACC8cac4499e2971A",
+    "name": "29.69x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x62dB22E32aF477289cD6b4e88082649b6952D810",
+    "name": "11.17x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xabb2aCD3BE814a80e502575d6c1Dc5F789e9cd10",
+    "name": "1.53x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x72913e199CBF5402052B22912DD6AbE95cF8ADa9",
+    "name": "2.61x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8FC085f19Bc02B7e91e6622404F30eC13a23D09c",
+    "name": "3.57x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xCE19a05989a89565823d6605dbbfaC0c5eE3B771",
+    "name": "2.52x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1574d9bFAFd3a83033c84A4C41b0BafBB6e9957A",
+    "name": "49.18x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xD03dA4452BF9478C67a54c56d46678D55a8D9483",
+    "name": "28.73x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2c6530CcD87c0d95C8b0a0333C7EF9964b89dB78",
+    "name": "3.56x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x29F9a269Ca2d7AcbD8d63e58b72b47d47c199B65",
+    "name": "6.39x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xb28AC00cEBe35169ec5c923A630d409a1B62A799",
+    "name": "246.80x - 牛来",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x302cFcC4115d7f198e5674943E1BFcAcef90Ef58",
+    "name": "3.87x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x40370ECc6eF2A38473906c8485c12a340d97f01C",
+    "name": "82.18x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xD29E2Ca5576AAE0D627679A43130e565f45402C1",
+    "name": "45.19x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x386Cf4b43d3850e201e49067d5f26F70002F51dB",
+    "name": "2.33x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3d3a36c3Fbc628D86927a7AdFE09Ed98c095FD79",
+    "name": "41.81x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9eb42F017E793512e4734f8785DE605c4cB3A24E",
+    "name": "1.79x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x87c876E8e6AA7c115347a5E69823342DDd27F319",
+    "name": "14.78x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xBfF5f0851BBEC8679d1eAB817596803417Aa785A",
+    "name": "15.91x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9bB3D7031Ab23E670F60341227d5F5d4Dc00cF47",
+    "name": "53.28x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3C5083022114EA14fB3D8d06f5931C629C2bEDD6",
+    "name": "9.88x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x585CF5B53aB7794BeaaF4Ce46eA8f734A49E900D",
+    "name": "11.73x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x798c9c4214EF9bbFDBacD6A3bd2AEB8B8ea6C272",
+    "name": "14.02x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xA4860d738731a6469e993089086B500552440dFA",
+    "name": "8.79x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x538AFE5e72e2B0ba10512f59e5957c58D7ED2d00",
+    "name": "69.61x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xEd8F833d343b52c57e7f551aac3a0Ff73be99eC5",
+    "name": "3.20x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8Ca48f9Bd1C9Cdc50410765F7C8a4dfAa33F1BD8",
+    "name": "2.81x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x463edb16229911Eb5fa41E88bC4285dF30536b4f",
+    "name": "2.76x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x458e2859d187fdF7404E7B4A815e606F0B7aF0A4",
+    "name": "18.23x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xDf965aC395B281e748a5514EfD0E492A54046397",
+    "name": "1.16x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xB795FC05C62b8bbe242f9Aa7c69e8d5ef609a442",
+    "name": "2.09x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9E15A2B017C1368a79310956E8f8fA8fF23840d0",
+    "name": "3.39x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xbae759E79cd9E12F7AaeF00BC2055CBed7a39139",
+    "name": "8.40x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xf0371810A7AA527852B7E19E1eBDFEfD6C1D5670",
+    "name": "12.81x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x5520C0c506AbB7aBf702f46B720C4F007A002Cce",
+    "name": "31.95x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x58F6DC895a52bb941348dD56a9D762Dd8f86c08F",
+    "name": "1.72x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x90C5E4BCcf2Dee4D84F0F6bBdB50209bE97Da796",
+    "name": "18.10x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xB364B8D2397e217CE47Eb515b7b854c6497DC453",
+    "name": "2.09x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x57423b39A0ABC28C39bC0909b1149a4aaE4F3A3b",
+    "name": "26.51x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x053D99bDaf1CD304930070e132Ec00Bbaa9eFae2",
+    "name": "1.28x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8100D4fBF59b914BEfcCE6F1389b45536B93E165",
+    "name": "1.40x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0658707BDe046e990082b46dd91607E8ad147ac6",
+    "name": "34.19x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x84D2E54D851d0818cF86693fB1a9051e3566C84b",
+    "name": "35.23x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x502b64F459eB775c0459e258407a44f3BfE3f27f",
+    "name": "4.66x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x07fB753A79177927fA871Eaa6Eb1EF60a00d3473",
+    "name": "1.24x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x77770e29C82A3AAeE3fb59F9Ba7F66dc670a7777",
+    "name": "1.57x - 牛来",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1eCdDB1E5fEF2CFb55e1a2cb4a7Ba9F7073eFF16",
+    "name": "24.74x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xBe3d19e56d1dd610a4E18201366346e3db967Daa",
+    "name": "4.38x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x32478EF1E820b63beFC650A417979fC6fe6cd62e",
+    "name": "19.44x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xF34EB3293e7e65a457D295CAAe302E37eC2910C8",
+    "name": "68.65x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7BBd6293d5Ae967ab349fDa71B9C6e0bEE1a0b66",
+    "name": "4.63x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x094C79aD5127e9f34870eaa0141682f501913E05",
+    "name": "42.15x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2DF5381c4AEFea42aCcE09c25D0E790b70A6C365",
+    "name": "50.08x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4d9644d05FE2123b4eAfa8d7fD31B0EA430726f3",
+    "name": "17.23x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x88416342543CFafCa3cd148d2803bC24a75b0A80",
+    "name": "52.25x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x44930B00E691cb88BC592534db38b7A10c2a13e3",
+    "name": "6.94x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xC51f7247f764e131b1406b9fAe27E7CD2aE55B69",
+    "name": "6.67x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x12425Cc48778078bb6486138330A6d7FC9CBC29f",
+    "name": "28.41x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8d03ecbE809C4198E87a7221F20D8ca79B28a095",
+    "name": "3.88x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xAb0C8076e23952B304024629301892EFA2a8F751",
+    "name": "37.24x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0c53151c9eD6816557D3978675E7751b2bF6AC26",
+    "name": "14.21x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x849BBB823102C13720f5507559f17B98D2B3E524",
+    "name": "25.49x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x02061b45a61FB47c75749b3a6d8dAab62EA54951",
+    "name": "7.35x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3a3DA4fa1438BaDce6e0F4716f65833055933791",
+    "name": "2.14x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x919F372846d1870C218Bc4FF521190955B02D752",
+    "name": "1.82x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7861a88c14CBa4Be908C9BAaC1b3974D36Cb9c14",
+    "name": "3.00x - 牛来",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xDD16b0a6C71A897C2AD17c4754c80D7dB4e68446",
+    "name": "2.35x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3a09050C779fBaFE520Cf9f2625877a26D503AAC",
+    "name": "4.60x - 牛来",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8CB674A8442F705D710E20AddD063b512a9346Be",
+    "name": "2.80x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x19Adbe2ce7AB1a1e8bA831C896FCA19cAcA03560",
+    "name": "4.01x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7fB5920Fe5706dD95f95Ce87702a9bC8470DCdF9",
+    "name": "2.76x - 牛来",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xbBDA51dEbfc17427d36EaFFDBbB4b7CcEFdBf679",
+    "name": "2.40x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7C4c48C6f102fF147f4aDcD1B6Faff120462CAd6",
+    "name": "2.26x - 牛来",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0cf7e01CA7fbcD8F8BeA47c33f77e4533F087DC5",
+    "name": "2.37x - 牛来",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7293670bCbE3407BD582EF8D3aa17bef1C1178FA",
+    "name": "13.19x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xCFfC64d985790A27Fd45a442836C3419377A9E9A",
+    "name": "3.14x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x666dC959cD1DbFd149595aD05fff7185F8B36655",
+    "name": "22.65x - 牛来",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9FDF3CCF55e0b914d1B8b9952A1D9Ac5d91BAd71",
+    "name": "3.88x - 牛来",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x176f306E7F428C9844caA0A2c49fF40A020568c5",
+    "name": "6.54x - 牛来",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xE0A802e40917F659F433194C85a3A9A4ceF39598",
+    "name": "36.06x - 牛来",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0E3eB60df4D14b213dc4De53316eD7bCd4aadC87",
+    "name": "8.10x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0C40436C6879FAfF13c51F00440851A859286221",
+    "name": "2.99x - 牛来",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x88c002d521F61B3dD777a4934d611a5bD1D6df71",
+    "name": "7.69x - 牛来",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  }
+]

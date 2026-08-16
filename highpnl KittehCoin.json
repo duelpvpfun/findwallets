@@ -1,0 +1,1202 @@
+[
+  {
+    "trackedWalletAddress": "0x4361d09fD0cb7f89B30485Fa83CbF72B30170566",
+    "name": "44.36x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4FF25aE1b4bf1ceE786D5458B43f116D3203D374",
+    "name": "11.50x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xCD211569a108FdAc74d729ba7358a743a3c2e08d",
+    "name": "15.71x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xDea857e0896837a624B810e255F9B3848adC8Efe",
+    "name": "11.87x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xDbba359561bB9faD6CD8593C2b1f49b17884aEF6",
+    "name": "14.27x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9E15A2B017C1368a79310956E8f8fA8fF23840d0",
+    "name": "3.97x - MEOW",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0ea12216d9E7603Cdf4ae9c4998792A3E977e574",
+    "name": "132.66x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x713aec88C216Ce4B110Cd7c0F8953B980055713f",
+    "name": "10.77x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2B971B8824a613030Dd33A3bA1B040D4A8F47c45",
+    "name": "4.63x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0006D09DF7b0E8DCE98463B95439475fceC29111",
+    "name": "29.71x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x000461A73d3985eef4923655782aA5d0De75C111",
+    "name": "36.64x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x147c75404A8Ee1f9D38528a89A069BE71903C690",
+    "name": "97.48x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xc1A2f0353F631Bf531A45503BE704Abaa38914ef",
+    "name": "29.06x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x000A2e6E9552fDFd57275f882C369894E7957111",
+    "name": "27.98x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xD720910A966d4a6E7D143731f6A3094F65A3Dac5",
+    "name": "7.50x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x00077705952C90b728c6D7dc450bEb4429331111",
+    "name": "23.89x - MEOW",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x000A607b0c5Ea26b3F24e8c78738c56C61235111",
+    "name": "26.74x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa9f7D92a72428C55f093F6051C43db29f38BF34B",
+    "name": "3.47x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x449E3A6585E64E9b0BbE5085B97aF19B6b6652b6",
+    "name": "68.96x - MEOW",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x000C1fa092591c77C86E3ebD39A4B82f52171111",
+    "name": "22.02x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x331D9a049D496385998067ABF6CBb6371C8D2466",
+    "name": "3.90x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x36F987DA605928f41b799231B22e53a0EDA30f79",
+    "name": "2.67x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1D0A132ceD9e9Dc3cfb04f6e987242C56e3cA538",
+    "name": "18.37x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4D75b19b27DB424efFc711D046E62Bb3A713299A",
+    "name": "26.41x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x6552c3E7F78a29aB725d1fF315D0D0d4857417Dd",
+    "name": "11.51x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4f50e0164D6CEad1A5CFd6306366f80c99aF7611",
+    "name": "3.01x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xE326A0344D5df9df36c36cb90fE8896c7c2C9Dfa",
+    "name": "11.01x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x6e0fb71bb501Eb2da9e2961Eb7B58f48DE1cCC2b",
+    "name": "1.75x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xca7ded7e4F4Ba8aB3B10009236Ae6d1b95094589",
+    "name": "4.01x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xBcd0CE68DB274a464e9da0112AF77178361056CB",
+    "name": "8.04x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x301168707b4740585ec80232eF020486F198cbF0",
+    "name": "2.30x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4866015Cc5F98911757E4d63fdfD859F594AEF42",
+    "name": "1.81x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xd782268F600403843484b70710dAeE6846FC0DB8",
+    "name": "4.58x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x7F0ec8B54fA9796374EBfC1Fb9E6e856EB7CC07A",
+    "name": "2.05x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xcdBa91a0dda105C041d44F698730c96Ff3a8dFbF",
+    "name": "2.90x - MEOW",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1cf31A90a84bfBd4d72516BD56c6aE7409865548",
+    "name": "1.96x - MEOW",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa3AAe6460521E95007c16d53a77Fc31fcaFc5319",
+    "name": "1.96x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa667A51BDCB32DaBc8a9396a4523B5feF314ebE7",
+    "name": "5.97x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3BA2d9a5Cf3808B657E4656B75b089DF6f37f1C2",
+    "name": "8.79x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x002a26d37406D8F0b7bb83a6A125CA1F26Cd5f5D",
+    "name": "2.79x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x18DD3C14e34c1BC379F7538068c59160D9F68e25",
+    "name": "3.57x - MEOW",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xAeE774B1c5428fc5B3c609825F0b2d982a9157Da",
+    "name": "54.74x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4fc89EDA2AC7B05103cC3A4E185Feb56b34926FF",
+    "name": "2.77x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3066c7Ace542036C17aCaB8ceC5Edfe1aC67616A",
+    "name": "5.80x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8AC748758eC1b6DC0F0481402A89af1ef36552b5",
+    "name": "2.80x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xf21D494BB47339f399267c5519cbE11Da0753B2d",
+    "name": "1.53x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xb499a6e48476c7c8163Aa0a16E6ef378FE25ba1C",
+    "name": "2.25x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xb23072dA1CB8fA54eBfC3b833e19B7BB8E689720",
+    "name": "2.06x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x18662c7087629445F11282aA6122F0D29993a589",
+    "name": "4.53x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xc9e0e841f7A3aC652c488491BC97D87D11a6cb04",
+    "name": "25.88x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2BD6EE54761944F0564EEFBc72261919E3406775",
+    "name": "4.77x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0d8D6c105629E472691f9a970a6F70899195B5e0",
+    "name": "22.53x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1235469834b3Aa71Edb0d6EeaFfd261D9f60B642",
+    "name": "67.97x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xf15B959bf6d5121bF4A6E0f6FC46c59Fd7B95838",
+    "name": "86.70x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0BEF8Ee747c65C85A10781C2f95DC046BB4e387B",
+    "name": "75.95x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x55180B33e5E43ED364adaC9861305DC0749560F5",
+    "name": "22.89x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x02061b45a61FB47c75749b3a6d8dAab62EA54951",
+    "name": "11.00x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xe5966B9c2D71548a837ceF576704D8ea8C2DA797",
+    "name": "4.71x - MEOW",
+    "emoji": "🦁",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x67FF62Acb0C77bb4f0CCac9B8Ad94E8C9A28AbCE",
+    "name": "103.30x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x4F47b1993C7CbF4BeEbb57D170c5f2D4A37d5116",
+    "name": "11.19x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8Eccf95B4B5e6F706F0B4Af4c0A64Ab1E9029851",
+    "name": "2.09x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x8D47bA07Ff9ccCCF58c7E8810eE42c0Dc8B8b123",
+    "name": "61.03x - MEOW",
+    "emoji": "🐉",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xE209E0047731Aa494289E1Af9a0d03DA19c5EF08",
+    "name": "1.56x - MEOW",
+    "emoji": "🦈",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xf70da97812CB96acDF810712Aa562db8dfA3dbEF",
+    "name": "1.83x - MEOW",
+    "emoji": "🐺",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x919968A4238A54B381f022a360260eF5D7E015aC",
+    "name": "6.16x - MEOW",
+    "emoji": "🥷",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x5572924089ad4c6C9faa23F3B56CFDF2Af3c733f",
+    "name": "4.06x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x91E9e0f8675C1517551f2e7Fb54c20159396A146",
+    "name": "1.26x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x44D72De7156db1554A8888C024aFDf7359334fCd",
+    "name": "2.85x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xeF011c87b801D01bFACfDcF87481AAE11A8170dc",
+    "name": "1.68x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2E8020Bd33d905Ed1B57B6Cac0338e4a853df2bb",
+    "name": "12.60x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xAd9929cbe10d78A741AE61607e1FF88588a298A4",
+    "name": "18.03x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xBF626c15269158331e6281d54f46c24B8F1E23cC",
+    "name": "1.62x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x3014Ca098f359A24adf843CF8A352233C7CFBFB5",
+    "name": "2.28x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x81e7e0D329CCF00B7EBfa3Bd22a50F27A7B3d775",
+    "name": "8.02x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x6e95d13D190A814aEAA864D5a19fCE405654e4b8",
+    "name": "1.94x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xC9b1a6Ad32Da9fDe2731E5CBdE3C722B78c74F68",
+    "name": "16.10x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x725d732Fc4D0Cb3967b01e40dA808d27678b8216",
+    "name": "15.76x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa67504BbCAa20D4E882c709923062e2747dad790",
+    "name": "7.37x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x12702EAd6A7b128B0286Dd70672C90B8A345EAe6",
+    "name": "3.24x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x2bB27B73c602643F42471D4751Fe4fC4EeBEFBd1",
+    "name": "1.60x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x881Ba90CF5c4d0afA9B39990b1790EA115496d5C",
+    "name": "7.03x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x616c18f255489De9965Bd86da0233DFDAE4FFA0b",
+    "name": "6.93x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0EC4e45f9ce3020024c0418a74cd31FBC487038F",
+    "name": "5.72x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xDFB4EAFD30F566f6a08F24e1fC4f3C9f7F3DCb2D",
+    "name": "54.66x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x1fA1695A542F78f99E4bdd3F158E6888ABFD1fF9",
+    "name": "4.01x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x9D56610c9FDABd06A19486CEd80ccCCa00A2866a",
+    "name": "4.82x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x56c262027e0De4aeA31d2489529CB25D23E58a8B",
+    "name": "1.73x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x00034187C8D0D887821587573586f75624c5E111",
+    "name": "14.25x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xA5a5491bCa93dD4C076e4906e79E7673F4A5A142",
+    "name": "2.81x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xA2527C1732dD318ee7E817958e5aB4A9ba39c733",
+    "name": "6.41x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x511808449bE470EfaF4131838B2D4998500A6F72",
+    "name": "2.92x - MEOW",
+    "emoji": "🦅",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xb978492f61ee1CD12010326cf4ffaabB27d59f61",
+    "name": "1.53x - MEOW",
+    "emoji": "🧙",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0x0001dE82C696b6b18F0A401de0463eBB3C631111",
+    "name": "13.61x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xe63cAc7347E5C69F1d1fcC71046B482D377f8Ac5",
+    "name": "1.28x - MEOW",
+    "emoji": "🧓",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xa51222Bd49D7CC391F7409Bc7A1b0c6143936ac6",
+    "name": "8.47x - MEOW",
+    "emoji": "👻",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xabb2aCD3BE814a80e502575d6c1Dc5F789e9cd10",
+    "name": "2.11x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xCC4bc7882D5ec4a3716e589aB3d816b61Ae47a1A",
+    "name": "1.34x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xdec4D68F04544aED722C90D21F47D548208ed69F",
+    "name": "7.51x - MEOW",
+    "emoji": "🦊",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xD51fb02B6c5EB023290D60542cB4D7064Dc240a8",
+    "name": "7.28x - MEOW",
+    "emoji": "🐯",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  },
+  {
+    "trackedWalletAddress": "0xf100Af33f90445D1D482fB63df3F6cDB475EEB0f",
+    "name": "1.23x - MEOW",
+    "emoji": "🐍",
+    "alertsOnToast": false,
+    "alertsOnBubble": true,
+    "alertsOnFeed": true,
+    "groups": [
+      "Main"
+    ],
+    "sound": "default"
+  }
+]
