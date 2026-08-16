@@ -8,16 +8,25 @@ import { isDbConfigured } from "@/lib/db";
  * trust the browser: a client-side onSuccess callback can be forged from
  * devtools, so credits are only minted here after the shared secret matches.
  */
+function matches(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 function isAuthorized(request: NextRequest): boolean {
-  const expected = process.env.HELIO_WEBHOOK_SECRET;
-  if (!expected) return false;
+  // Helio issues a separate shared token per webhook, so accept a comma-separated list.
+  const expected = (process.env.HELIO_WEBHOOK_SECRET ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (expected.length === 0) return false;
   const provided =
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
     request.headers.get("x-helio-signature") ??
     "";
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+  if (!provided) return false;
+  return expected.some((secret) => matches(provided, secret));
 }
 
 export async function POST(request: NextRequest) {
@@ -38,8 +47,13 @@ export async function POST(request: NextRequest) {
   const data = (body.data ?? body) as Record<string, unknown>;
   const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
+  // The query param is a fallback for Helio payloads that omit the paylink id.
   const paylinkId =
-    str(data.paylinkId) ?? str(data.paymentRequestId) ?? str(body.paylinkId);
+    str(data.paylinkId) ??
+    str(data.paymentRequestId) ??
+    str(body.paylinkId) ??
+    request.nextUrl.searchParams.get("paylink") ??
+    undefined;
   const paymentId =
     str(data.transactionSignature) ?? str(data.id) ?? str(data.transaction) ?? str(body.id);
 
