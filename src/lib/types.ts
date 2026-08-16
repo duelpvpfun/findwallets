@@ -48,10 +48,20 @@ export interface TokenMeta {
   rankingWindow: string;
 }
 
+/** A wallet's previously recorded wins on other tokens, from the local database. */
+export interface WalletHistory {
+  priorTokenCount: number;
+  lifetimePnlUsd: number | null;
+  isBot: boolean;
+  wins: Array<{ symbol: string; realizedPnlUsd: number; multipleX: number | null }>;
+}
+
 export interface TopTradersResponse {
   token: TokenMeta;
   traders: WalletTrader[];
   isDemoData: boolean;
+  /** Keyed by wallet address; empty when no database is configured. */
+  histories?: Record<string, WalletHistory>;
 }
 
 export interface WalletDistributionBucket {

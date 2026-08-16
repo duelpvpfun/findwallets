@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { TokenMeta, WalletTrader } from "@/lib/types";
+import type { TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
   formatDuration,
   formatMultiple,
@@ -17,6 +17,7 @@ interface TradersTableProps {
   token: TokenMeta;
   traders: WalletTrader[];
   isDemoData: boolean;
+  histories?: Record<string, WalletHistory>;
 }
 
 interface Filters {
@@ -39,7 +40,7 @@ const EMPTY_FILTERS: Filters = {
   holdingOnly: false,
 };
 
-export default function TradersTable({ token, traders, isDemoData }: TradersTableProps) {
+export default function TradersTable({ token, traders, isDemoData, histories = {} }: TradersTableProps) {
   const [now] = useState(() => Date.now());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeWallet, setActiveWallet] = useState<string | null>(null);
@@ -348,6 +349,7 @@ export default function TradersTable({ token, traders, isDemoData }: TradersTabl
                     {t.nickname && (
                       <span className="text-xs text-neutral-500">({t.nickname})</span>
                     )}
+                    <HistoryBadge history={histories[t.address]} />
                   </div>
                 </td>
                 <td className="py-3 text-neutral-400">
@@ -473,6 +475,22 @@ function FilterRangeInput({
         />
       </div>
     </div>
+  );
+}
+
+/** "Seen before" marker for wallets the database already recorded winning on other tokens. */
+function HistoryBadge({ history }: { history?: WalletHistory }) {
+  if (!history || history.priorTokenCount === 0) return null;
+  const detail = history.wins
+    .map((w) => `${formatUsd(w.realizedPnlUsd)}${w.multipleX ? ` [${w.multipleX.toFixed(0)}X]` : ""} $${w.symbol}`)
+    .join("\n");
+  return (
+    <span
+      title={`Previously recorded on ${history.priorTokenCount} other token(s):\n${detail}`}
+      className="ml-0.5 cursor-help rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+    >
+      🔥 {history.priorTokenCount}
+    </span>
   );
 }
 

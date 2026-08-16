@@ -18,6 +18,7 @@ import {
 } from "@/lib/birdeye";
 import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
+import { fetchWalletHistories } from "@/lib/db/history";
 import type { TokenMeta, WalletTrader } from "@/lib/types";
 
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -73,8 +74,10 @@ export async function GET(request: NextRequest) {
     try {
       const token = await fetchTokenMeta(address);
       const traders = await fetchTopTraders(address, limit, token.estimatedSupply);
+      // Read prior wins before persisting, so this scan doesn't show up as its own history.
+      const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
       await persistScan(token, traders);
-      return NextResponse.json({ token, traders, isDemoData: false });
+      return NextResponse.json({ token, traders, histories, isDemoData: false });
     } catch (err) {
       const message = err instanceof SolanaTrackerError ? err.message : "Failed to fetch trader data.";
       const status = err instanceof SolanaTrackerError && err.status ? err.status : 502;
@@ -90,8 +93,9 @@ export async function GET(request: NextRequest) {
   try {
     const token = await fetchEvmTokenMeta(chain as EvmChain, address);
     const traders = await fetchEvmTopTraders(chain as EvmChain, address, limit, token.estimatedSupply);
+    const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
     await persistScan(token, traders);
-    return NextResponse.json({ token, traders, isDemoData: false });
+    return NextResponse.json({ token, traders, histories, isDemoData: false });
   } catch (err) {
     const message = err instanceof BirdeyeError ? err.message : "Failed to fetch trader data.";
     const status = err instanceof BirdeyeError && err.status ? err.status : 502;

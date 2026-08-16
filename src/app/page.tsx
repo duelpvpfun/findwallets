@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Chain, TokenMeta, WalletTrader } from "@/lib/types";
+import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 
 const LIMIT_OPTIONS = [100, 150, 250, 500] as const;
@@ -34,6 +34,7 @@ export default function Home() {
     token: TokenMeta;
     traders: WalletTrader[];
     isDemoData: boolean;
+    histories?: Record<string, WalletHistory>;
   } | null>(null);
 
   async function runSearch(ca: string, searchChain: Chain) {
@@ -213,7 +214,12 @@ export default function Home() {
         <div className="mt-8">
           {result ? (
             <div className="animate-fade-in">
-              <TradersTable token={result.token} traders={result.traders} isDemoData={result.isDemoData} />
+              <TradersTable
+                token={result.token}
+                traders={result.traders}
+                isDemoData={result.isDemoData}
+                histories={result.histories}
+              />
             </div>
           ) : (
             loading ? (
