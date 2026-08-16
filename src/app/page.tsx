@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
+import PaywallDialog from "@/components/PaywallDialog";
+import { CLAIM_STORAGE_KEY, OWNER_STORAGE_KEY, TIER_OPTIONS } from "@/lib/tiers";
 
-const LIMIT_OPTIONS = [100, 150, 250, 500] as const;
+const LIMIT_OPTIONS = [50, 100, 250, 500] as const;
+const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
 
 const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }> = [
   { value: "solana", label: "Solana", short: "SOL", dot: "bg-violet-400" },
@@ -36,32 +39,120 @@ export default function Home() {
     isDemoData: boolean;
     histories?: Record<string, WalletHistory>;
   } | null>(null);
+  const [ownerKey, setOwnerKey] = useState<string | null>(null);
+  const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
-  async function runSearch(ca: string, searchChain: Chain) {
-    if (!ca.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/top-traders?address=${encodeURIComponent(ca.trim())}&limit=${limit}&chain=${searchChain}`
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
-        setResult(null);
+  // Restore owner key / unused credit, and let the owner install their key via ?key=…
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restore() {
+      const params = new URLSearchParams(window.location.search);
+      const keyFromUrl = params.get("key");
+      if (keyFromUrl) {
+        localStorage.setItem(OWNER_STORAGE_KEY, keyFromUrl);
+        params.delete("key");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+      }
+      const storedKey = localStorage.getItem(OWNER_STORAGE_KEY);
+      if (!cancelled) setOwnerKey(storedKey);
+
+      const stored = localStorage.getItem(CLAIM_STORAGE_KEY);
+      if (!stored) return;
+      let parsed: { token: string; tier: number };
+      try {
+        parsed = JSON.parse(stored);
+      } catch {
+        localStorage.removeItem(CLAIM_STORAGE_KEY);
         return;
       }
-      setResult(data);
-    } catch {
-      setError("Failed to reach the server.");
-    } finally {
-      setLoading(false);
+      // A credit is single-use, so verify it's still unspent before showing it.
+      try {
+        const res = await fetch(`/api/claim?claim=${encodeURIComponent(parsed.token)}`);
+        const status = await res.json();
+        if (cancelled) return;
+        if (status.valid) setClaim({ token: parsed.token, tier: status.tier });
+        else localStorage.removeItem(CLAIM_STORAGE_KEY);
+      } catch {
+        // offline or transient failure — keep the stored credit for the next visit
+      }
     }
+
+    void restore();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const runSearch = useCallback(
+    async (ca: string, searchChain: Chain, searchLimit: number, claimToken?: string | null) => {
+      if (!ca.trim()) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const qs = new URLSearchParams({
+          address: ca.trim(),
+          limit: String(searchLimit),
+          chain: searchChain,
+        });
+        if (claimToken) qs.set("claim", claimToken);
+        const res = await fetch(`/api/top-traders?${qs}`, {
+          headers: ownerKey ? { "x-owner-key": ownerKey } : undefined,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 402) {
+            localStorage.removeItem(CLAIM_STORAGE_KEY);
+            setClaim(null);
+            setPaywallOpen(true);
+          }
+          setError(data.error ?? "Something went wrong.");
+          setResult(null);
+          return;
+        }
+        // The credit is spent once the scan returns wallets.
+        if (claimToken && data.traders?.length > 0) {
+          localStorage.removeItem(CLAIM_STORAGE_KEY);
+          setClaim(null);
+        }
+        setResult(data);
+      } catch {
+        setError("Failed to reach the server.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [ownerKey]
+  );
+
+  /** Owners scan free; everyone else needs an unspent credit covering the size. */
+  function startSearch(ca: string, searchChain: Chain) {
+    if (!ca.trim()) return;
+    if (!PAYMENTS_ENABLED || ownerKey) {
+      void runSearch(ca, searchChain, limit);
+      return;
+    }
+    if (claim && claim.tier >= limit) {
+      void runSearch(ca, searchChain, limit, claim.token);
+      return;
+    }
+    setPaywallOpen(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handlePaid(claimToken: string, tier: number) {
+    localStorage.setItem(CLAIM_STORAGE_KEY, JSON.stringify({ token: claimToken, tier }));
+    setClaim({ token: claimToken, tier });
+    setPaywallOpen(false);
+    const paidLimit = (LIMIT_OPTIONS.find((o) => o === tier) ?? limit) as (typeof LIMIT_OPTIONS)[number];
+    setLimit(paidLimit);
+    void runSearch(address, chain, paidLimit, claimToken);
+  }
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await runSearch(address, chain);
+    startSearch(address, chain);
   }
 
   return (
@@ -161,6 +252,9 @@ export default function Home() {
                 {LIMIT_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>
                     Top {opt}
+                    {PAYMENTS_ENABLED && !ownerKey
+                      ? ` · ${TIER_OPTIONS.find((t) => t.limit === opt)?.price ?? ""}`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -176,6 +270,8 @@ export default function Home() {
                   <Spinner />
                   Scanning…
                 </>
+              ) : PAYMENTS_ENABLED && !ownerKey && !(claim && claim.tier >= limit) ? (
+                `Unlock Top ${limit}`
               ) : (
                 "Find Wallets"
               )}
@@ -183,13 +279,21 @@ export default function Home() {
           </div>
         </form>
 
+        {(ownerKey || claim) && (
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            <span className="rounded-full border border-emerald-900/60 bg-emerald-950/30 px-3 py-1 font-medium text-emerald-300">
+              {ownerKey ? "Owner access · unlimited free scans" : `Credit ready · Top ${claim!.tier}`}
+            </span>
+          </div>
+        )}
+
         {!result && !error && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
             <span>Try:</span>
             <button
               onClick={() => {
                 setAddress(EXAMPLES[chain].address);
-                runSearch(EXAMPLES[chain].address, chain);
+                startSearch(EXAMPLES[chain].address, chain);
               }}
               className="rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1 font-mono text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
             >
@@ -255,6 +359,14 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      {paywallOpen && (
+        <PaywallDialog
+          initialLimit={limit}
+          onClose={() => setPaywallOpen(false)}
+          onPaid={handlePaid}
+        />
+      )}
     </div>
   );
 }

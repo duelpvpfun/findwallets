@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
+  formatCompactNumber,
   formatDuration,
   formatMultiple,
   formatPercent,
@@ -276,7 +277,7 @@ export default function TradersTable({ token, traders, isDemoData, histories = {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-[1320px] text-left text-sm">
           <thead>
             <tr className="border-b border-neutral-800/80 text-[11px] uppercase tracking-wide text-neutral-500">
               <th className="w-10 py-2.5 pl-5">
@@ -292,6 +293,12 @@ export default function TradersTable({ token, traders, isDemoData, histories = {
               <th className="py-2.5 font-medium">Last Trade</th>
               <th className="py-2.5 font-medium">Avg Entry</th>
               <th className="py-2.5 font-medium">Avg Exit</th>
+              <th className="py-2.5 font-medium" title="Total USD spent buying this token">
+                Bought
+              </th>
+              <th className="py-2.5 font-medium" title="Total USD received selling this token">
+                Sold
+              </th>
               <th className="py-2.5 font-medium">Avg X</th>
               <th className="py-2.5 font-medium">% PNL</th>
               <th className="py-2.5 font-medium">$ PNL</th>
@@ -303,7 +310,7 @@ export default function TradersTable({ token, traders, isDemoData, histories = {
           <tbody>
             {filteredTraders.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-sm text-neutral-500">
+                <td colSpan={11} className="py-12 text-center text-sm text-neutral-500">
                   No traders match the current filters.
                 </td>
               </tr>
@@ -360,6 +367,18 @@ export default function TradersTable({ token, traders, isDemoData, histories = {
                 </td>
                 <td className="py-3 tabular-nums text-neutral-300">
                   {showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
+                </td>
+                <td className="py-3 tabular-nums">
+                  <div className="text-neutral-200">{formatUsd(t.boughtUsd)}</div>
+                  <div className="text-[11px] text-neutral-500">
+                    {formatCompactNumber(t.boughtTokenAmount)} {token.symbol}
+                  </div>
+                </td>
+                <td className="py-3 tabular-nums">
+                  <div className="text-neutral-200">{formatUsd(t.soldUsd)}</div>
+                  <div className="text-[11px] text-neutral-500">
+                    {formatCompactNumber(t.soldTokenAmount)} {token.symbol}
+                  </div>
                 </td>
                 <td className="py-3 tabular-nums font-medium text-neutral-200">
                   {formatMultiple(t.avgMultipleX)}

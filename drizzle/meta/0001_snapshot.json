@@ -1,0 +1,689 @@
+{
+  "id": "63eb6392-7f29-4183-82ec-86aebef0dd51",
+  "prevId": "723e0e7b-a74c-4e18-a263-26b63a1c8fb6",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.observations": {
+      "name": "observations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "wallet_id": {
+          "name": "wallet_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_id": {
+          "name": "token_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rank": {
+          "name": "rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "realized_pnl_usd": {
+          "name": "realized_pnl_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roi_percent": {
+          "name": "roi_percent",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "multiple_x": {
+          "name": "multiple_x",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_buy_price_usd": {
+          "name": "avg_buy_price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_sell_price_usd": {
+          "name": "avg_sell_price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_buy_mcap_usd": {
+          "name": "avg_buy_mcap_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_sell_mcap_usd": {
+          "name": "avg_sell_mcap_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invested_usd": {
+          "name": "invested_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proceeds_usd": {
+          "name": "proceeds_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ranking_window": {
+          "name": "ranking_window",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "observations_wallet_token_idx": {
+          "name": "observations_wallet_token_idx",
+          "columns": [
+            {
+              "expression": "wallet_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "observations_wallet_id_wallets_id_fk": {
+          "name": "observations_wallet_id_wallets_id_fk",
+          "tableFrom": "observations",
+          "tableTo": "wallets",
+          "columnsFrom": [
+            "wallet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "observations_token_id_tokens_id_fk": {
+          "name": "observations_token_id_tokens_id_fk",
+          "tableFrom": "observations",
+          "tableTo": "tokens",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.scan_credits": {
+      "name": "scan_credits",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "payment_id": {
+          "name": "payment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paylink_id": {
+          "name": "paylink_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tier": {
+          "name": "tier",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payer_wallet": {
+          "name": "payer_wallet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_chain": {
+          "name": "consumed_chain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_token_address": {
+          "name": "consumed_token_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "scan_credits_payment_id_idx": {
+          "name": "scan_credits_payment_id_idx",
+          "columns": [
+            {
+              "expression": "payment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scan_credits_claim_token_idx": {
+          "name": "scan_credits_claim_token_idx",
+          "columns": [
+            {
+              "expression": "claim_token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tokens": {
+      "name": "tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chain": {
+          "name": "chain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_scanned_at": {
+          "name": "first_scanned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_scanned_at": {
+          "name": "last_scanned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "scan_count": {
+          "name": "scan_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "tokens_chain_address_idx": {
+          "name": "tokens_chain_address_idx",
+          "columns": [
+            {
+              "expression": "chain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wallet_tokens": {
+      "name": "wallet_tokens",
+      "schema": "",
+      "columns": {
+        "wallet_id": {
+          "name": "wallet_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_id": {
+          "name": "token_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "best_rank": {
+          "name": "best_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "realized_pnl_usd": {
+          "name": "realized_pnl_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roi_percent": {
+          "name": "roi_percent",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "multiple_x": {
+          "name": "multiple_x",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_buy_price_usd": {
+          "name": "avg_buy_price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_sell_price_usd": {
+          "name": "avg_sell_price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_buy_mcap_usd": {
+          "name": "avg_buy_mcap_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avg_sell_mcap_usd": {
+          "name": "avg_sell_mcap_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invested_usd": {
+          "name": "invested_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proceeds_usd": {
+          "name": "proceeds_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ranking_window": {
+          "name": "ranking_window",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "times_observed": {
+          "name": "times_observed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "first_observed_at": {
+          "name": "first_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_observed_at": {
+          "name": "last_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_trade_ms": {
+          "name": "last_trade_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "wallet_tokens_pnl_idx": {
+          "name": "wallet_tokens_pnl_idx",
+          "columns": [
+            {
+              "expression": "realized_pnl_usd",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "wallet_tokens_wallet_id_wallets_id_fk": {
+          "name": "wallet_tokens_wallet_id_wallets_id_fk",
+          "tableFrom": "wallet_tokens",
+          "tableTo": "wallets",
+          "columnsFrom": [
+            "wallet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "wallet_tokens_token_id_tokens_id_fk": {
+          "name": "wallet_tokens_token_id_tokens_id_fk",
+          "tableFrom": "wallet_tokens",
+          "tableTo": "tokens",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "wallet_tokens_wallet_id_token_id_pk": {
+          "name": "wallet_tokens_wallet_id_token_id_pk",
+          "columns": [
+            "wallet_id",
+            "token_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wallets": {
+      "name": "wallets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chain": {
+          "name": "chain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "identity_name": {
+          "name": "identity_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "twitter": {
+          "name": "twitter",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "is_bot": {
+          "name": "is_bot",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "lifetime_pnl_usd": {
+          "name": "lifetime_pnl_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lifetime_win_rate": {
+          "name": "lifetime_win_rate",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lifetime_trades": {
+          "name": "lifetime_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lifetime_tokens_traded": {
+          "name": "lifetime_tokens_traded",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lifetime_updated_at": {
+          "name": "lifetime_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "times_seen": {
+          "name": "times_seen",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "wallets_chain_address_idx": {
+          "name": "wallets_chain_address_idx",
+          "columns": [
+            {
+              "expression": "chain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallets_lifetime_pnl_idx": {
+          "name": "wallets_lifetime_pnl_idx",
+          "columns": [
+            {
+              "expression": "lifetime_pnl_usd",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

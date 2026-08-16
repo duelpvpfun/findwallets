@@ -1,0 +1,64 @@
+import "server-only";
+import { timingSafeEqual } from "node:crypto";
+import { checkCredit, type Tier } from "./db/credits";
+
+/** Free unlimited access for the owner. Compared in constant time so the key
+ * can't be recovered by timing the endpoint. */
+function isOwnerKey(key: string | null): boolean {
+  const expected = process.env.OWNER_ACCESS_KEY;
+  if (!expected || !key) return false;
+  const a = Buffer.from(key);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export type AccessDenyReason = "payment_required" | "credit_used" | "credit_invalid";
+
+export interface AccessResult {
+  allowed: boolean;
+  /** Highest wallet count this request may receive. */
+  maxLimit: number;
+  isOwner: boolean;
+  /** Present only when a paid credit should be consumed after a successful scan. */
+  claimToken?: string;
+  reason?: AccessDenyReason;
+}
+
+/**
+ * Decides how many wallets a request is entitled to. Gating lives here, on the
+ * server, because anything enforced in the browser can be bypassed via devtools.
+ * When PAYMENTS_ENABLED is not "true" the app stays fully open (current behavior).
+ */
+export async function resolveAccess(
+  ownerKey: string | null,
+  claimToken: string | null
+): Promise<AccessResult> {
+  if (isOwnerKey(ownerKey)) {
+    return { allowed: true, maxLimit: Number.MAX_SAFE_INTEGER, isOwner: true };
+  }
+
+  if (process.env.PAYMENTS_ENABLED !== "true") {
+    return { allowed: true, maxLimit: Number.MAX_SAFE_INTEGER, isOwner: false };
+  }
+
+  if (!claimToken) {
+    return { allowed: false, maxLimit: 0, isOwner: false, reason: "payment_required" };
+  }
+
+  const status = await checkCredit(claimToken);
+  if (!status.valid) {
+    return {
+      allowed: false,
+      maxLimit: 0,
+      isOwner: false,
+      reason: status.reason === "already_used" ? "credit_used" : "credit_invalid",
+    };
+  }
+
+  return {
+    allowed: true,
+    maxLimit: status.tier as Tier,
+    isOwner: false,
+    claimToken,
+  };
+}

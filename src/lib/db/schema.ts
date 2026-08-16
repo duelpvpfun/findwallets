@@ -115,3 +115,31 @@ export const walletTokens = pgTable(
     index("wallet_tokens_pnl_idx").on(t.realizedPnlUsd),
   ]
 );
+
+/**
+ * One row per completed Helio payment. Written only by the server-side webhook —
+ * never by the browser — and consumed by exactly one scan.
+ */
+export const scanCredits = pgTable(
+  "scan_credits",
+  {
+    id: serial("id").primaryKey(),
+    /** Helio transaction id; unique so a replayed webhook can't mint credits. */
+    paymentId: text("payment_id").notNull(),
+    paylinkId: text("paylink_id"),
+    /** Max wallets this credit unlocks (50/100/250/500). */
+    tier: integer("tier").notNull(),
+    /** Random token handed to the buyer; required to redeem. */
+    claimToken: text("claim_token").notNull(),
+    email: text("email"),
+    payerWallet: text("payer_wallet"),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    consumedChain: text("consumed_chain"),
+    consumedTokenAddress: text("consumed_token_address"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("scan_credits_payment_id_idx").on(t.paymentId),
+    uniqueIndex("scan_credits_claim_token_idx").on(t.claimToken),
+  ]
+);

@@ -11,6 +11,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@heliofi/checkout-react": "^4.0.9",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.1",
     "postgres": "^3.4.9",
