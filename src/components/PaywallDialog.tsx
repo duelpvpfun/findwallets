@@ -41,6 +41,17 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [nonce] = useState(() => crypto.randomUUID());
   const shortNonceId = nonce.slice(0, 12); // First 12 chars of UUID (48 bits entropy)
 
+  // Monitor transaction payload size to prevent Phantom warnings
+  useEffect(() => {
+    const additionalJSON = { nonce: shortNonceId };
+    const payloadStr = JSON.stringify(additionalJSON);
+    const payloadBytes = new Blob([payloadStr]).size; // Get size in bytes
+    // Warn if approaching transaction size limits (1232 byte limit is Phantom threshold)
+    if (payloadBytes > 200) {
+      console.warn('[PaywallDialog] Transaction payload size:', payloadBytes, 'bytes');
+    }
+  }, [shortNonceId]);
+
   // Closing mid-confirmation would strand a paid credit, so it's blocked there.
   const locked = status === "confirming" || status === "success";
   const requestClose = useCallback(() => {
@@ -258,8 +269,17 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                     onPending: (event) => void confirmPayment(event?.transaction ?? null),
                     onError: (event) => {
                       setStatus("error");
+                      const errorMsg = event?.errorMessage || "";
+                      // Detect Phantom's malicious dapp warning
+                      const isPhantomWarning =
+                        errorMsg.toLowerCase().includes("malicious") ||
+                        errorMsg.toLowerCase().includes("unknown dapp") ||
+                        errorMsg.toLowerCase().includes("suspicious");
+                      if (isPhantomWarning) {
+                        console.error('[PaywallDialog] Phantom warning detected:', errorMsg);
+                      }
                       setMessage(
-                        event?.errorMessage ||
+                        errorMsg ||
                           "The payment didn't go through and you weren't charged. Try again."
                       );
                     },
