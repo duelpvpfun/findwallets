@@ -255,7 +255,6 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                     neutralColor: "#404040",
                     display: "inline",
                     stretchFullWidth: true,
-                    additionalJSON: { nonce: shortNonceId },
                     onSuccess: (event) => {
                       const data = event?.data as Record<string, unknown> | undefined;
                       const paymentId =
@@ -263,7 +262,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                         (data?.id as string) ||
                         (data?.transactionSignature as string) ||
                         null;
-                      // A missing id is fine: the nonce resolves the credit on its own.
+                      // Don't pass nonce through Helio - keep it browser-only to reduce transaction payload
                       void confirmPayment(paymentId);
                     },
                     onPending: (event) => void confirmPayment(event?.transaction ?? null),
