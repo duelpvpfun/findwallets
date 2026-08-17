@@ -187,3 +187,25 @@ export const paymentIntents = pgTable(
   },
   (t) => [index("payment_intents_nonce_hash_idx").on(t.nonceHash)]
 );
+
+/**
+ * Caches the upstream wallet-detail response (Solana Tracker / Birdeye) per
+ * (chain, token, wallet). Every row click re-fetching this from upstream is
+ * what actually burns paid API credits, and the same wallet is frequently
+ * re-clicked by the same buyer and re-fetched across completely different
+ * buyers scanning the same trending token — this row is shared by all of them.
+ */
+export const walletDetailCache = pgTable(
+  "wallet_detail_cache",
+  {
+    id: serial("id").primaryKey(),
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    payload: text("payload").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("wallet_detail_cache_key_idx").on(t.chain, t.tokenAddress, t.walletAddress),
+  ]
+);

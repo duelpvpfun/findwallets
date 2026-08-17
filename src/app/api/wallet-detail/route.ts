@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Chain } from "@/lib/types";
+import type { Chain, WalletDetail } from "@/lib/types";
 import { fetchWalletDetail, isSolanaTrackerConfigured } from "@/lib/solanaTracker";
 import { fetchEvmWalletDetail, isBirdeyeConfigured, type EvmChain } from "@/lib/birdeye";
 import { upstreamMessage, upstreamStatus } from "@/lib/upstream";
@@ -7,6 +7,7 @@ import { isChain, isValidAddressForChain } from "@/lib/chains";
 import { isOwnerKey } from "@/lib/access";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { verifyScanSession } from "@/lib/scanSession";
+import { getCachedWalletDetail, setCachedWalletDetail } from "@/lib/db/detailCache";
 
 // Each call costs upstream credits, so it is gated on a scan session and capped
 // per IP. Wallet clicks are bursty (a buyer opening rows quickly) hence the
@@ -61,10 +62,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "not_configured" }, { status: 200 });
   }
 
+  // A wallet+token pair costs the same upstream credits no matter who asks, so
+  // the cache is shared across every buyer, not just repeat clicks from one.
+  const cached = await getCachedWalletDetail<WalletDetail>(chain, tokenAddress, walletAddress);
+  if (cached) {
+    return NextResponse.json({ ...cached, isDemoData: false });
+  }
+
   try {
     const detail = isSolana
       ? await fetchWalletDetail(tokenAddress, walletAddress, estimatedSupply)
       : await fetchEvmWalletDetail(chain as EvmChain, tokenAddress, walletAddress, estimatedSupply);
+    await setCachedWalletDetail(chain, tokenAddress, walletAddress, detail);
     return NextResponse.json({ ...detail, isDemoData: false });
   } catch (err) {
     return NextResponse.json(

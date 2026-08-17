@@ -12,6 +12,7 @@ import {
 } from "@/lib/format";
 import WalletDetailModal from "./WalletDetailModal";
 import ExportDialog from "./ExportDialog";
+import ShareCardModal from "./ShareCardModal";
 
 interface TradersTableProps {
   token: TokenMeta;
@@ -64,6 +65,7 @@ export default function TradersTable({
 }: TradersTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeWallet, setActiveWallet] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<WalletTrader | null>(null);
   const [showMcap, setShowMcap] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -455,6 +457,21 @@ export default function TradersTable({
                       <span className="text-xs text-neutral-500">({t.nickname})</span>
                     )}
                     <HistoryBadge history={histories[t.address]} />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShareTarget(t);
+                      }}
+                      title="Share PNL card"
+                      className="ml-0.5 rounded-md p-1 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="18" cy="5" r="3" />
+                        <circle cx="6" cy="12" r="3" />
+                        <circle cx="18" cy="19" r="3" />
+                        <path d="M8.6 13.5l6.8 3.9M15.4 6.6l-6.8 3.9" />
+                      </svg>
+                    </button>
                   </div>
                 </td>
                 <td className="py-3 tabular-nums text-neutral-300">
@@ -523,6 +540,10 @@ export default function TradersTable({
           traders={exportTargets}
           onClose={() => setExportTargets(null)}
         />
+      )}
+
+      {shareTarget && (
+        <ShareCardModal token={token} trader={shareTarget} onClose={() => setShareTarget(null)} />
       )}
     </div>
   );
