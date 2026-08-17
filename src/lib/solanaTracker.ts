@@ -185,7 +185,12 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   const sellUsd = h.volume.sellUsd ?? 0;
   const avgBuyPriceUsd = tokensBought > 0 ? buyUsd / tokensBought : 0;
   const avgSellPriceUsd = tokensSold > 0 ? sellUsd / tokensSold : 0;
-  const remainingPercent = tokensBought > 0 ? Math.max(0, ((tokensBought - tokensSold) / tokensBought) * 100) : 0;
+
+  // Measure the leftover against the live balance, not bought-minus-sold: tokens
+  // arrive by transfer and airdrop too, so on 21 of Pnut's top 100 wallets sold
+  // exceeds bought and the subtraction invents a position that is already closed.
+  const balance = h.current?.balance ?? 0;
+  const remainingPercent = tokensBought > 0 ? Math.min(100, (balance / tokensBought) * 100) : 0;
 
   // Avg entry/exit are lifetime volume-weighted averages across every fill, so their
   // ratio describes price movement, NOT what the wallet actually made: a trader who
@@ -365,7 +370,9 @@ export async function fetchWalletDetail(
           proceedsUsd: p.proceeds ?? 0,
           avgBuyPriceUsd,
           avgSellPriceUsd,
-          multipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+          // Same realized-over-deployed basis as the main table, so a wallet's
+          // detail panel cannot disagree with the row that opened it.
+          multipleX: (p.invested ?? 0) > 0 ? 1 + (p.pnl?.realized ?? 0) / (p.invested ?? 0) : 0,
           tradeCount: p.counts?.total ?? 0,
           holdTimeSecs: p.timing?.holdTimeSecs ?? null,
           lastTradeMs: p.timing?.lastTrade ?? null,

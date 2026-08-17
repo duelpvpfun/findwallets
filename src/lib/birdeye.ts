@@ -408,7 +408,12 @@ export async function fetchEvmWalletDetail(
           proceedsUsd: t.cashflow_usd?.total_sold ?? 0,
           avgBuyPriceUsd,
           avgSellPriceUsd,
-          multipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+          // Same realized-over-deployed basis as the main table, so a wallet's
+          // detail panel cannot disagree with the row that opened it.
+          multipleX:
+            (t.cashflow_usd?.total_invested ?? 0) > 0
+              ? 1 + (t.pnl?.realized_profit_usd ?? 0) / (t.cashflow_usd?.total_invested ?? 0)
+              : 0,
           tradeCount: t.counts?.total_trade ?? 0,
           holdTimeSecs: null,
           lastTradeMs: t.last_trade_unix_time ? t.last_trade_unix_time * 1000 : null,

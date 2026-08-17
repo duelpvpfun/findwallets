@@ -37,6 +37,9 @@ export interface TickerWallet {
 
 const NATIVE_SYMBOL: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
 
+/** Smallest cost basis that still makes a multiple worth showing publicly. */
+const MIN_TICKER_INVESTED_USD = 1000;
+
 /** Keeps the ticker looking real without giving away a scannable address. */
 function maskAddress(address: string): string {
   return address.length <= 10 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`;
@@ -204,6 +207,9 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
       and(
         eq(wallets.isBot, false),
         gt(walletTokens.realizedPnlUsd, 0),
+        // Below a real cost basis the multiple stops meaning anything: airdropped
+        // and transferred-in supply produced a "184838x" Pnut row off $16 spent.
+        gt(walletTokens.investedUsd, MIN_TICKER_INVESTED_USD),
         isNotNull(walletTokens.avgBuyMcapUsd),
         isNotNull(walletTokens.avgSellMcapUsd),
         isNotNull(walletTokens.multipleX),
