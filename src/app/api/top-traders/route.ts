@@ -6,16 +6,15 @@ import {
   fetchTopTraders,
   fetchWalletLifetimeBatch,
   isSolanaTrackerConfigured,
-  SolanaTrackerError,
 } from "@/lib/solanaTracker";
 import {
-  BirdeyeError,
   fetchEvmTokenMeta,
   fetchEvmTopTraders,
   fetchEvmWalletLifetime,
   isBirdeyeConfigured,
   type EvmChain,
 } from "@/lib/birdeye";
+import { upstreamMessage, upstreamStatus } from "@/lib/upstream";
 import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
 import { fetchWalletHistories } from "@/lib/db/history";
@@ -140,42 +139,23 @@ export async function GET(request: NextRequest) {
   }
   const limit = Math.min(requestedLimit, access.maxLimit);
 
-  if (chain === "solana") {
-    if (!isSolanaTrackerConfigured()) {
-      // No API key configured: serve deterministic mock data so the UI is still
-      // usable, but flag it clearly so it's never mistaken for real data.
-      const data = buildTopTraders(address, limit, chain);
-      return NextResponse.json({ ...data, isDemoData: true });
-    }
-    try {
-      const token = await fetchTokenMeta(address);
-      const traders = await fetchTopTraders(address, limit, token.estimatedSupply);
-      // Read prior wins before persisting, so this scan doesn't show up as its own history.
-      const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
-      await persistScan(token, traders);
-      await settleCredit(access, chain, address, traders.length);
-      return NextResponse.json({
-        token,
-        traders,
-        histories,
-        isDemoData: false,
-        scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
-      });
-    } catch (err) {
-      const message = err instanceof SolanaTrackerError ? err.message : "Failed to fetch trader data.";
-      const status = err instanceof SolanaTrackerError && err.status ? err.status : 502;
-      return NextResponse.json({ error: message }, { status });
-    }
+  const isSolana = chain === "solana";
+
+  // No API key configured: serve deterministic mock data so the UI is still
+  // usable, but flag it clearly so it's never mistaken for real data.
+  if (isSolana ? !isSolanaTrackerConfigured() : !isBirdeyeConfigured()) {
+    return NextResponse.json({ ...buildTopTraders(address, limit, chain), isDemoData: true });
   }
 
-  // BSC / Base via Birdeye.
-  if (!isBirdeyeConfigured()) {
-    const data = buildTopTraders(address, limit, chain);
-    return NextResponse.json({ ...data, isDemoData: true });
-  }
   try {
-    const token = await fetchEvmTokenMeta(chain as EvmChain, address);
-    const traders = await fetchEvmTopTraders(chain as EvmChain, address, limit, token.estimatedSupply);
+    const token = isSolana
+      ? await fetchTokenMeta(address)
+      : await fetchEvmTokenMeta(chain as EvmChain, address);
+    const traders = isSolana
+      ? await fetchTopTraders(address, limit, token.estimatedSupply)
+      : await fetchEvmTopTraders(chain as EvmChain, address, limit, token.estimatedSupply);
+
+    // Read prior wins before persisting, so this scan doesn't show up as its own history.
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
     await persistScan(token, traders);
     await settleCredit(access, chain, address, traders.length);
@@ -198,8 +178,6 @@ export async function GET(request: NextRequest) {
       scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
     });
   } catch (err) {
-    const message = err instanceof BirdeyeError ? err.message : "Failed to fetch trader data.";
-    const status = err instanceof BirdeyeError && err.status ? err.status : 502;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }
 }

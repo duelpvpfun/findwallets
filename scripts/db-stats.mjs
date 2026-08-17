@@ -4,7 +4,7 @@ import postgres from "postgres";
 const url = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
 const sql = postgres(url, { prepare: false });
 
-for (const t of ["tokens", "wallets", "observations", "wallet_tokens"]) {
+for (const t of ["tokens", "wallets", "wallet_tokens"]) {
   const [{ c }] = await sql.unsafe(`select count(*)::int as c from ${t}`);
   console.log(t.padEnd(15), c);
 }

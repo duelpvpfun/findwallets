@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Chain } from "@/lib/types";
-import { fetchWalletDetail, isSolanaTrackerConfigured, SolanaTrackerError } from "@/lib/solanaTracker";
-import { BirdeyeError, fetchEvmWalletDetail, isBirdeyeConfigured, type EvmChain } from "@/lib/birdeye";
+import { fetchWalletDetail, isSolanaTrackerConfigured } from "@/lib/solanaTracker";
+import { fetchEvmWalletDetail, isBirdeyeConfigured, type EvmChain } from "@/lib/birdeye";
+import { upstreamMessage, upstreamStatus } from "@/lib/upstream";
 import { isChain, isValidAddressForChain } from "@/lib/chains";
 import { isOwnerKey } from "@/lib/access";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
@@ -55,29 +56,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (chain === "solana") {
-    if (!isSolanaTrackerConfigured()) {
-      return NextResponse.json({ error: "not_configured" }, { status: 200 });
-    }
-    try {
-      const detail = await fetchWalletDetail(tokenAddress, walletAddress, estimatedSupply);
-      return NextResponse.json({ ...detail, isDemoData: false });
-    } catch (err) {
-      const message = err instanceof SolanaTrackerError ? err.message : "Failed to fetch wallet detail.";
-      const status = err instanceof SolanaTrackerError && err.status ? err.status : 502;
-      return NextResponse.json({ error: message }, { status });
-    }
-  }
-
-  if (!isBirdeyeConfigured()) {
+  const isSolana = chain === "solana";
+  if (isSolana ? !isSolanaTrackerConfigured() : !isBirdeyeConfigured()) {
     return NextResponse.json({ error: "not_configured" }, { status: 200 });
   }
+
   try {
-    const detail = await fetchEvmWalletDetail(chain as EvmChain, tokenAddress, walletAddress, estimatedSupply);
+    const detail = isSolana
+      ? await fetchWalletDetail(tokenAddress, walletAddress, estimatedSupply)
+      : await fetchEvmWalletDetail(chain as EvmChain, tokenAddress, walletAddress, estimatedSupply);
     return NextResponse.json({ ...detail, isDemoData: false });
   } catch (err) {
-    const message = err instanceof BirdeyeError ? err.message : "Failed to fetch wallet detail.";
-    const status = err instanceof BirdeyeError && err.status ? err.status : 502;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json(
+      { error: upstreamMessage(err, "Failed to fetch wallet detail.") },
+      { status: upstreamStatus(err) }
+    );
   }
 }

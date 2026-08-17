@@ -8,8 +8,8 @@ interface TickerWallet {
   address: string;
   chain: Chain;
   symbol: string;
-  investedUsd: number;
-  investedNative: number | null;
+  boughtUsd: number;
+  boughtNative: number | null;
   nativeSymbol: string;
   avgBuyMcapUsd: number;
   avgSellMcapUsd: number;
@@ -125,9 +125,9 @@ export default function WalletTicker() {
 
 function WalletRow({ wallet, nativeMode }: { wallet: TickerWallet; nativeMode: boolean }) {
   const buyLabel =
-    nativeMode && wallet.investedNative !== null
-      ? `${formatCompactNumber(wallet.investedNative)} ${wallet.nativeSymbol}`
-      : formatUsd(wallet.investedUsd);
+    nativeMode && wallet.boughtNative !== null
+      ? `${formatCompactNumber(wallet.boughtNative)} ${wallet.nativeSymbol}`
+      : formatUsd(wallet.boughtUsd);
 
   return (
     <div

@@ -63,34 +63,6 @@ export const wallets = pgTable(
   ]
 );
 
-/** Append-only log: one row per (wallet, token, scan). Never updated. */
-export const observations = pgTable(
-  "observations",
-  {
-    id: serial("id").primaryKey(),
-    walletId: integer("wallet_id")
-      .notNull()
-      .references(() => wallets.id),
-    tokenId: integer("token_id")
-      .notNull()
-      .references(() => tokens.id),
-    rank: integer("rank"),
-    realizedPnlUsd: doublePrecision("realized_pnl_usd").notNull(),
-    roiPercent: doublePrecision("roi_percent"),
-    multipleX: doublePrecision("multiple_x"),
-    avgBuyPriceUsd: doublePrecision("avg_buy_price_usd"),
-    avgSellPriceUsd: doublePrecision("avg_sell_price_usd"),
-    avgBuyMcapUsd: doublePrecision("avg_buy_mcap_usd"),
-    avgSellMcapUsd: doublePrecision("avg_sell_mcap_usd"),
-    investedUsd: doublePrecision("invested_usd"),
-    proceedsUsd: doublePrecision("proceeds_usd"),
-    /** "all_time" (Solana) or "90d" (BSC/Base) — governs whether lower rescans overwrite. */
-    rankingWindow: text("ranking_window").notNull(),
-    observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index("observations_wallet_token_idx").on(t.walletId, t.tokenId)]
-);
-
 /** Current best-known truth per (wallet, token). Upserted; this is what you query. */
 export const walletTokens = pgTable(
   "wallet_tokens",
@@ -112,7 +84,8 @@ export const walletTokens = pgTable(
     avgSellPriceUsd: doublePrecision("avg_sell_price_usd"),
     avgBuyMcapUsd: doublePrecision("avg_buy_mcap_usd"),
     avgSellMcapUsd: doublePrecision("avg_sell_mcap_usd"),
-    investedUsd: doublePrecision("invested_usd"),
+    /** Gross USD bought. Not a net cost basis — sale proceeds are `proceedsUsd`. */
+    boughtUsd: doublePrecision("bought_usd"),
     proceedsUsd: doublePrecision("proceeds_usd"),
     rankingWindow: text("ranking_window").notNull(),
     timesObserved: integer("times_observed").notNull().default(1),

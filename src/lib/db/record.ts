@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { observations, tokens, walletTokens, wallets } from "./schema";
+import { tokens, walletTokens, wallets } from "./schema";
 import type { TokenMeta, WalletTrader } from "../types";
 
 const BOT_TAGS = ["arbitrage-bot", "sniper-bot", "bot", "arbitrage"];
@@ -146,7 +146,7 @@ export async function recordScan(
         avgSellPriceUsd: t.avgSellPriceUsd,
         avgBuyMcapUsd: t.avgBuyMcapUsd,
         avgSellMcapUsd: t.avgSellMcapUsd,
-        investedUsd: t.boughtUsd,
+        boughtUsd: t.boughtUsd,
         proceedsUsd: t.soldUsd,
         lastTradeMs: t.lastTradeMs,
         rankingWindow: token.rankingWindow,
@@ -155,43 +155,6 @@ export async function recordScan(
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (rows.length === 0) return;
-
-  // A rescan usually returns figures identical to the last one, and a row that
-  // repeats its predecessor records nothing a timestamp on wallet_tokens can't.
-
-  const previous = await tx
-    .select({
-      walletId: walletTokens.walletId,
-      realizedPnlUsd: walletTokens.realizedPnlUsd,
-      rank: walletTokens.lastRank,
-    })
-    .from(walletTokens)
-    .where(
-      and(
-        eq(walletTokens.tokenId, tokenRow.id),
-        inArray(
-          walletTokens.walletId,
-          rows.map((r) => r.walletId)
-        )
-      )
-    );
-  const priorByWallet = new Map(previous.map((p) => [p.walletId, p]));
-  const changed = rows.filter((r) => {
-    const prior = priorByWallet.get(r.walletId);
-    return !prior || prior.realizedPnlUsd !== r.realizedPnlUsd || prior.rank !== r.rank;
-  });
-
-  if (changed.length > 0) {
-    // `observations` has no last_trade_ms column, so drop it rather than let
-    // Drizzle try to insert a field the table doesn't have.
-    await tx.insert(observations).values(
-      changed.map((o) => {
-        const { lastTradeMs, ...observation } = o;
-        void lastTradeMs;
-        return observation;
-      })
-    );
-  }
 
   const pnlUpdate = isAllTime
     ? sql`excluded.realized_pnl_usd`
@@ -216,7 +179,7 @@ export async function recordScan(
         avgSellPriceUsd: sql`case when ${keepNewer} then excluded.avg_sell_price_usd else ${walletTokens.avgSellPriceUsd} end`,
         avgBuyMcapUsd: sql`case when ${keepNewer} then excluded.avg_buy_mcap_usd else ${walletTokens.avgBuyMcapUsd} end`,
         avgSellMcapUsd: sql`case when ${keepNewer} then excluded.avg_sell_mcap_usd else ${walletTokens.avgSellMcapUsd} end`,
-        investedUsd: sql`case when ${keepNewer} then excluded.invested_usd else ${walletTokens.investedUsd} end`,
+        boughtUsd: sql`case when ${keepNewer} then excluded.bought_usd else ${walletTokens.boughtUsd} end`,
         proceedsUsd: sql`case when ${keepNewer} then excluded.proceeds_usd else ${walletTokens.proceedsUsd} end`,
         rankingWindow: sql`excluded.ranking_window`,
         timesObserved: sql`${walletTokens.timesObserved} + 1`,

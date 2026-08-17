@@ -21,8 +21,8 @@ export interface TickerWallet {
   address: string;
   chain: Chain;
   symbol: string;
-  investedUsd: number;
-  investedNative: number | null;
+  boughtUsd: number;
+  boughtNative: number | null;
   nativeSymbol: string;
   avgBuyMcapUsd: number;
   avgSellMcapUsd: number;
@@ -38,7 +38,7 @@ export interface TickerWallet {
 const NATIVE_SYMBOL: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
 
 /** Smallest cost basis that still makes a multiple worth showing publicly. */
-const MIN_TICKER_INVESTED_USD = 1000;
+const MIN_TICKER_BOUGHT_USD = 1000;
 
 /** Keeps the ticker looking real without giving away a scannable address. */
 function maskAddress(address: string): string {
@@ -140,7 +140,7 @@ export async function fetchCachedScan(
       avgSellPriceUsd: walletTokens.avgSellPriceUsd,
       avgBuyMcapUsd: walletTokens.avgBuyMcapUsd,
       avgSellMcapUsd: walletTokens.avgSellMcapUsd,
-      investedUsd: walletTokens.investedUsd,
+      boughtUsd: walletTokens.boughtUsd,
       proceedsUsd: walletTokens.proceedsUsd,
       lastTradeMs: walletTokens.lastTradeMs,
     })
@@ -187,7 +187,7 @@ export async function fetchCachedScan(
     sellTxns: 0,
     boughtTokenAmount: 0,
     soldTokenAmount: 0,
-    boughtUsd: r.investedUsd ?? 0,
+    boughtUsd: r.boughtUsd ?? 0,
     soldUsd: r.proceedsUsd ?? 0,
     realizedPnlUsd: r.realizedPnlUsd,
     realizedPnlPercent: r.roiPercent ?? 0,
@@ -227,7 +227,7 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
       multipleX: walletTokens.multipleX,
       avgBuyMcapUsd: walletTokens.avgBuyMcapUsd,
       avgSellMcapUsd: walletTokens.avgSellMcapUsd,
-      investedUsd: walletTokens.investedUsd,
+      boughtUsd: walletTokens.boughtUsd,
     })
     .from(walletTokens)
     .innerJoin(wallets, eq(wallets.id, walletTokens.walletId))
@@ -238,11 +238,11 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
         gt(walletTokens.realizedPnlUsd, 0),
         // Below a real cost basis the multiple stops meaning anything: airdropped
         // and transferred-in supply produced a "184838x" Pnut row off $16 spent.
-        gt(walletTokens.investedUsd, MIN_TICKER_INVESTED_USD),
+        gt(walletTokens.boughtUsd, MIN_TICKER_BOUGHT_USD),
         isNotNull(walletTokens.avgBuyMcapUsd),
         isNotNull(walletTokens.avgSellMcapUsd),
         isNotNull(walletTokens.multipleX),
-        isNotNull(walletTokens.investedUsd),
+        isNotNull(walletTokens.boughtUsd),
         isNotNull(walletTokens.roiPercent)
       )
     )
@@ -268,7 +268,7 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
         gt(walletTokens.realizedPnlUsd, 0),
         // Same cost-basis floor as the headline row above; without it a dust-basis
         // multiple that is too absurd to headline still renders as a chip.
-        gt(walletTokens.investedUsd, MIN_TICKER_INVESTED_USD),
+        gt(walletTokens.boughtUsd, MIN_TICKER_BOUGHT_USD),
         isNotNull(walletTokens.multipleX)
       )
     )
@@ -287,13 +287,13 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
 
   return rows.map((r) => {
     const chain = r.chain as Chain;
-    const invested = r.investedUsd ?? 0;
+    const bought = r.boughtUsd ?? 0;
     return {
       address: maskAddress(r.address),
       chain,
       symbol: r.symbol ?? "?",
-      investedUsd: invested,
-      investedNative: r.nativePriceUsd ? invested / r.nativePriceUsd : null,
+      boughtUsd: bought,
+      boughtNative: r.nativePriceUsd ? bought / r.nativePriceUsd : null,
       nativeSymbol: NATIVE_SYMBOL[chain] ?? "SOL",
       avgBuyMcapUsd: r.avgBuyMcapUsd ?? 0,
       avgSellMcapUsd: r.avgSellMcapUsd ?? 0,
