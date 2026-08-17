@@ -37,20 +37,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   // A secret only this browser knows, sent through Helio and required to redeem
   // the purchase. Without it the public transaction signature would be enough
   // for anyone watching the merchant wallet to steal the buyer's scan.
-  // Use a short ID to minimize transaction size (Phantom flags transactions >1232 bytes).
   const [nonce] = useState(() => crypto.randomUUID());
-  const shortNonceId = nonce.slice(0, 12); // First 12 chars of UUID (48 bits entropy)
-
-  // Monitor transaction payload size to prevent Phantom warnings
-  useEffect(() => {
-    const additionalJSON = { nonce: shortNonceId };
-    const payloadStr = JSON.stringify(additionalJSON);
-    const payloadBytes = new Blob([payloadStr]).size; // Get size in bytes
-    // Warn if approaching transaction size limits (1232 byte limit is Phantom threshold)
-    if (payloadBytes > 200) {
-      console.warn('[PaywallDialog] Transaction payload size:', payloadBytes, 'bytes');
-    }
-  }, [shortNonceId]);
 
   // Closing mid-confirmation would strand a paid credit, so it's blocked there.
   const locked = status === "confirming" || status === "success";
@@ -68,7 +55,8 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
   // The widget's success callback can't be trusted on its own, so we poll our
   // own API until Helio's server-to-server webhook has confirmed the payment.
-  // Send both shortNonceId (in tx) and full nonce (never transmitted on-chain).
+  // The nonce is passed to Helio as additional data and returned by the webhook,
+  // then sent back here so the server can release only this browser's credit.
   const confirmPayment = useCallback(
     async (paymentId: string | null) => {
       setStatus("confirming");
@@ -80,7 +68,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
       while (Date.now() - started < CONFIRM_TIMEOUT_MS) {
         setElapsed(Math.round((Date.now() - started) / 1000));
         try {
-          const query = new URLSearchParams({ nonce, nonceId: shortNonceId });
+          const query = new URLSearchParams({ nonce });
           if (paymentId) query.set("paymentId", paymentId);
           const res = await fetch(`/api/claim?${query.toString()}`);
           if (res.ok) {
@@ -255,28 +243,21 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                     neutralColor: "#404040",
                     display: "inline",
                     stretchFullWidth: true,
+                    additionalJSON: { nonce },
                     onSuccess: (event) => {
                       const data = event?.data as Record<string, unknown> | undefined;
                       const paymentId =
                         event?.transaction ||
+                        event?.swapTransactionSignature ||
                         (data?.id as string) ||
                         (data?.transactionSignature as string) ||
                         null;
-                      // Don't pass nonce through Helio - keep it browser-only to reduce transaction payload
                       void confirmPayment(paymentId);
                     },
                     onPending: (event) => void confirmPayment(event?.transaction ?? null),
                     onError: (event) => {
                       setStatus("error");
                       const errorMsg = event?.errorMessage || "";
-                      // Detect Phantom's malicious dapp warning
-                      const isPhantomWarning =
-                        errorMsg.toLowerCase().includes("malicious") ||
-                        errorMsg.toLowerCase().includes("unknown dapp") ||
-                        errorMsg.toLowerCase().includes("suspicious");
-                      if (isPhantomWarning) {
-                        console.error('[PaywallDialog] Phantom warning detected:', errorMsg);
-                      }
                       setMessage(
                         errorMsg ||
                           "The payment didn't go through and you weren't charged. Try again."
