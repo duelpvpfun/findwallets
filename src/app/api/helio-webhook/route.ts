@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { createCredit, hashNonce, tierForPaylink } from "@/lib/db/credits";
+import { createCredit, hashNonce, logWebhook, tierForPaylink } from "@/lib/db/credits";
 import { isDbConfigured } from "@/lib/db";
 
 /**
@@ -30,10 +30,25 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  const raw = await request.text();
+
+  // Recorded before authorization so a rejected delivery still leaves evidence;
+  // only a prefix of the credential is kept.
+  const trace = async (outcome: string) => {
+    const auth =
+      request.headers.get("authorization") ?? request.headers.get("x-helio-signature") ?? "";
+    await logWebhook({
+      outcome,
+      authHeader: auth ? `${auth.slice(0, 12)}…(len ${auth.length})` : "none",
+      headerNames: [...request.headers.keys()].join(","),
+      query: request.nextUrl.search,
+      body: raw.slice(0, 4000),
+    });
+  };
+
   if (!isAuthorized(request)) {
-    // A rejected webhook is a paid order that never became a credit, so it has to
-    // be visible in the logs rather than failing silently at Helio's end.
     console.error("[helio-webhook] rejected: secret mismatch");
+    await trace("unauthorized");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isDbConfigured()) {
@@ -43,8 +58,9 @@ export async function POST(request: NextRequest) {
 
   let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    body = JSON.parse(raw) as Record<string, unknown>;
   } catch {
+    await trace("invalid_json");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -67,12 +83,14 @@ export async function POST(request: NextRequest) {
       hasPaymentId: Boolean(paymentId),
       keys: Object.keys(data),
     });
+    await trace("missing_ids");
     return NextResponse.json({ error: "Missing paylinkId or payment id" }, { status: 400 });
   }
 
   const tier = tierForPaylink(paylinkId);
   if (!tier) {
     console.error("[helio-webhook] rejected: unknown paylink", { paylinkId });
+    await trace("unknown_paylink");
     return NextResponse.json({ error: "Unknown paylink" }, { status: 400 });
   }
 
@@ -91,6 +109,7 @@ export async function POST(request: NextRequest) {
   });
 
   console.log("[helio-webhook] credit created", { paylinkId, tier, hasNonce: Boolean(nonce) });
+  await trace(nonce ? "credited" : "credited_no_nonce");
 
   // The claim token is intentionally not echoed back: this response goes to
   // Helio's infrastructure, not the buyer.

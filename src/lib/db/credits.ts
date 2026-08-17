@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, gte, isNull } from "drizzle-orm";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getDb } from "./index";
-import { scanCredits } from "./schema";
+import { scanCredits, webhookLog } from "./schema";
 import { TIER_OPTIONS } from "../tiers";
 
 export const TIERS = [100, 250, 500] as const;
@@ -22,6 +22,21 @@ export const PAYLINK_TIERS: Record<string, number> = {
 
 export function tierForPaylink(paylinkId: string): number | null {
   return PAYLINK_TIERS[paylinkId] ?? null;
+}
+
+/** Diagnostics only; never allowed to fail the delivery it is recording. */
+export async function logWebhook(entry: {
+  outcome: string;
+  authHeader: string;
+  headerNames: string;
+  query: string;
+  body: string;
+}): Promise<void> {
+  try {
+    await getDb()?.insert(webhookLog).values(entry);
+  } catch {
+    // ignored
+  }
 }
 
 export function newClaimToken(): string {

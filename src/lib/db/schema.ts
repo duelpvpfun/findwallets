@@ -133,3 +133,19 @@ export const scanCredits = pgTable(
     index("scan_credits_claim_nonce_hash_idx").on(t.claimNonceHash),
   ]
 );
+
+/** Every inbound Helio delivery, accepted or not, so failures leave a trace. */
+export const webhookLog = pgTable(
+  "webhook_log",
+  {
+    id: serial("id").primaryKey(),
+    outcome: text("outcome").notNull(),
+    /** Only a short prefix — never the full shared secret. */
+    authHeader: text("auth_header"),
+    headerNames: text("header_names"),
+    query: text("query"),
+    body: text("body"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("webhook_log_created_at_idx").on(t.createdAt)]
+);
