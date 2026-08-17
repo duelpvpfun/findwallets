@@ -14,6 +14,9 @@ const HelioCheckout = dynamic(
  * a manual retry rather than leaving the buyer staring at a spinner. */
 const CONFIRM_TIMEOUT_MS = 3 * 60 * 1000;
 
+/** Long enough to read "unlocked", short enough not to feel like a stall. */
+const SUCCESS_HOLD_MS = 1400;
+
 interface PaywallDialogProps {
   onClose: () => void;
   onPaid: (claimToken: string, tier: number) => void;
@@ -25,7 +28,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [tier, setTier] = useState<TierInfo | null>(
     () => TIER_OPTIONS.find((t) => t.limit === initialLimit) ?? null
   );
-  const [status, setStatus] = useState<"idle" | "confirming" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "confirming" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [txId, setTxId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -37,7 +40,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [nonce] = useState(() => crypto.randomUUID());
 
   // Closing mid-confirmation would strand a paid credit, so it's blocked there.
-  const locked = status === "confirming";
+  const locked = status === "confirming" || status === "success";
   const requestClose = useCallback(() => {
     if (!locked) onClose();
   }, [locked, onClose]);
@@ -71,7 +74,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
           if (res.ok) {
             const data = await res.json();
             if (data.claimToken) {
-              onPaid(data.claimToken, data.tier);
+              // Let the confirmation land visually before the scan takes over.
+              setStatus("success");
+              setTimeout(() => onPaid(data.claimToken, data.tier), SUCCESS_HOLD_MS);
               return;
             }
           }
@@ -136,6 +141,8 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
         <div className="overflow-y-auto px-6 py-5">
           {status === "confirming" && <Confirming elapsed={elapsed} />}
+
+          {status === "success" && <PaymentSuccess tier={tier?.limit ?? null} />}
 
           {status === "error" && (
             <div className="space-y-4 py-2">
@@ -264,6 +271,34 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentSuccess({ tier }: { tier: number | null }) {
+  return (
+    <div className="flex flex-col items-center gap-4 py-12 text-center">
+      <div className="relative flex h-16 w-16 items-center justify-center">
+        <span className="absolute inset-0 animate-success-ring rounded-full bg-emerald-500/20" />
+        <span className="absolute inset-0 rounded-full border-2 border-emerald-500/40" />
+        <svg
+          className="relative h-8 w-8 text-emerald-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path className="animate-success-check" d="M20 6L9 17l-5-5" pathLength={1} />
+        </svg>
+      </div>
+      <div className="animate-fade-in">
+        <p className="text-sm font-semibold text-emerald-300">Payment confirmed</p>
+        <p className="mt-1 text-xs text-neutral-400">
+          {tier ? `Top ${tier} unlocked — starting your scan…` : "Starting your scan…"}
+        </p>
       </div>
     </div>
   );

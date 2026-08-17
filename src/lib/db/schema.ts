@@ -87,6 +87,11 @@ export const walletTokens = pgTable(
     /** Gross USD bought. Not a net cost basis — sale proceeds are `proceedsUsd`. */
     boughtUsd: doublePrecision("bought_usd"),
     proceedsUsd: doublePrecision("proceeds_usd"),
+    /** Unsold position at scan time. Without these a wallet still holding its
+     * bag reads as a loss, because only realized PNL is counted. */
+    remainingPercent: doublePrecision("remaining_percent"),
+    remainingValueUsd: doublePrecision("remaining_value_usd"),
+    unrealizedPnlUsd: doublePrecision("unrealized_pnl_usd"),
     rankingWindow: text("ranking_window").notNull(),
     timesObserved: integer("times_observed").notNull().default(1),
     firstObservedAt: timestamp("first_observed_at", { withTimezone: true }).notNull().defaultNow(),

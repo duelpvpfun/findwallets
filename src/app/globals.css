@@ -97,6 +97,40 @@ body {
   animation: alphaPulse 3.2s ease-in-out infinite;
 }
 
+/* Payment confirmation: a ring expands while the checkmark draws itself. */
+@keyframes successRing {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+.animate-success-ring {
+  animation: successRing 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes successCheck {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-success-check {
+  stroke-dasharray: 1;
+  animation: successCheck 0.45s cubic-bezier(0.65, 0, 0.45, 1) 0.15s both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .alpha-glow {
     animation: none;
@@ -107,5 +141,15 @@ body {
 
   .animate-ticker-in {
     animation: none;
+  }
+
+  .animate-success-ring {
+    animation: none;
+    opacity: 0;
+  }
+
+  .animate-success-check {
+    animation: none;
+    stroke-dasharray: none;
   }
 }

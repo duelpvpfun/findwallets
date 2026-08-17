@@ -45,6 +45,7 @@ function trader(
     remainingPercent: null,
     remainingValueUsd: null,
     isHolding: null,
+    unrealizedPnlUsd: null,
     lastTradeMs: null,
     firstTradeMs: null,
     walletLifetimeRealizedPnlUsd: null,

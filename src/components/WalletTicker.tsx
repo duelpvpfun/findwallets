@@ -16,6 +16,8 @@ interface TickerWallet {
   multipleX: number;
   roiPercent: number;
   realizedPnlUsd: number;
+  remainingPercent: number | null;
+  unrealizedPnlUsd: number | null;
   timesSeen: number;
   tags: string[];
   alsoWon: Array<{ symbol: string; multipleX: number | null; realizedPnlUsd: number }>;
@@ -78,7 +80,7 @@ export default function WalletTicker() {
   );
 
   return (
-    <section className="mt-14">
+    <section className="mt-8 sm:mt-12">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -112,10 +114,13 @@ export default function WalletTicker() {
         onMouseLeave={() => setPaused(false)}
       >
         {visible.map((w, i) => (
+          // Keyed by identity, not position: rows that survive a rotation stay
+          // mounted, so only the row entering at the bottom replays its animation.
           <WalletRow
-            key={`${w.address}-${w.symbol}-${offset + i}`}
+            key={`${w.address}-${w.symbol}`}
             wallet={w}
             nativeMode={nativeMode}
+            entering={i === visible.length - 1}
           />
         ))}
       </div>
@@ -123,7 +128,15 @@ export default function WalletTicker() {
   );
 }
 
-function WalletRow({ wallet, nativeMode }: { wallet: TickerWallet; nativeMode: boolean }) {
+function WalletRow({
+  wallet,
+  nativeMode,
+  entering,
+}: {
+  wallet: TickerWallet;
+  nativeMode: boolean;
+  entering: boolean;
+}) {
   const buyLabel =
     nativeMode && wallet.boughtNative !== null
       ? `${formatCompactNumber(wallet.boughtNative)} ${wallet.nativeSymbol}`
@@ -131,8 +144,7 @@ function WalletRow({ wallet, nativeMode }: { wallet: TickerWallet; nativeMode: b
 
   return (
     <div
-      key={wallet.address}
-      className="animate-ticker-in rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700"
+      className={`${entering ? "animate-ticker-in" : ""} rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CHAIN_DOT[wallet.chain]}`} />
@@ -152,7 +164,21 @@ function WalletRow({ wallet, nativeMode }: { wallet: TickerWallet; nativeMode: b
         </span>
       </div>
 
-      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-5">
+      {wallet.remainingPercent !== null && wallet.remainingPercent > 1 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+          <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 font-medium text-blue-300">
+            still holding {wallet.remainingPercent.toFixed(0)}%
+          </span>
+          {wallet.unrealizedPnlUsd !== null && wallet.unrealizedPnlUsd !== 0 && (
+            <span className={wallet.unrealizedPnlUsd >= 0 ? "text-emerald-400/80" : "text-red-400/80"}>
+              {wallet.unrealizedPnlUsd >= 0 ? "+" : ""}
+              {formatUsd(wallet.unrealizedPnlUsd)} unrealized
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 min-[420px]:grid-cols-3 sm:grid-cols-5">
         <Stat label="Buy amount" value={buyLabel} />
         <Stat label="Avg entry" value={formatUsd(wallet.avgBuyMcapUsd)} />
         <Stat label="Avg exit" value={formatUsd(wallet.avgSellMcapUsd)} />

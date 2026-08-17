@@ -214,10 +214,12 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     realizedPnlUsd: item.realizedPnl,
     realizedPnlPercent,
     avgMultipleX: boughtUsd > 0 ? 1 + item.realizedPnl / boughtUsd : 0,
-    // Not available from this endpoint on non-Solana chains (no live position data).
+    // No live balance on this endpoint, so the share still held is unknown —
+    // but a non-zero unrealized PnL proves the position isn't fully closed.
     remainingPercent: null,
     remainingValueUsd: null,
-    isHolding: null,
+    isHolding: item.unrealizedPnl !== 0 ? true : null,
+    unrealizedPnlUsd: item.unrealizedPnl ?? null,
     lastTradeMs: null,
     firstTradeMs: null,
     walletLifetimeRealizedPnlUsd: null,

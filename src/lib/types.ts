@@ -23,6 +23,9 @@ export interface WalletTrader {
   remainingPercent: number | null;
   remainingValueUsd: number | null;
   isHolding: boolean | null;
+  /** Paper gain on the unsold position. Realized PNL alone understates a wallet
+   * that is still holding, so totals should read both. */
+  unrealizedPnlUsd: number | null;
   lastTradeMs: number | null;
   firstTradeMs: number | null;
   walletLifetimeRealizedPnlUsd: number | null;

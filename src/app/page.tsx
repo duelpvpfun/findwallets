@@ -6,6 +6,7 @@ import TradersTable from "@/components/TradersTable";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
 import ProductPreview from "@/components/ProductPreview";
+import { detectAddressFamily } from "@/lib/chains";
 import {
   CLAIM_STORAGE_KEY,
   OWNER_STORAGE_KEY,
@@ -56,6 +57,7 @@ export default function Home() {
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [autoChain, setAutoChain] = useState<Chain | null>(null);
   const [samples, setSamples] = useState<ShowcaseToken[]>([]);
   // Greet first-time visitors with the export preview unless they opted out.
   // Closed during SSR and the first client render so hydration matches; the
@@ -228,6 +230,29 @@ export default function Home() {
     void runSearch(address, chain, paidLimit, claimToken);
   }
 
+  /**
+   * Address formats are disjoint between Solana and EVM, so a paste tells us
+   * the family with certainty. Only the wrong-family case switches: a 0x address
+   * is valid on both BNB Chain and Base, so an EVM pick is left alone.
+   */
+  function handleAddressChange(value: string) {
+    setAddress(value);
+    const family = detectAddressFamily(value.trim());
+    if (!family) {
+      setAutoChain(null);
+      return;
+    }
+    if (family === "solana" && chain !== "solana") {
+      setChain("solana");
+      setAutoChain("solana");
+    } else if (family === "evm" && chain === "solana") {
+      setChain("bsc");
+      setAutoChain("bsc");
+    } else {
+      setAutoChain(null);
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     startSearch(address, chain);
@@ -249,7 +274,7 @@ export default function Home() {
       </div>
 
       <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={resetToHome}
             aria-label="Back to home"
@@ -274,10 +299,10 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="relative mx-auto w-full max-w-7xl flex-1 px-6 py-10">
+      <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {!result && (
-          <div className="mx-auto mb-8 max-w-2xl text-center">
-            <h2 className="text-2xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
+          <div className="mx-auto mb-6 max-w-2xl text-center sm:mb-8">
+            <h2 className="text-xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
               Find the wallets behind every winning trade
             </h2>
             <p className="mt-2 text-sm text-neutral-400 sm:text-base">
@@ -303,14 +328,17 @@ export default function Home() {
           onSubmit={handleSubmit}
           className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 shadow-xl shadow-black/20 backdrop-blur-sm sm:flex-row sm:items-center sm:p-3"
         >
-          <div className="flex overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950">
+          <div className="flex shrink-0 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950">
             {CHAINS.map((c) => (
               <button
                 key={c.value}
                 type="button"
-                onClick={() => setChain(c.value)}
+                onClick={() => {
+                  setChain(c.value);
+                  setAutoChain(null);
+                }}
                 title={c.label}
-                className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors ${
+                className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors sm:flex-none ${
                   chain === c.value
                     ? "bg-blue-500/20 text-blue-200"
                     : "text-neutral-500 hover:bg-neutral-900 hover:text-neutral-300"
@@ -325,18 +353,18 @@ export default function Home() {
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
             <input
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => handleAddressChange(e.target.value)}
               placeholder={PLACEHOLDERS[chain]}
               spellCheck={false}
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none transition-colors placeholder:font-sans focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
+              className="w-full truncate rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none transition-colors placeholder:font-sans placeholder:text-xs focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:placeholder:text-sm"
             />
           </div>
           <div className="flex gap-2">
-            <div className="relative">
+            <div className="relative flex-1 sm:flex-none">
               <select
                 value={limit}
                 onChange={(e) => setLimit(Number(e.target.value) as (typeof LIMIT_OPTIONS)[number])}
-                className="h-full appearance-none rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-3 pr-8 text-sm font-medium text-neutral-100 outline-none transition-colors focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
+                className="h-full w-full appearance-none rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-3 pr-8 text-sm font-medium text-neutral-100 outline-none transition-colors focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
               >
                 {LIMIT_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>
@@ -367,6 +395,26 @@ export default function Home() {
             </button>
           </div>
         </form>
+
+        {autoChain && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+            <span className="rounded-full border border-blue-900/60 bg-blue-950/30 px-3 py-1 font-medium text-blue-300">
+              Switched to {CHAINS.find((c) => c.value === autoChain)?.label} to match this address
+            </span>
+            {autoChain === "bsc" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setChain("base");
+                  setAutoChain(null);
+                }}
+                className="text-neutral-500 underline underline-offset-2 transition-colors hover:text-neutral-300"
+              >
+                It&apos;s on Base
+              </button>
+            )}
+          </div>
+        )}
 
         {(ownerKey || claim) && (
           <div className="mt-3 flex items-center gap-2 text-xs">
@@ -474,7 +522,7 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                   <FeatureCard
                     icon={<TargetIcon />}
                     title="Precise entry & exit"
@@ -499,7 +547,7 @@ export default function Home() {
       </main>
 
       <footer className="relative mt-auto border-t border-neutral-800/80 bg-neutral-950/80">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-6 py-5 sm:flex-row">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-4 sm:flex-row sm:gap-3 sm:px-6 sm:py-5">
           <a
             href="https://x.com/crypce0"
             target="_blank"

@@ -29,6 +29,10 @@ export interface TickerWallet {
   multipleX: number;
   roiPercent: number;
   realizedPnlUsd: number;
+  /** Null when the scan predates position tracking, so the UI can stay silent
+   * rather than claim a wallet fully exited. */
+  remainingPercent: number | null;
+  unrealizedPnlUsd: number | null;
   timesSeen: number;
   tags: string[];
   /** Other tokens this wallet also won on — the "cards they collected". */
@@ -142,6 +146,9 @@ export async function fetchCachedScan(
       avgSellMcapUsd: walletTokens.avgSellMcapUsd,
       boughtUsd: walletTokens.boughtUsd,
       proceedsUsd: walletTokens.proceedsUsd,
+      remainingPercent: walletTokens.remainingPercent,
+      remainingValueUsd: walletTokens.remainingValueUsd,
+      unrealizedPnlUsd: walletTokens.unrealizedPnlUsd,
       lastTradeMs: walletTokens.lastTradeMs,
     })
     .from(walletTokens)
@@ -192,9 +199,10 @@ export async function fetchCachedScan(
     realizedPnlUsd: r.realizedPnlUsd,
     realizedPnlPercent: r.roiPercent ?? 0,
     avgMultipleX: r.multipleX ?? 0,
-    remainingPercent: null,
-    remainingValueUsd: null,
-    isHolding: null,
+    remainingPercent: r.remainingPercent,
+    remainingValueUsd: r.remainingValueUsd,
+    isHolding: r.remainingPercent === null ? null : r.remainingPercent > 0,
+    unrealizedPnlUsd: r.unrealizedPnlUsd,
     lastTradeMs: r.lastTradeMs ?? null,
     firstTradeMs: null,
     walletLifetimeRealizedPnlUsd: r.lifetimePnlUsd,
@@ -228,6 +236,8 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
       avgBuyMcapUsd: walletTokens.avgBuyMcapUsd,
       avgSellMcapUsd: walletTokens.avgSellMcapUsd,
       boughtUsd: walletTokens.boughtUsd,
+      remainingPercent: walletTokens.remainingPercent,
+      unrealizedPnlUsd: walletTokens.unrealizedPnlUsd,
     })
     .from(walletTokens)
     .innerJoin(wallets, eq(wallets.id, walletTokens.walletId))
@@ -300,6 +310,8 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
       multipleX: r.multipleX ?? 0,
       roiPercent: r.roiPercent ?? 0,
       realizedPnlUsd: r.realizedPnlUsd,
+      remainingPercent: r.remainingPercent,
+      unrealizedPnlUsd: r.unrealizedPnlUsd,
       timesSeen: r.timesSeen,
       tags: r.tags ?? [],
       alsoWon: (winsByWallet.get(r.walletId) ?? [])

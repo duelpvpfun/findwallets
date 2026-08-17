@@ -148,6 +148,9 @@ export async function recordScan(
         avgSellMcapUsd: t.avgSellMcapUsd,
         boughtUsd: t.boughtUsd,
         proceedsUsd: t.soldUsd,
+        remainingPercent: t.remainingPercent,
+        remainingValueUsd: t.remainingValueUsd,
+        unrealizedPnlUsd: t.unrealizedPnlUsd,
         lastTradeMs: t.lastTradeMs,
         rankingWindow: token.rankingWindow,
       };
@@ -181,6 +184,11 @@ export async function recordScan(
         avgSellMcapUsd: sql`case when ${keepNewer} then excluded.avg_sell_mcap_usd else ${walletTokens.avgSellMcapUsd} end`,
         boughtUsd: sql`case when ${keepNewer} then excluded.bought_usd else ${walletTokens.boughtUsd} end`,
         proceedsUsd: sql`case when ${keepNewer} then excluded.proceeds_usd else ${walletTokens.proceedsUsd} end`,
+        // Position size is only meaningful as of the latest look, so it always
+        // takes the newest value rather than following the PNL tie-break.
+        remainingPercent: sql`excluded.remaining_percent`,
+        remainingValueUsd: sql`excluded.remaining_value_usd`,
+        unrealizedPnlUsd: sql`excluded.unrealized_pnl_usd`,
         rankingWindow: sql`excluded.ranking_window`,
         timesObserved: sql`${walletTokens.timesObserved} + 1`,
         lastObservedAt: new Date(),

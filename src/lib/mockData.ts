@@ -123,6 +123,7 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
     remainingPercent,
     remainingValueUsd,
     isHolding,
+    unrealizedPnlUsd: isHolding ? remainingValueUsd * randRange(rng, -0.3, 1.2) : 0,
     lastTradeMs: now - randRange(rng, 0.2, 240) * 3_600_000,
     firstTradeMs: now - randRange(rng, 1, 400) * 86_400_000,
     walletLifetimeRealizedPnlUsd: randRange(rng, -50_000, 500_000),

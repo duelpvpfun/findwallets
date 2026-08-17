@@ -622,6 +622,22 @@ function HistoryBadge({ history }: { history?: WalletHistory }) {
 
 function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativePriceUsd: number }) {
   if (trader.remainingPercent === null || trader.remainingValueUsd === null) {
+    // EVM gives no balance, but a non-zero unrealized PnL still proves a position.
+    if (trader.isHolding && trader.unrealizedPnlUsd !== null) {
+      return (
+        <div className="min-w-[110px] text-xs">
+          <span className="text-neutral-400">Still holding</span>
+          <div
+            className={`tabular-nums ${
+              trader.unrealizedPnlUsd >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {trader.unrealizedPnlUsd >= 0 ? "+" : ""}
+            {formatUsd(trader.unrealizedPnlUsd)} unreal.
+          </div>
+        </div>
+      );
+    }
     return <span className="text-xs text-neutral-600">—</span>;
   }
   const remainingNative = nativePriceUsd > 0 ? trader.remainingValueUsd / nativePriceUsd : 0;
@@ -631,6 +647,16 @@ function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativ
         <span className="tabular-nums text-neutral-300">{formatSol(remainingNative)}</span>
         <span className="tabular-nums text-neutral-500">{trader.remainingPercent.toFixed(0)}%</span>
       </div>
+      {trader.isHolding && trader.unrealizedPnlUsd !== null && trader.unrealizedPnlUsd !== 0 && (
+        <div
+          className={`mt-0.5 text-[10px] tabular-nums ${
+            trader.unrealizedPnlUsd >= 0 ? "text-emerald-400/80" : "text-red-400/80"
+          }`}
+        >
+          {trader.unrealizedPnlUsd >= 0 ? "+" : ""}
+          {formatUsd(trader.unrealizedPnlUsd)} unreal.
+        </div>
+      )}
       <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-800">
         <div
           className={`h-full rounded-full ${trader.isHolding ? "bg-blue-500" : "bg-neutral-600"}`}

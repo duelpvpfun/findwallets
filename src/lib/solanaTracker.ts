@@ -223,6 +223,7 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
     remainingPercent,
     remainingValueUsd: h.current?.value ?? 0,
     isHolding: (h.current?.balance ?? 0) > 0,
+    unrealizedPnlUsd: h.pnl?.token?.unrealized ?? null,
     lastTradeMs: h.timing?.lastTrade ?? null,
     firstTradeMs: h.timing?.firstTrade ?? null,
     walletLifetimeRealizedPnlUsd: h.pnl?.wallet?.realized ?? null,
