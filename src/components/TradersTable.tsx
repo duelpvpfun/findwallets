@@ -40,6 +40,7 @@ interface Filters {
   minPnlUsd: string;
   maxPnlUsd: string;
   holdingOnly: boolean;
+  provenOnly: boolean;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -50,6 +51,7 @@ const EMPTY_FILTERS: Filters = {
   minPnlUsd: "",
   maxPnlUsd: "",
   holdingOnly: false,
+  provenOnly: false,
 };
 
 export default function TradersTable({
@@ -82,9 +84,10 @@ export default function TradersTable({
       if (!Number.isNaN(minPnlUsd) && t.realizedPnlUsd < minPnlUsd) return false;
       if (!Number.isNaN(maxPnlUsd) && t.realizedPnlUsd > maxPnlUsd) return false;
       if (filters.holdingOnly && t.isHolding !== true) return false;
+      if (filters.provenOnly && !histories[t.address]?.priorTokenCount) return false;
       return true;
     });
-  }, [traders, filters]);
+  }, [traders, filters, histories]);
 
   // Sorting sits on top of filtering so the two compose; with no sort active the
   // list keeps the upstream ranking order.
@@ -105,6 +108,12 @@ export default function TradersTable({
   // Only Solana reports live balances; elsewhere the column would be all dashes.
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
   const columnCount = hasHoldingData ? 11 : 10;
+
+  // Wallets our own database has already caught winning on a different token.
+  const provenCount = useMemo(
+    () => traders.filter((t) => histories[t.address]?.priorTokenCount).length,
+    [traders, histories]
+  );
 
   // Compared against the visible rows, so filtering out a selected wallet can't
   // leave the header checkbox claiming everything is selected.
@@ -159,7 +168,8 @@ export default function TradersTable({
     (filters.maxPnlPercent !== "" ? 1 : 0) +
     (filters.minPnlUsd !== "" ? 1 : 0) +
     (filters.maxPnlUsd !== "" ? 1 : 0) +
-    (filters.holdingOnly ? 1 : 0);
+    (filters.holdingOnly ? 1 : 0) +
+    (filters.provenOnly ? 1 : 0);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-800/80 bg-neutral-900/40 shadow-xl shadow-black/10">
@@ -315,6 +325,18 @@ export default function TradersTable({
                   className="h-3.5 w-3.5 accent-blue-500"
                 />
                 Holding only
+              </label>
+            )}
+            {provenCount > 0 && (
+              <label className="flex items-center gap-1.5 pb-1.5 text-xs text-neutral-400">
+                <input
+                  type="checkbox"
+                  checked={filters.provenOnly}
+                  onChange={(e) => updateFilter("provenOnly", e.target.checked)}
+                  className="h-3.5 w-3.5 accent-amber-500"
+                />
+                Repeat winners only
+                <span className="text-neutral-600">({provenCount})</span>
               </label>
             )}
             {activeFilterCount > 0 && (
@@ -579,12 +601,21 @@ function HistoryBadge({ history }: { history?: WalletHistory }) {
   const detail = history.wins
     .map((w) => `${formatUsd(w.realizedPnlUsd)}${w.multipleX ? ` [${w.multipleX.toFixed(0)}X]` : ""} $${w.symbol}`)
     .join("\n");
+  // The best prior win is spelled out inline: the tooltip carrying the whole
+  // track record is unreachable on touch devices.
+  const best = history.wins[0];
   return (
     <span
-      title={`Previously recorded on ${history.priorTokenCount} other token(s):\n${detail}`}
-      className="ml-0.5 cursor-help rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+      title={`Previously recorded winning on ${history.priorTokenCount} other token(s):\n${detail}`}
+      className="ml-0.5 inline-flex shrink-0 cursor-help items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
     >
-      🔥 {history.priorTokenCount}
+      <span>🔥 {history.priorTokenCount}</span>
+      {best && (
+        <span className="hidden font-normal text-amber-200/70 sm:inline">
+          {best.multipleX ? `${best.multipleX.toFixed(1)}x ` : ""}${best.symbol}
+          {history.priorTokenCount > 1 ? ` +${history.priorTokenCount - 1}` : ""}
+        </span>
+      )}
     </span>
   );
 }
