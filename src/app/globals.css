@@ -60,20 +60,27 @@ body {
   animation: fadeIn 0.18s ease-out;
 }
 
-/* Ticker rows slide in as they rotate. */
+/* Ticker rows cascade in, top to bottom, on every rotation. */
 @keyframes tickerIn {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(10px) scale(0.99);
+    transform: translateY(14px) scale(0.97);
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
   }
-  to {
+  55% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.008);
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.16);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
   }
 }
 
 .animate-ticker-in {
-  animation: tickerIn 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: tickerIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Softly breathing white glow behind the wordmark. */

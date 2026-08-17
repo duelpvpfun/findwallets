@@ -14,9 +14,9 @@ import { tokenNameForExport } from "@/lib/format";
 const EMOJI_CHOICES = ["", "🧓", "👻", "🐍", "🦅", "🧙", "🐉", "🥷", "🦈", "🐺", "🦊", "🐯", "🦁", "💎", "🚀", "🐳"];
 
 const NAME_STYLES: Array<{ value: NameStyle; label: string; example: string }> = [
-  { value: "multiple", label: "Multiple", example: "25.00x - TRUMP" },
-  { value: "pnl", label: "$ PNL", example: "$26.8M - TRUMP" },
-  { value: "rank", label: "Rank", example: "#1 - TRUMP" },
+  { value: "multiple", label: "Multiple", example: "25.00x - MOONCAT" },
+  { value: "pnl", label: "$ PNL", example: "$1.2M - MOONCAT" },
+  { value: "rank", label: "Rank", example: "#1 - MOONCAT" },
   { value: "address", label: "Address", example: "C5tT...msxu" },
 ];
 

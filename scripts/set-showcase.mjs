@@ -2,8 +2,8 @@
  * Controls which cached tokens are offered as free samples.
  *
  *   node scripts/set-showcase.mjs              # list current state
- *   node scripts/set-showcase.mjs on  TRUMP BONK
- *   node scripts/set-showcase.mjs off TRUMP
+ *   node scripts/set-showcase.mjs on  BONK ZEREBRO
+ *   node scripts/set-showcase.mjs off BONK
  *
  * Customer-scanned tokens stay off by default, so nobody gets a paid scan free.
  */

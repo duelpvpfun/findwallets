@@ -114,13 +114,14 @@ export default function WalletTicker() {
         onMouseLeave={() => setPaused(false)}
       >
         {visible.map((w, i) => (
-          // Keyed by identity, not position: rows that survive a rotation stay
-          // mounted, so only the row entering at the bottom replays its animation.
+          // Keyed by rotation tick + slot, not wallet identity, so every visible
+          // row replays its entrance animation each time the ticker rotates —
+          // a cascading refresh instead of only the newest row animating.
           <WalletRow
-            key={`${w.address}-${w.symbol}`}
+            key={`${offset}-${i}`}
             wallet={w}
             nativeMode={nativeMode}
-            entering={i === visible.length - 1}
+            delayMs={i * 90}
           />
         ))}
       </div>
@@ -131,11 +132,11 @@ export default function WalletTicker() {
 function WalletRow({
   wallet,
   nativeMode,
-  entering,
+  delayMs,
 }: {
   wallet: TickerWallet;
   nativeMode: boolean;
-  entering: boolean;
+  delayMs: number;
 }) {
   const buyLabel =
     nativeMode && wallet.boughtNative !== null
@@ -144,7 +145,8 @@ function WalletRow({
 
   return (
     <div
-      className={`${entering ? "animate-ticker-in" : ""} rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700`}
+      className="animate-ticker-in rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700"
+      style={{ animationDelay: `${delayMs}ms` }}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CHAIN_DOT[wallet.chain]}`} />

@@ -213,6 +213,11 @@ export async function fetchCachedScan(
   return { token, traders };
 }
 
+/** No single token may fill more than this many ticker slots, so one heavily
+ * re-scanned coin can never crowd out every other one — this is what actually
+ * keeps the ticker showing wallets from different tokens. */
+const MAX_PER_SYMBOL = 3;
+
 /**
  * Wallets for the homepage ticker. Only rows with every displayed field present
  * are returned, so the animation never renders a blank or invented figure.
@@ -257,7 +262,7 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
       )
     )
     .orderBy(desc(walletTokens.realizedPnlUsd))
-    .limit(limit);
+    .limit(Math.max(limit * 5, 150));
 
   if (rows.length === 0) return [];
 
@@ -295,30 +300,49 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
     winsByWallet.set(w.walletId, list);
   }
 
-  return rows.map((r) => {
-    const chain = r.chain as Chain;
-    const bought = r.boughtUsd ?? 0;
-    return {
-      address: maskAddress(r.address),
-      chain,
-      symbol: r.symbol ?? "?",
-      boughtUsd: bought,
-      boughtNative: r.nativePriceUsd ? bought / r.nativePriceUsd : null,
-      nativeSymbol: NATIVE_SYMBOL[chain] ?? "SOL",
-      avgBuyMcapUsd: r.avgBuyMcapUsd ?? 0,
-      avgSellMcapUsd: r.avgSellMcapUsd ?? 0,
-      multipleX: r.multipleX ?? 0,
-      roiPercent: r.roiPercent ?? 0,
-      realizedPnlUsd: r.realizedPnlUsd,
-      remainingPercent: r.remainingPercent,
-      unrealizedPnlUsd: r.unrealizedPnlUsd,
-      timesSeen: r.timesSeen,
-      tags: r.tags ?? [],
-      alsoWon: (winsByWallet.get(r.walletId) ?? [])
-        .filter((w) => w.symbol !== r.symbol)
-        .slice(0, 4),
-    };
-  });
+  return capPerSymbol(
+    rows.map((r) => {
+      const chain = r.chain as Chain;
+      const bought = r.boughtUsd ?? 0;
+      return {
+        address: maskAddress(r.address),
+        chain,
+        symbol: r.symbol ?? "?",
+        boughtUsd: bought,
+        boughtNative: r.nativePriceUsd ? bought / r.nativePriceUsd : null,
+        nativeSymbol: NATIVE_SYMBOL[chain] ?? "SOL",
+        avgBuyMcapUsd: r.avgBuyMcapUsd ?? 0,
+        avgSellMcapUsd: r.avgSellMcapUsd ?? 0,
+        multipleX: r.multipleX ?? 0,
+        roiPercent: r.roiPercent ?? 0,
+        realizedPnlUsd: r.realizedPnlUsd,
+        remainingPercent: r.remainingPercent,
+        unrealizedPnlUsd: r.unrealizedPnlUsd,
+        timesSeen: r.timesSeen,
+        tags: r.tags ?? [],
+        alsoWon: (winsByWallet.get(r.walletId) ?? [])
+          .filter((w) => w.symbol !== r.symbol)
+          .slice(0, 4),
+      };
+    }),
+    MAX_PER_SYMBOL,
+    limit
+  );
+}
+
+/** Keeps the highest-PNL rows but caps how many any one symbol contributes,
+ * preserving the overall PNL ordering otherwise. */
+function capPerSymbol(rows: TickerWallet[], maxPerSymbol: number, limit: number): TickerWallet[] {
+  const counts = new Map<string, number>();
+  const capped: TickerWallet[] = [];
+  for (const row of rows) {
+    const count = counts.get(row.symbol) ?? 0;
+    if (count >= maxPerSymbol) continue;
+    counts.set(row.symbol, count + 1);
+    capped.push(row);
+    if (capped.length >= limit) break;
+  }
+  return capped;
 }
 
 /** Totals for the ticker header. */

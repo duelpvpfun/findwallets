@@ -10,7 +10,6 @@ import {
   formatUsd,
   shortenAddress,
 } from "@/lib/format";
-import WalletDetailModal from "./WalletDetailModal";
 import ExportDialog from "./ExportDialog";
 import ShareCardModal from "./ShareCardModal";
 
@@ -19,7 +18,8 @@ interface TradersTableProps {
   traders: WalletTrader[];
   isDemoData: boolean;
   histories?: Record<string, WalletHistory>;
-  /** Proves this scan was paid for; required by the wallet-detail endpoint. */
+  /** Unused while wallet-detail lookups are disabled (too costly per-click);
+   * kept so callers don't need to change and it's a one-line revert to re-wire. */
   scanSession?: string;
   /** Returns to the search screen. Omit to hide the back control. */
   onBack?: () => void;
@@ -60,11 +60,9 @@ export default function TradersTable({
   traders,
   isDemoData,
   histories = {},
-  scanSession,
   onBack,
 }: TradersTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [activeWallet, setActiveWallet] = useState<string | null>(null);
   const [shareTarget, setShareTarget] = useState<WalletTrader | null>(null);
   const [showMcap, setShowMcap] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -416,12 +414,8 @@ export default function TradersTable({
               </tr>
             )}
             {filteredTraders.map((t) => (
-              <tr
-                key={t.address}
-                className="cursor-pointer border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/30"
-                onClick={() => setActiveWallet(t.address)}
-              >
-                <td className="py-3 pl-5" onClick={(e) => e.stopPropagation()}>
+              <tr key={t.address} className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20">
+                <td className="py-3 pl-5">
                   <input
                     type="checkbox"
                     checked={selected.has(t.address)}
@@ -458,10 +452,7 @@ export default function TradersTable({
                     )}
                     <HistoryBadge history={histories[t.address]} />
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShareTarget(t);
-                      }}
+                      onClick={() => setShareTarget(t)}
                       title="Share PNL card"
                       className="ml-0.5 rounded-md p-1 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
                     >
@@ -519,19 +510,6 @@ export default function TradersTable({
           </tbody>
         </table>
       </div>
-
-      {activeWallet && (
-        <WalletDetailModal
-          chain={token.chain}
-          tokenAddress={token.address}
-          tokenName={token.name}
-          estimatedSupply={token.estimatedSupply}
-          nativePriceUsd={token.nativePriceUsd}
-          scanSession={scanSession}
-          trader={traders.find((t) => t.address === activeWallet)!}
-          onClose={() => setActiveWallet(null)}
-        />
-      )}
 
       {exportTargets && (
         <ExportDialog

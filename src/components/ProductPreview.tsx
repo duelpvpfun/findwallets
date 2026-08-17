@@ -54,12 +54,12 @@ function trader(
   };
 }
 
-const SAMPLE_SYMBOL = "TRUMP";
+const SAMPLE_SYMBOL = "MOONCAT";
 const SAMPLE: WalletTrader[] = [
-  trader(1, "C5tTsPXvfmBQ9qFjyRAMyDpDgLmvhJRnZ4XkKnFsmsxu", null, 26_778_745, 14.1, 2.54e9, 3.57e10),
-  trader(2, "GybhvUZzKN8xkRcqPmQ7dLwTtVnJhFo3aBcDeFgHYeHK", "cupsey", 19_215_949, 19.7, 2.81e9, 5.54e10),
-  trader(3, "CWvdyvKHEu8Z1TbTruorJYnTGyD6bmqZ2ncNQnP1C8ou", null, 17_854_230, 77.6, 4.67e8, 3.62e10),
-  trader(4, "7PypumL2CJRvoVSVAsx6uMkFxfBiPqYbEfnJRvA1uz8R", null, 22_468_908, 13.7, 3.63e9, 4.98e10),
+  trader(1, "C5tTsPXvfmBQ9qFjyRAMyDpDgLmvhJRnZ4XkKnFsmsxu", null, 1_284_500, 14.1, 42_000_000, 610_000_000),
+  trader(2, "GybhvUZzKN8xkRcqPmQ7dLwTtVnJhFo3aBcDeFgHYeHK", "cupsey", 892_300, 19.7, 38_000_000, 780_000_000),
+  trader(3, "CWvdyvKHEu8Z1TbTruorJYnTGyD6bmqZ2ncNQnP1C8ou", null, 2_145_900, 77.6, 6_500_000, 510_000_000),
+  trader(4, "7PypumL2CJRvoVSVAsx6uMkFxfBiPqYbEfnJRvA1uz8R", null, 1_037_200, 13.7, 55_000_000, 790_000_000),
 ];
 
 const NAME_STYLES: Array<{ value: NameStyle; label: string }> = [
