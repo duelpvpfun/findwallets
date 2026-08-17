@@ -142,7 +142,31 @@ export async function recordScan(
 
   if (rows.length === 0) return;
 
-  await db.insert(observations).values(rows);
+  // A rescan usually returns figures identical to the last one, and a row that
+  // repeats its predecessor records nothing a timestamp on wallet_tokens can't.
+  const previous = await db
+    .select({
+      walletId: walletTokens.walletId,
+      realizedPnlUsd: walletTokens.realizedPnlUsd,
+      rank: walletTokens.bestRank,
+    })
+    .from(walletTokens)
+    .where(
+      and(
+        eq(walletTokens.tokenId, tokenRow.id),
+        inArray(
+          walletTokens.walletId,
+          rows.map((r) => r.walletId)
+        )
+      )
+    );
+  const seen = new Map(previous.map((p) => [p.walletId, p]));
+  const changed = rows.filter((r) => {
+    const prior = seen.get(r.walletId);
+    return !prior || prior.realizedPnlUsd !== r.realizedPnlUsd || prior.rank !== r.rank;
+  });
+
+  if (changed.length > 0) await db.insert(observations).values(changed);
 
   const pnlUpdate = isAllTime
     ? sql`excluded.realized_pnl_usd`
