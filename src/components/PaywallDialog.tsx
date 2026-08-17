@@ -1,21 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { TIER_OPTIONS, type TierInfo } from "@/lib/tiers";
 
-// Helio's widget touches browser globals, so keep it out of the server bundle.
-const HelioCheckout = dynamic(
-  () => import("@heliofi/checkout-react").then((m) => m.HelioCheckout),
-  { ssr: false, loading: () => <WidgetSkeleton /> }
-);
-
-/** Webhooks normally land in seconds; this is the outer bound before we offer
- * a manual retry rather than leaving the buyer staring at a spinner. */
+/** Confirmation normally lands in a few seconds once the transaction is sent;
+ * this is the outer bound before we offer a manual retry rather than leaving
+ * the buyer staring at a spinner. */
 const CONFIRM_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Long enough to read "unlocked", short enough not to feel like a stall. */
 const SUCCESS_HOLD_MS = 1400;
+
+type PayMethod = "sol" | "usdc";
+
+interface SolanaProvider {
+  isPhantom?: boolean;
+  publicKey?: { toString(): string } | null;
+  connect(opts?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toString(): string } }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  signAndSendTransaction(transaction: any): Promise<{ signature: string }>;
+}
+
+function getProvider(): SolanaProvider | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { phantom?: { solana?: SolanaProvider }; solana?: SolanaProvider };
+  return w.phantom?.solana ?? w.solana ?? null;
+}
+
+async function ensureBufferPolyfill() {
+  const g = globalThis as unknown as { Buffer?: unknown };
+  if (!g.Buffer) {
+    const { Buffer } = await import("buffer");
+    g.Buffer = Buffer;
+  }
+}
+
+interface Quote {
+  intentId: string;
+  amount: number;
+  method: PayMethod;
+  transaction: string;
+}
 
 interface PaywallDialogProps {
   onClose: () => void;
@@ -34,9 +59,18 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [elapsed, setElapsed] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  // A secret only this browser knows, sent through Helio and required to redeem
-  // the purchase. Without it the public transaction signature would be enough
-  // for anyone watching the merchant wallet to steal the buyer's scan.
+  const [method, setMethod] = useState<PayMethod>("sol");
+  const [walletPk, setWalletPk] = useState<string | null>(null);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [confirmingIntentId, setConfirmingIntentId] = useState<string | null>(null);
+
+  // A secret only this browser knows, required to redeem the purchase. Without
+  // it the public transaction signature would be enough for anyone watching
+  // the treasury wallet to steal the buyer's scan.
   const [nonce] = useState(() => crypto.randomUUID());
 
   // Closing mid-confirmation would strand a paid credit, so it's blocked there.
@@ -53,24 +87,57 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
     return () => window.removeEventListener("keydown", onKey);
   }, [requestClose]);
 
-  // The widget's success callback can't be trusted on its own, so we poll our
-  // own API until Helio's server-to-server webhook has confirmed the payment.
-  // The nonce is passed to Helio as additional data and returned by the webhook,
-  // then sent back here so the server can release only this browser's credit.
+  // Quotes the exact amount + unsigned transaction whenever the tier, method
+  // or connected wallet changes, so "Pay" only ever has to sign and send.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!tier || !walletPk) {
+        if (!cancelled) setQuote(null);
+        return;
+      }
+      setQuoting(true);
+      setQuote(null);
+      setWalletError(null);
+      try {
+        const res = await fetch("/api/pay/init", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier: tier.limit, method, nonce, payer: walletPk }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setWalletError(data?.error || "Could not prepare this payment.");
+          return;
+        }
+        setQuote({ intentId: data.intentId, amount: data.amount, method: data.method, transaction: data.transaction });
+      } catch {
+        if (!cancelled) setWalletError("Could not reach the payment server.");
+      } finally {
+        if (!cancelled) setQuoting(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tier, walletPk, method, nonce]);
+
+  // Confirmation is verified server-side directly against Solana (via Helius),
+  // never trusted from the wallet's own success callback.
   const confirmPayment = useCallback(
-    async (paymentId: string | null) => {
+    async (signature: string, intentId: string) => {
       setStatus("confirming");
       setMessage(null);
       setElapsed(0);
-      if (paymentId) setTxId(paymentId);
+      setTxId(signature);
 
       const started = Date.now();
       while (Date.now() - started < CONFIRM_TIMEOUT_MS) {
         setElapsed(Math.round((Date.now() - started) / 1000));
         try {
-          const query = new URLSearchParams({ nonce });
-          if (paymentId) query.set("paymentId", paymentId);
-          const res = await fetch(`/api/claim?${query.toString()}`);
+          const query = new URLSearchParams({ intentId, nonce, signature });
+          const res = await fetch(`/api/pay/confirm?${query.toString()}`);
           if (res.ok) {
             const data = await res.json();
             if (data.claimToken) {
@@ -79,6 +146,11 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
               setTimeout(() => onPaid(data.claimToken, data.tier), SUCCESS_HOLD_MS);
               return;
             }
+          } else if (res.status !== 202) {
+            const data = await res.json().catch(() => null);
+            setStatus("error");
+            setMessage(data?.error || "That payment could not be confirmed.");
+            return;
           }
         } catch {
           // keep retrying; transient network errors shouldn't end the flow
@@ -88,11 +160,58 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
       setStatus("error");
       setMessage(
-        "Your payment went through, but our confirmation is still catching up. Retry below — or send us the transaction id and we'll unlock it manually."
+        "Your payment may have gone through, but our confirmation is still catching up. Retry below — or send us the transaction id and we'll unlock it manually."
       );
     },
     [nonce, onPaid]
   );
+
+  async function connectWallet() {
+    setWalletError(null);
+    const provider = getProvider();
+    if (!provider) {
+      window.open("https://phantom.app/download", "_blank", "noopener,noreferrer");
+      setWalletError("No Solana wallet found. Install Phantom, then try again.");
+      return;
+    }
+    setWalletBusy(true);
+    try {
+      const resp = await provider.connect();
+      setWalletPk(resp.publicKey.toString());
+    } catch {
+      setWalletError("Wallet connection was cancelled.");
+    } finally {
+      setWalletBusy(false);
+    }
+  }
+
+  async function pay() {
+    if (!quote) return;
+    const provider = getProvider();
+    if (!provider) {
+      setWalletError("No Solana wallet found. Install Phantom, then try again.");
+      return;
+    }
+    setSending(true);
+    setWalletError(null);
+    setConfirmingIntentId(quote.intentId);
+    try {
+      await ensureBufferPolyfill();
+      const { Transaction } = await import("@solana/web3.js");
+      const tx = Transaction.from(Buffer.from(quote.transaction, "base64"));
+      const { signature } = await provider.signAndSendTransaction(tx);
+      void confirmPayment(signature, quote.intentId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setWalletError(
+        msg.toLowerCase().includes("reject") || msg.toLowerCase().includes("cancel")
+          ? "Payment was cancelled and you weren't charged."
+          : "The payment didn't go through and you weren't charged. Try again."
+      );
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function copyTx() {
     if (!txId) return;
@@ -171,8 +290,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => void confirmPayment(txId)}
-                  className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
+                  onClick={() => txId && confirmingIntentId && void confirmPayment(txId, confirmingIntentId)}
+                  disabled={!txId || !confirmingIntentId}
+                  className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
                 >
                   Retry confirmation
                 </button>
@@ -211,7 +331,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                 </button>
               ))}
               <p className="pt-1 text-center text-[11px] leading-relaxed text-neutral-600">
-                Pay with SOL, USDC or card. Powered by Helio.
+                Pay with SOL or USDC, straight to our wallet. No middleman.
               </p>
             </div>
           )}
@@ -234,39 +354,53 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-xl">
-                <HelioCheckout
-                  config={{
-                    paylinkId: tier.paylinkId,
-                    theme: { themeMode: "dark" },
-                    primaryColor: "#2563EB",
-                    neutralColor: "#404040",
-                    display: "inline",
-                    stretchFullWidth: true,
-                    additionalJSON: { nonce },
-                    onSuccess: (event) => {
-                      const data = event?.data as Record<string, unknown> | undefined;
-                      const paymentId =
-                        event?.transaction ||
-                        event?.swapTransactionSignature ||
-                        (data?.id as string) ||
-                        (data?.transactionSignature as string) ||
-                        null;
-                      void confirmPayment(paymentId);
-                    },
-                    onPending: (event) => void confirmPayment(event?.transaction ?? null),
-                    onError: (event) => {
-                      setStatus("error");
-                      const errorMsg = event?.errorMessage || "";
-                      setMessage(
-                        errorMsg ||
-                          "The payment didn't go through and you weren't charged. Try again."
-                      );
-                    },
-                    onCancel: () => setTier(null),
-                  }}
-                />
+              <div className="flex overflow-hidden rounded-xl border border-neutral-800">
+                {((["sol", "usdc"] as const)).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMethod(m)}
+                    className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
+                      method === m
+                        ? "bg-blue-600 text-white"
+                        : "bg-neutral-900/40 text-neutral-400 hover:text-neutral-200"
+                    }`}
+                  >
+                    {m === "sol" ? "Pay with SOL" : "Pay with USDC"}
+                  </button>
+                ))}
               </div>
+
+              {!walletPk ? (
+                <button
+                  onClick={() => void connectWallet()}
+                  disabled={walletBusy}
+                  className="w-full rounded-xl bg-neutral-100 px-4 py-3 text-sm font-semibold text-neutral-950 transition-colors hover:bg-white disabled:opacity-60"
+                >
+                  {walletBusy ? "Connecting…" : "Connect wallet"}
+                </button>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/30 px-3.5 py-2.5 text-[11px] text-neutral-500">
+                    <span>Connected</span>
+                    <code className="font-mono text-neutral-300">
+                      {walletPk.slice(0, 4)}…{walletPk.slice(-4)}
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => void pay()}
+                    disabled={!quote || quoting || sending}
+                    className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-60"
+                  >
+                    {sending
+                      ? "Confirm in wallet…"
+                      : quoting || !quote
+                      ? "Preparing…"
+                      : `Pay ${formatAmount(quote.amount, quote.method)}`}
+                  </button>
+                </div>
+              )}
+
+              {walletError && <p className="text-center text-[11px] text-amber-400">{walletError}</p>}
 
               <WalletWarningNote />
             </div>
@@ -275,6 +409,11 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
       </div>
     </div>
   );
+}
+
+function formatAmount(amount: number, method: PayMethod): string {
+  if (method === "sol") return `${(amount / 1e9).toFixed(4)} SOL`;
+  return `${(amount / 1e6).toFixed(2)} USDC`;
 }
 
 function PaymentSuccess({ tier }: { tier: number | null }) {
@@ -345,14 +484,10 @@ function WalletWarningNote() {
       </svg>
       <p className="text-[11px] leading-relaxed text-neutral-500">
         Your wallet may flag this as an unrecognised site — that&apos;s a default warning for any
-        domain not yet on its allowlist, not a detected threat. The transaction is a plain transfer
-        to Helio, our payment processor. Check the amount before approving; we never request token
-        approvals or wallet permissions.
+        domain not yet on its allowlist, not a detected threat. The transaction is a plain SOL or
+        USDC transfer straight to our wallet. Check the amount before approving; we never request
+        token approvals or wallet permissions of any kind.
       </p>
     </div>
   );
-}
-
-function WidgetSkeleton() {
-  return <div className="h-64 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900/50" />;
 }

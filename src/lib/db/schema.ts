@@ -105,21 +105,23 @@ export const walletTokens = pgTable(
 );
 
 /**
- * One row per completed Helio payment. Written only by the server-side webhook —
- * never by the browser — and consumed by exactly one scan.
+ * One row per completed on-chain payment, verified directly against Solana via
+ * Helius. Written only by the server-side confirm route — never trusting a
+ * browser-reported success — and consumed by exactly one scan.
  */
 export const scanCredits = pgTable(
   "scan_credits",
   {
     id: serial("id").primaryKey(),
-    /** Helio transaction id; unique so a replayed webhook can't mint credits. */
+    /** The on-chain transaction signature; unique so a replayed confirm can't mint credits. */
     paymentId: text("payment_id").notNull(),
-    paylinkId: text("paylink_id"),
+    /** How the buyer paid: "sol" or "usdc". */
+    method: text("method"),
     /** Max wallets this credit unlocks (50/100/250/500). */
     tier: integer("tier").notNull(),
     /** Random token handed to the buyer; required to redeem. */
     claimToken: text("claim_token").notNull(),
-    /** Browser-generated nonce echoed back through Helio. The claim token is
+    /** Browser-generated nonce tied to the payment intent. The claim token is
      * only released to a caller that presents it, so the public on-chain
      * transaction signature alone is not enough to steal someone's purchase. */
     claimNonceHash: text("claim_nonce_hash"),
@@ -139,13 +141,13 @@ export const scanCredits = pgTable(
   ]
 );
 
-/** Every inbound Helio delivery, accepted or not, so failures leave a trace. */
+/** Every inbound payment confirmation attempt, accepted or not, so failures leave a trace. */
 export const webhookLog = pgTable(
   "webhook_log",
   {
     id: serial("id").primaryKey(),
     outcome: text("outcome").notNull(),
-    /** Only a short prefix — never the full shared secret. */
+    /** Only a short prefix — never a full secret. */
     authHeader: text("auth_header"),
     headerNames: text("header_names"),
     query: text("query"),
@@ -153,4 +155,35 @@ export const webhookLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("webhook_log_created_at_idx").on(t.createdAt)]
+);
+
+/**
+ * A quoted, not-yet-paid purchase: the exact lamports/USDC atomic amount and
+ * unsigned transaction we offered the buyer, so the confirm step can verify
+ * the transaction that actually landed matches what we quoted instead of
+ * trusting a client-supplied amount.
+ */
+export const paymentIntents = pgTable(
+  "payment_intents",
+  {
+    id: text("id").primaryKey(),
+    /** Hash of the browser-generated nonce; required to confirm this intent. */
+    nonceHash: text("nonce_hash").notNull(),
+    tier: integer("tier").notNull(),
+    /** "sol" or "usdc". */
+    method: text("method").notNull(),
+    /** Buyer's wallet public key (base58), fixed at quote time. */
+    payer: text("payer").notNull(),
+    /** Lamports (sol) or atomic USDC units (usdc). */
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    /** Token mint for "usdc"; null for native SOL. */
+    mint: text("mint"),
+    status: text("status").notNull().default("pending"),
+    /** Filled in once a matching transaction is confirmed on-chain. */
+    signature: text("signature"),
+    claimToken: text("claim_token"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("payment_intents_nonce_hash_idx").on(t.nonceHash)]
 );

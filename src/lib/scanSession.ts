@@ -13,12 +13,9 @@ import type { Chain } from "./types";
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 function secret(): string {
-  // Falls back to values that already exist in every deployment so a missing
+  // Falls back to a value that already exists in every deployment so a missing
   // extra env var can never silently disable signing.
-  const value =
-    process.env.SCAN_SESSION_SECRET ||
-    process.env.OWNER_ACCESS_KEY ||
-    process.env.HELIO_WEBHOOK_SECRET;
+  const value = process.env.SCAN_SESSION_SECRET || process.env.OWNER_ACCESS_KEY;
   if (!value) throw new Error("No signing secret configured for scan sessions.");
   return value;
 }
