@@ -361,18 +361,23 @@ export async function fetchWalletDetail(
         const tokensSold = p.volume?.tokensSold ?? 0;
         const avgBuyPriceUsd = tokensBought > 0 ? (p.volume?.buyUsd ?? 0) / tokensBought : 0;
         const avgSellPriceUsd = tokensSold > 0 ? (p.volume?.sellUsd ?? 0) / tokensSold : 0;
+        const invested = p.invested ?? 0;
+        const realized = p.pnl?.realized ?? 0;
         return {
           tokenAddress: p.token,
           symbol: p.meta?.symbol ?? p.token.slice(0, 4),
-          realizedPnlUsd: p.pnl?.realized ?? 0,
-          roiPercent: p.roi ?? 0,
-          investedUsd: p.invested ?? 0,
+          realizedPnlUsd: realized,
+          // Derived from the same basis as multipleX rather than p.roi, which
+          // leaks unrealized losses into the sign and would let this row read
+          // "12.4x" and "-12.7%" at the same time.
+          roiPercent: invested > 0 ? (realized / invested) * 100 : 0,
+          investedUsd: invested,
           proceedsUsd: p.proceeds ?? 0,
           avgBuyPriceUsd,
           avgSellPriceUsd,
           // Same realized-over-deployed basis as the main table, so a wallet's
           // detail panel cannot disagree with the row that opened it.
-          multipleX: (p.invested ?? 0) > 0 ? 1 + (p.pnl?.realized ?? 0) / (p.invested ?? 0) : 0,
+          multipleX: invested > 0 ? 1 + realized / invested : 0,
           tradeCount: p.counts?.total ?? 0,
           holdTimeSecs: p.timing?.holdTimeSecs ?? null,
           lastTradeMs: p.timing?.lastTrade ?? null,

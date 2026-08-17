@@ -102,6 +102,9 @@ export const walletTokens = pgTable(
       .notNull()
       .references(() => tokens.id),
     bestRank: integer("best_rank"),
+    /** Rank on the most recent scan. `bestRank` is a running minimum, so only
+     * this one can tell whether a rescan actually moved the wallet. */
+    lastRank: integer("last_rank"),
     realizedPnlUsd: doublePrecision("realized_pnl_usd").notNull(),
     roiPercent: doublePrecision("roi_percent"),
     multipleX: doublePrecision("multiple_x"),

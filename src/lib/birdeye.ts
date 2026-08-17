@@ -141,7 +141,9 @@ export async function fetchEvmTokenMeta(chain: EvmChain, address: string): Promi
 
   const priceUsd = market.price ?? 0;
   const marketCapUsd = market.market_cap ?? 0;
-  const estimatedSupply = market.circulating_supply ?? market.total_supply ?? 0;
+  // `||`, not `??`: Birdeye reports 0 (not null) for unindexed circulating
+  // supply, and a 0 here zeroes every market cap in the scan.
+  const estimatedSupply = market.circulating_supply || market.total_supply || 0;
 
   return {
     chain,
@@ -254,12 +256,19 @@ export async function fetchEvmTopTraders(
         })
       )
     );
+    let exhausted = false;
     for (const page of pages) {
+      // Offset pagination isn't guaranteed dense, so note the gap and keep the
+      // later pages in this batch rather than discarding results already paid for.
       if (!page.items || page.items.length === 0) {
-        return traders.map((t, i) => ({ ...t, rank: i + 1 }));
+        exhausted = true;
+        continue;
       }
-      page.items.forEach((item) => traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply)));
+      page.items.forEach((item) =>
+        traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply))
+      );
     }
+    if (exhausted) break;
   }
 
   return traders.slice(0, limit).map((t, i) => ({ ...t, rank: i + 1 }));

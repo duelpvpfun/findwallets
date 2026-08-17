@@ -1,7 +1,6 @@
 import type { Chain } from "./types";
 
 export const ALLOWED_CHAINS: Chain[] = ["solana", "bsc", "base"];
-export const EVM_CHAINS: Chain[] = ["bsc", "base"];
 
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;

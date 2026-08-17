@@ -106,15 +106,22 @@ export default function TradersTable({
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
   const columnCount = hasHoldingData ? 11 : 10;
 
-  const allSelected = selected.size > 0 && selected.size === filteredTraders.length;
+  // Compared against the visible rows, so filtering out a selected wallet can't
+  // leave the header checkbox claiming everything is selected.
+  const allSelected =
+    filteredTraders.length > 0 && filteredTraders.every((t) => selected.has(t.address));
 
+  // Summed over the filtered rows: a stats strip that describes wallets the
+  // filter is hiding contradicts the table underneath it.
   const summary = useMemo(() => {
-    const totalPnl = traders.reduce((sum, t) => sum + t.realizedPnlUsd, 0);
-    const winners = traders.filter((t) => t.realizedPnlUsd > 0).length;
+    const totalPnl = filteredTraders.reduce((sum, t) => sum + t.realizedPnlUsd, 0);
+    const winners = filteredTraders.filter((t) => t.realizedPnlUsd > 0).length;
     const avgX =
-      traders.length > 0 ? traders.reduce((sum, t) => sum + t.avgMultipleX, 0) / traders.length : 0;
+      filteredTraders.length > 0
+        ? filteredTraders.reduce((sum, t) => sum + t.avgMultipleX, 0) / filteredTraders.length
+        : 0;
     return { totalPnl, winners, avgX };
-  }, [traders]);
+  }, [filteredTraders]);
 
   function toggleAll() {
     if (allSelected) {
@@ -133,9 +140,10 @@ export default function TradersTable({
     });
   }
 
+  // Export only what the user can see; exporting filtered-out rows is a surprise.
   const selectedTraders = useMemo(
-    () => traders.filter((t) => selected.has(t.address)),
-    [traders, selected]
+    () => filteredTraders.filter((t) => selected.has(t.address)),
+    [filteredTraders, selected]
   );
 
   const [exportTargets, setExportTargets] = useState<WalletTrader[] | null>(null);

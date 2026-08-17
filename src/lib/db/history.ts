@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import { tokens, walletTokens, wallets } from "./schema";
 import type { Chain, WalletHistory } from "../types";
@@ -34,7 +34,15 @@ export async function fetchWalletHistories(
         and(
           eq(wallets.chain, chain),
           inArray(wallets.address, addresses),
-          ne(tokens.address, currentTokenAddress)
+          // EVM addresses vary in case between checksummed and lowercase forms,
+          // so a raw `ne` can fail to exclude the token being scanned and every
+          // wallet picks up a history badge citing the page it is already on.
+          // Base58 is case-sensitive, so Solana keeps the exact comparison.
+          chain === "solana"
+            ? ne(tokens.address, currentTokenAddress)
+            : sql`lower(${tokens.address}) <> lower(${currentTokenAddress})`,
+          // The badge is a track record, not an appearance counter.
+          gt(walletTokens.realizedPnlUsd, 0)
         )
       )
       .orderBy(sql`${walletTokens.realizedPnlUsd} desc`);

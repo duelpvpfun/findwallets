@@ -1,5 +1,5 @@
 // Deterministic seeded RNG so the same CA / wallet always produces the same numbers.
-export function hashStringToSeed(input: string): number {
+function hashStringToSeed(input: string): number {
   let h = 1779033703 ^ input.length;
   for (let i = 0; i < input.length; i++) {
     h = Math.imul(h ^ input.charCodeAt(i), 3432918353);
@@ -8,7 +8,7 @@ export function hashStringToSeed(input: string): number {
   return h >>> 0;
 }
 
-export function mulberry32(seed: number): () => number {
+function mulberry32(seed: number): () => number {
   let a = seed;
   return function () {
     a |= 0;

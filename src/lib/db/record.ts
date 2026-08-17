@@ -34,9 +34,22 @@ export async function recordScan(
   const db = getDb();
   if (!db || traders.length === 0) return;
 
+  // Postgres rejects ON CONFLICT DO UPDATE when one statement hits the same row
+  // twice, and both paginators can hand back a wallet on two pages. Keeping the
+  // first copy keeps the better rank, since both feeds are sorted desc by PNL.
+  const seenAddress = new Set<string>();
+  const uniqueTraders = traders.filter((t) => {
+    if (seenAddress.has(t.address)) return false;
+    seenAddress.add(t.address);
+    return true;
+  });
+
   const isAllTime = token.rankingWindow === "all_time";
 
-  const [tokenRow] = await db
+  // One unit of work: a crash between these statements would otherwise leave
+  // scan_count and times_seen incremented for a scan that stored no rows.
+  await db.transaction(async (tx) => {
+  const [tokenRow] = await tx
     .insert(tokens)
     .values({
       chain: token.chain,
@@ -66,10 +79,10 @@ export async function recordScan(
 
   const lifetimeByAddress = new Map(lifetime.map((l) => [l.address, l]));
 
-  await db
+  await tx
     .insert(wallets)
     .values(
-      traders.map((t) => {
+      uniqueTraders.map((t) => {
         const lt = lifetimeByAddress.get(t.address);
         return {
           chain: token.chain,
@@ -104,7 +117,7 @@ export async function recordScan(
       },
     });
 
-  const walletRows = await db
+  const walletRows = await tx
     .select({ id: wallets.id, address: wallets.address })
     .from(wallets)
     .where(
@@ -112,13 +125,13 @@ export async function recordScan(
         eq(wallets.chain, token.chain),
         inArray(
           wallets.address,
-          traders.map((t) => t.address)
+          uniqueTraders.map((t) => t.address)
         )
       )
     );
   const idByAddress = new Map(walletRows.map((w) => [w.address, w.id]));
 
-  const rows = traders
+  const rows = uniqueTraders
     .map((t) => {
       const walletId = idByAddress.get(t.address);
       if (!walletId) return null;
@@ -135,6 +148,7 @@ export async function recordScan(
         avgSellMcapUsd: t.avgSellMcapUsd,
         investedUsd: t.boughtUsd,
         proceedsUsd: t.soldUsd,
+        lastTradeMs: t.lastTradeMs,
         rankingWindow: token.rankingWindow,
       };
     })
@@ -144,11 +158,12 @@ export async function recordScan(
 
   // A rescan usually returns figures identical to the last one, and a row that
   // repeats its predecessor records nothing a timestamp on wallet_tokens can't.
-  const previous = await db
+
+  const previous = await tx
     .select({
       walletId: walletTokens.walletId,
       realizedPnlUsd: walletTokens.realizedPnlUsd,
-      rank: walletTokens.bestRank,
+      rank: walletTokens.lastRank,
     })
     .from(walletTokens)
     .where(
@@ -160,13 +175,23 @@ export async function recordScan(
         )
       )
     );
-  const seen = new Map(previous.map((p) => [p.walletId, p]));
+  const priorByWallet = new Map(previous.map((p) => [p.walletId, p]));
   const changed = rows.filter((r) => {
-    const prior = seen.get(r.walletId);
+    const prior = priorByWallet.get(r.walletId);
     return !prior || prior.realizedPnlUsd !== r.realizedPnlUsd || prior.rank !== r.rank;
   });
 
-  if (changed.length > 0) await db.insert(observations).values(changed);
+  if (changed.length > 0) {
+    // `observations` has no last_trade_ms column, so drop it rather than let
+    // Drizzle try to insert a field the table doesn't have.
+    await tx.insert(observations).values(
+      changed.map((o) => {
+        const { lastTradeMs, ...observation } = o;
+        void lastTradeMs;
+        return observation;
+      })
+    );
+  }
 
   const pnlUpdate = isAllTime
     ? sql`excluded.realized_pnl_usd`
@@ -175,13 +200,15 @@ export async function recordScan(
     ? sql`true`
     : sql`excluded.realized_pnl_usd > ${walletTokens.realizedPnlUsd}`;
 
-  await db
+  await tx
     .insert(walletTokens)
-    .values(rows.map((r) => ({ ...r, bestRank: r.rank, timesObserved: 1 })))
+    .values(rows.map((r) => ({ ...r, bestRank: r.rank, lastRank: r.rank, timesObserved: 1 })))
     .onConflictDoUpdate({
       target: [walletTokens.walletId, walletTokens.tokenId],
       set: {
         bestRank: sql`least(coalesce(${walletTokens.bestRank}, 2147483647), coalesce(excluded.best_rank, 2147483647))`,
+        lastRank: sql`excluded.last_rank`,
+        lastTradeMs: sql`greatest(coalesce(${walletTokens.lastTradeMs}, 0), coalesce(excluded.last_trade_ms, 0))`,
         realizedPnlUsd: pnlUpdate,
         roiPercent: sql`case when ${keepNewer} then excluded.roi_percent else ${walletTokens.roiPercent} end`,
         multipleX: sql`case when ${keepNewer} then excluded.multiple_x else ${walletTokens.multipleX} end`,
@@ -196,4 +223,5 @@ export async function recordScan(
         lastObservedAt: new Date(),
       },
     });
+  });
 }

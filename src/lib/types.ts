@@ -56,14 +56,6 @@ export interface WalletHistory {
   wins: Array<{ symbol: string; realizedPnlUsd: number; multipleX: number | null }>;
 }
 
-export interface TopTradersResponse {
-  token: TokenMeta;
-  traders: WalletTrader[];
-  isDemoData: boolean;
-  /** Keyed by wallet address; empty when no database is configured. */
-  histories?: Record<string, WalletHistory>;
-}
-
 export interface WalletDistributionBucket {
   label: string;
   count: number;

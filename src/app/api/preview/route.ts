@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
-import { fetchCachedScan, fetchShowcaseTokens } from "@/lib/db/showcase";
+import { fetchCachedScan, isShowcaseToken } from "@/lib/db/showcase";
 import { isValidAddressForChain, isChain } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
@@ -36,18 +36,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const allowed = await fetchShowcaseTokens();
-    const match = allowed.find(
-      (t) => t.chain === chain && t.address.toLowerCase() === address.toLowerCase()
-    );
-    if (!match) {
+    const storedAddress = await isShowcaseToken(chain, address);
+    if (!storedAddress) {
       return NextResponse.json(
         { error: "That token isn't available as a free sample. Run a full scan to see it." },
         { status: 404 }
       );
     }
 
-    const cached = await fetchCachedScan(chain, match.address, PREVIEW_LIMIT);
+    const cached = await fetchCachedScan(chain, storedAddress, PREVIEW_LIMIT);
     if (!cached) {
       return NextResponse.json({ error: "No cached results for that token." }, { status: 404 });
     }

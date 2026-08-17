@@ -82,6 +82,30 @@ export async function fetchShowcaseTokens(limit = 6): Promise<ShowcaseToken[]> {
 }
 
 /**
+ * Authoritative "is this token a free sample?" check. Separate from
+ * `fetchShowcaseTokens` because that one is display-limited — curating a 7th
+ * token would otherwise leave it unreachable behind the list's `limit`.
+ */
+export async function isShowcaseToken(chain: Chain, address: string): Promise<string | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const [row] = await db
+    .select({ address: tokens.address })
+    .from(tokens)
+    .where(
+      and(
+        eq(tokens.chain, chain),
+        eq(tokens.showcase, true),
+        sql`lower(${tokens.address}) = lower(${address})`
+      )
+    )
+    .limit(1);
+
+  return row?.address ?? null;
+}
+
+/**
  * Replays a stored scan straight from the database. No upstream API call, so a
  * free preview costs nothing per view no matter how often it's opened.
  */
@@ -136,7 +160,12 @@ export async function fetchCachedScan(
     imageUrl: tokenRow.imageUrl,
     priceUsd: tokenRow.priceUsd ?? 0,
     marketCapUsd: tokenRow.marketCapUsd ?? 0,
-    estimatedSupply: 0,
+    // Reconstructed from the stored snapshot; a 0 here would zero every market
+    // cap in the wallet detail panel this token opens.
+    estimatedSupply:
+      tokenRow.priceUsd && tokenRow.priceUsd > 0
+        ? (tokenRow.marketCapUsd ?? 0) / tokenRow.priceUsd
+        : 0,
     nativePriceUsd: tokenRow.nativePriceUsd ?? 0,
     isToken2022: false,
     source: "other",
@@ -233,7 +262,16 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
     })
     .from(walletTokens)
     .innerJoin(tokens, eq(tokens.id, walletTokens.tokenId))
-    .where(and(inArray(walletTokens.walletId, ids), gt(walletTokens.realizedPnlUsd, 0)))
+    .where(
+      and(
+        inArray(walletTokens.walletId, ids),
+        gt(walletTokens.realizedPnlUsd, 0),
+        // Same cost-basis floor as the headline row above; without it a dust-basis
+        // multiple that is too absurd to headline still renders as a chip.
+        gt(walletTokens.investedUsd, MIN_TICKER_INVESTED_USD),
+        isNotNull(walletTokens.multipleX)
+      )
+    )
     .orderBy(desc(walletTokens.realizedPnlUsd));
 
   const winsByWallet = new Map<number, TickerWallet["alsoWon"]>();

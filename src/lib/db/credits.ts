@@ -3,18 +3,21 @@ import { and, eq, gte, isNull } from "drizzle-orm";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits } from "./schema";
+import { TIER_OPTIONS } from "../tiers";
 
 export const TIERS = [100, 250, 500] as const;
 export type Tier = (typeof TIERS)[number];
 
-/** Maps each Helio paylink to the tier it unlocks. Server-side only — the
- * browser never decides which tier it bought. The retired 50 paylink stays
- * mapped so anyone who bought one before it was pulled can still redeem. */
+/** Maps each Helio paylink to the tier it unlocks. Derived from the same list
+ * the checkout buttons use, because a paylink present on one side only means a
+ * buyer pays and the webhook resolves nothing. The browser still never decides
+ * which tier it bought — this is only read server-side.
+ *
+ * The retired 50 paylink is kept here rather than in TIER_OPTIONS: it must stay
+ * redeemable without reappearing as something new customers can buy. */
 export const PAYLINK_TIERS: Record<string, number> = {
   "6a8215d1f6597f12ce9fbea6": 50,
-  "6a821074f6597f12ce9f98c4": 100,
-  "6a8214f8a9d7742eda4f78b5": 250,
-  "6a82154181e40c11230808b0": 500,
+  ...Object.fromEntries(TIER_OPTIONS.map((t) => [t.paylinkId, t.limit])),
 };
 
 export function tierForPaylink(paylinkId: string): number | null {

@@ -85,13 +85,16 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
 
   const costBasisOfSold = soldTokenAmount * avgBuyPriceUsd;
   const realizedPnlUsd = soldUsd - costBasisOfSold;
-  const realizedPnlPercent = costBasisOfSold > 0 ? (realizedPnlUsd / costBasisOfSold) * 100 : 0;
-  const avgMultipleX = avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0;
+  // Realized over total deployed, matching both live adapters. Demo numbers that
+  // used a different basis made the sample table disagree with a paid scan.
+  const realizedPnlPercent = boughtUsd > 0 ? (realizedPnlUsd / boughtUsd) * 100 : 0;
+  const avgMultipleX = boughtUsd > 0 ? 1 + realizedPnlUsd / boughtUsd : 0;
 
-  const remainingPercent = boughtTokenAmount > 0
-    ? Math.max(0, ((boughtTokenAmount - soldTokenAmount) / boughtTokenAmount) * 100)
-    : 0;
+  // Mock wallets have no transfers or airdrops, so the leftover balance is
+  // exactly bought minus sold -- the quantity the live path reads off-chain.
   const remainingTokens = Math.max(0, boughtTokenAmount - soldTokenAmount);
+  const remainingPercent =
+    boughtTokenAmount > 0 ? Math.min(100, (remainingTokens / boughtTokenAmount) * 100) : 0;
   const remainingValueUsd = remainingTokens * avgSellPriceUsd;
 
   const now = Date.now();
