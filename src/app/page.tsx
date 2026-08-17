@@ -239,7 +239,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
+    <div className="flex min-h-screen flex-col bg-neutral-950 text-neutral-100">
       {/* Ambient background glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-40 left-1/2 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
@@ -272,7 +272,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="relative mx-auto max-w-7xl px-6 py-10">
+      <main className="relative mx-auto w-full max-w-7xl flex-1 px-6 py-10">
         {!result && (
           <div className="mx-auto mb-8 max-w-2xl text-center">
             <h2 className="text-2xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
@@ -483,6 +483,23 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      <footer className="relative mt-auto border-t border-neutral-800/80 bg-neutral-950/80">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-6 py-5 sm:flex-row">
+          <a
+            href="https://x.com/crypce0"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs font-medium text-neutral-400 transition-colors hover:text-neutral-100"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            @crypce0
+          </a>
+          <p className="text-xs text-neutral-500">Built for the trenches 🪖</p>
+        </div>
+      </footer>
 
       {welcomeOpen && <ProductPreview onClose={() => setWelcomeOpen(false)} />}
 

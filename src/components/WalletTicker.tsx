@@ -119,10 +119,6 @@ export default function WalletTicker() {
           />
         ))}
       </div>
-
-      <p className="mt-3 text-center text-[11px] text-neutral-600">
-        Real wallets from previous scans · hover to pause
-      </p>
     </section>
   );
 }
