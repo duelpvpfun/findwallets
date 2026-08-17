@@ -320,7 +320,7 @@ export default function WalletDetailModal({
                           nativePriceUsd > 0 ? trader.remainingValueUsd / nativePriceUsd : 0,
                           NATIVE_UNIT[chain]
                         )}{" "}
-                        · {trader.remainingPercent.toFixed(0)}% of supply bought
+                        · {trader.remainingPercent.toFixed(0)}% of what they bought
                       </span>
                     </div>
                     <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">

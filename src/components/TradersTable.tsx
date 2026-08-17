@@ -102,7 +102,9 @@ export default function TradersTable({
     });
   }
 
+  // Only Solana reports live balances; elsewhere the column would be all dashes.
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
+  const columnCount = hasHoldingData ? 11 : 10;
 
   const allSelected = selected.size > 0 && selected.size === filteredTraders.length;
 
@@ -366,16 +368,17 @@ export default function TradersTable({
                 onToggle={toggleSort}
                 title="Realized profit in USD"
               />
-              <th className="py-2.5 pr-5 font-medium" title="Tokens still held, not yet sold">
-                {hasHoldingData ? "Remaining" : "Remaining (n/a)"}
-              </th>
+              {hasHoldingData && (
+                <th className="py-2.5 pr-5 font-medium" title="Tokens still held, not yet sold">
+                  Remaining
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {filteredTraders.length === 0 && (
               <tr>
-                <td colSpan={11} className="py-12 text-center text-sm text-neutral-500">
-                  {/* 11 = checkbox, #, wallet, entry, exit, bought, sold, X, %, $, remaining */}
+                <td colSpan={columnCount} className="py-12 text-center text-sm text-neutral-500">
                   No traders match the current filters.
                 </td>
               </tr>
@@ -459,9 +462,11 @@ export default function TradersTable({
                 >
                   {formatUsd(t.realizedPnlUsd)}
                 </td>
-                <td className="py-3 pr-5">
-                  <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} />
-                </td>
+                {hasHoldingData && (
+                  <td className="py-3 pr-5">
+                    <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
