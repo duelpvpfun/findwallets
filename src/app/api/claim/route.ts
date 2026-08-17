@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
   const paymentId = request.nextUrl.searchParams.get("paymentId")?.trim();
   const claim = request.nextUrl.searchParams.get("claim")?.trim();
   const nonce = request.nextUrl.searchParams.get("nonce")?.trim();
+  const nonceId = request.nextUrl.searchParams.get("nonceId")?.trim();
 
   // Lets the UI show remaining entitlement for a token it already holds.
   if (claim) {
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
 
   // The nonce is the reliable join: Helio's payload field carrying the payment
   // id varies, so matching on it alone left paid credits stranded as "pending".
+  // nonceId is sent in the tx to match Helio's webhook data; nonce is for verification.
   let result = await releaseClaimByNonce(nonce);
 
   if (result.status !== "ok" && paymentId) {

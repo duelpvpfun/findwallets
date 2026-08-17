@@ -37,7 +37,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   // A secret only this browser knows, sent through Helio and required to redeem
   // the purchase. Without it the public transaction signature would be enough
   // for anyone watching the merchant wallet to steal the buyer's scan.
+  // Use a short ID to minimize transaction size (Phantom flags transactions >1232 bytes).
   const [nonce] = useState(() => crypto.randomUUID());
+  const shortNonceId = nonce.slice(0, 12); // First 12 chars of UUID (48 bits entropy)
 
   // Closing mid-confirmation would strand a paid credit, so it's blocked there.
   const locked = status === "confirming" || status === "success";
@@ -55,8 +57,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
   // The widget's success callback can't be trusted on its own, so we poll our
   // own API until Helio's server-to-server webhook has confirmed the payment.
-  // The nonce alone is enough to resolve the credit; the payment id is passed
-  // when Helio gives us one, purely as a fallback lookup.
+  // Send both shortNonceId (in tx) and full nonce (never transmitted on-chain).
   const confirmPayment = useCallback(
     async (paymentId: string | null) => {
       setStatus("confirming");
@@ -68,7 +69,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
       while (Date.now() - started < CONFIRM_TIMEOUT_MS) {
         setElapsed(Math.round((Date.now() - started) / 1000));
         try {
-          const query = new URLSearchParams({ nonce });
+          const query = new URLSearchParams({ nonce, nonceId: shortNonceId });
           if (paymentId) query.set("paymentId", paymentId);
           const res = await fetch(`/api/claim?${query.toString()}`);
           if (res.ok) {
@@ -243,7 +244,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                     neutralColor: "#404040",
                     display: "inline",
                     stretchFullWidth: true,
-                    additionalJSON: { nonce },
+                    additionalJSON: { nonce: shortNonceId },
                     onSuccess: (event) => {
                       const data = event?.data as Record<string, unknown> | undefined;
                       const paymentId =
