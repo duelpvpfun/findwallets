@@ -16,6 +16,8 @@ export interface ShowcaseToken {
 
 /** One row of the public "wallets we've tracked" ticker. */
 export interface TickerWallet {
+  /** Already masked (`abcd…wxyz`). The full address is the paid product and is
+   * never sent to this public endpoint. */
   address: string;
   chain: Chain;
   symbol: string;
@@ -35,7 +37,16 @@ export interface TickerWallet {
 
 const NATIVE_SYMBOL: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
 
-/** Free sample scans. Ordered by how much data we hold so the preview looks full. */
+/** Keeps the ticker looking real without giving away a scannable address. */
+function maskAddress(address: string): string {
+  return address.length <= 10 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`;
+}
+
+/**
+ * Free sample scans. Explicitly curated via the `showcase` flag — a token a
+ * customer paid to scan must never become a free sample for everyone else, so
+ * this is opt-in per token rather than "anything we happen to have cached".
+ */
 export async function fetchShowcaseTokens(limit = 6): Promise<ShowcaseToken[]> {
   const db = getDb();
   if (!db) return [];
@@ -51,6 +62,7 @@ export async function fetchShowcaseTokens(limit = 6): Promise<ShowcaseToken[]> {
     })
     .from(tokens)
     .innerJoin(walletTokens, eq(walletTokens.tokenId, tokens.id))
+    .where(eq(tokens.showcase, true))
     .groupBy(tokens.id)
     .having(sql`count(${walletTokens.walletId}) >= 20`)
     .orderBy(desc(sql`count(${walletTokens.walletId})`))
@@ -233,7 +245,7 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
     const chain = r.chain as Chain;
     const invested = r.investedUsd ?? 0;
     return {
-      address: r.address,
+      address: maskAddress(r.address),
       chain,
       symbol: r.symbol ?? "?",
       investedUsd: invested,

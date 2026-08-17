@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { formatCompactNumber, formatMultiple, formatUsd, shortenAddress } from "@/lib/format";
+import { formatCompactNumber, formatMultiple, formatUsd } from "@/lib/format";
 import type { Chain } from "@/lib/types";
 
 interface TickerWallet {
@@ -140,9 +140,8 @@ function WalletRow({ wallet, nativeMode }: { wallet: TickerWallet; nativeMode: b
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CHAIN_DOT[wallet.chain]}`} />
-        <span className="font-mono text-xs text-neutral-300">
-          {shortenAddress(wallet.address, 4)}
-        </span>
+        {/* Already masked server-side. */}
+        <span className="font-mono text-xs text-neutral-300">{wallet.address}</span>
         <span className="rounded-md bg-neutral-800/80 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400">
           ${wallet.symbol}
         </span>
