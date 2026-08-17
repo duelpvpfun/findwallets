@@ -344,7 +344,12 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                   <div className="text-[11px] text-neutral-500">{tier.limit} wallets</div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-base font-semibold text-neutral-50">{tier.price}</span>
+                  <div className="text-right">
+                    <span className="text-base font-semibold text-neutral-50">{tier.price}</span>
+                    {walletPk && quote && (
+                      <div className="text-[11px] text-neutral-500">≈ {formatAmount(quote.amount, quote.method)}</div>
+                    )}
+                  </div>
                   <button
                     onClick={() => setTier(null)}
                     className="text-[11px] text-neutral-500 underline underline-offset-2 transition-colors hover:text-neutral-300"
@@ -395,14 +400,12 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                       ? "Confirm in wallet…"
                       : quoting || !quote
                       ? "Preparing…"
-                      : `Pay ${formatAmount(quote.amount, quote.method)}`}
+                      : `Pay ${tier.price} · ${formatAmount(quote.amount, quote.method)}`}
                   </button>
                 </div>
               )}
 
               {walletError && <p className="text-center text-[11px] text-amber-400">{walletError}</p>}
-
-              <WalletWarningNote />
             </div>
           )}
         </div>
@@ -463,31 +466,6 @@ function Confirming({ elapsed }: { elapsed: number }) {
         </p>
       </div>
       <div className="mt-1 text-[11px] tabular-nums text-neutral-600">{elapsed}s</div>
-    </div>
-  );
-}
-
-/** Unverified dapps trip wallet phishing heuristics, so say so before the
- * warning appears rather than letting it read as a scam signal. */
-function WalletWarningNote() {
-  return (
-    <div className="flex gap-2.5 rounded-xl border border-neutral-800/70 bg-neutral-900/30 px-3.5 py-3">
-      <svg
-        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 16v-4M12 8h.01" />
-      </svg>
-      <p className="text-[11px] leading-relaxed text-neutral-500">
-        Your wallet may flag this as an unrecognised site — that&apos;s a default warning for any
-        domain not yet on its allowlist, not a detected threat. The transaction is a plain SOL or
-        USDC transfer straight to our wallet. Check the amount before approving; we never request
-        token approvals or wallet permissions of any kind.
-      </p>
     </div>
   );
 }
