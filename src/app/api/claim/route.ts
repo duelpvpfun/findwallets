@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bindNonceToPayment, checkCredit, hashNonce, releaseClaim } from "@/lib/db/credits";
+import {
+  bindNonceToPayment,
+  checkCredit,
+  hashNonce,
+  releaseClaim,
+  releaseClaimByNonce,
+} from "@/lib/db/credits";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 
 /**
@@ -30,17 +36,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(status);
   }
 
-  if (!paymentId || !nonce) {
-    return NextResponse.json({ error: "Missing paymentId or nonce" }, { status: 400 });
+  if (!nonce) {
+    return NextResponse.json({ error: "Missing nonce" }, { status: 400 });
   }
 
-  const nonceHash = hashNonce(nonce);
-  let result = await releaseClaim(paymentId, nonce);
+  // The nonce is the reliable join: Helio's payload field carrying the payment
+  // id varies, so matching on it alone left paid credits stranded as "pending".
+  let result = await releaseClaimByNonce(nonce);
 
-  // Helio may not echo our nonce back, leaving the credit unbound; adopt it for
-  // the first caller inside the short post-checkout window, then re-resolve.
-  if (result.status === "forbidden" && (await bindNonceToPayment(paymentId, nonceHash))) {
-    result = await releaseClaim(paymentId, nonce);
+  if (result.status !== "ok" && paymentId) {
+    const byPayment = await releaseClaim(paymentId, nonce);
+    // Helio may not echo our nonce back, leaving the credit unbound; adopt it for
+    // the first caller inside the short post-checkout window, then re-resolve.
+    if (byPayment.status === "forbidden" && (await bindNonceToPayment(paymentId, hashNonce(nonce)))) {
+      result = await releaseClaim(paymentId, nonce);
+    } else if (byPayment.status !== "pending") {
+      result = byPayment;
+    }
   }
 
   switch (result.status) {

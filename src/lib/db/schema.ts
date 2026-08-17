@@ -130,5 +130,6 @@ export const scanCredits = pgTable(
   (t) => [
     uniqueIndex("scan_credits_payment_id_idx").on(t.paymentId),
     uniqueIndex("scan_credits_claim_token_idx").on(t.claimToken),
+    index("scan_credits_claim_nonce_hash_idx").on(t.claimNonceHash),
   ]
 );
