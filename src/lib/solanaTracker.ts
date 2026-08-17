@@ -93,6 +93,34 @@ async function detectTokenProgram(mint: string): Promise<boolean> {
 
 const WSOL_ADDRESS = "So11111111111111111111111111111111111111112";
 
+/**
+ * Ground-truth supply straight from the chain. Reverse-engineering supply as
+ * marketCap/price from a pool was fragile: some tokens carry long-abandoned
+ * pools with near-zero liquidity that still report a price (e.g. one Pnut
+ * pool with $0.88 of liquidity priced the token 32x above every real pool),
+ * and if a bad scan ever let one through, every wallet recorded in that scan
+ * inherited a poisoned mcap. A single on-chain read can't be fooled that way.
+ */
+export async function fetchTokenSupply(mint: string): Promise<number> {
+  try {
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTokenSupply",
+        params: [mint],
+      }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return data?.result?.value?.uiAmount ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 interface PriceResponse {
   price: number;
 }
@@ -103,13 +131,21 @@ export async function fetchSolPriceUsd(): Promise<number> {
 }
 
 export async function fetchTokenMeta(address: string): Promise<TokenMeta> {
-  const [info, isToken2022, solPriceUsd] = await Promise.all([
+  const [info, isToken2022, solPriceUsd, chainSupply] = await Promise.all([
     stFetch<TokenInfoResponse>(`/tokens/${address}`),
     detectTokenProgram(address),
     fetchSolPriceUsd(),
+    fetchTokenSupply(address),
   ]);
 
-  const primaryPool = info.pools?.slice().sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
+  // Liquidity under this floor is thin enough that a single trade can move its
+  // reported price by orders of magnitude, so those pools are excluded before
+  // picking the "primary" one purely by liquidity. Falls back to the raw list
+  // if every pool is this thin (e.g. a token with no real pools yet).
+  const MIN_POOL_LIQUIDITY_USD = 1000;
+  const liquidPools = info.pools?.filter((p) => (p.liquidity?.usd ?? 0) >= MIN_POOL_LIQUIDITY_USD);
+  const candidates = liquidPools && liquidPools.length > 0 ? liquidPools : info.pools;
+  const primaryPool = candidates?.slice().sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
   const market = primaryPool?.market ?? null;
   const source: TokenMeta["source"] = market && PUMPFUN_MARKETS.has(market)
     ? "pumpfun"
@@ -118,10 +154,13 @@ export async function fetchTokenMeta(address: string): Promise<TokenMeta> {
     : "other";
 
   const priceUsd = primaryPool?.price.usd ?? 0;
-  const marketCapUsd = primaryPool?.marketCap.usd ?? 0;
-  // Most memecoins mint a fixed supply at launch, so current mcap/price is a
-  // reliable stand-in for supply at any point in the token's history.
-  const estimatedSupply = priceUsd > 0 ? marketCapUsd / priceUsd : 0;
+  // Supply comes from the chain, not from marketCap/price division — see
+  // fetchTokenSupply. marketCapUsd is then derived from it so every mcap
+  // figure in the app (this token's, and every wallet's avg buy/sell mcap)
+  // shares the same single source of truth instead of trusting a pool's own
+  // (sometimes wrong) marketCap figure.
+  const estimatedSupply = chainSupply > 0 ? chainSupply : priceUsd > 0 ? (primaryPool?.marketCap.usd ?? 0) / priceUsd : 0;
+  const marketCapUsd = priceUsd * estimatedSupply;
 
   return {
     chain: "solana",

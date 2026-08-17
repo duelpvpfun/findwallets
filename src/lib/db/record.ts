@@ -6,8 +6,14 @@ import type { TokenMeta, WalletTrader } from "../types";
 
 const BOT_TAGS = ["arbitrage-bot", "sniper-bot", "bot", "arbitrage"];
 
-function looksLikeBot(tags: string[]): boolean {
-  return tags.some((t) => BOT_TAGS.includes(t.toLowerCase()));
+// Above this many lifetime trades, upstream's own identity tags are the
+// exception, not the rule (232 of ~1000 wallets we've seen sit at 10k-50M
+// trades with no bot tag at all) — no human manually trades a token this often.
+const BOT_LIFETIME_TRADES_THRESHOLD = 5000;
+
+function looksLikeBot(tags: string[], lifetimeTrades: number | null): boolean {
+  if (tags.some((t) => BOT_TAGS.includes(t.toLowerCase()))) return true;
+  return (lifetimeTrades ?? 0) >= BOT_LIFETIME_TRADES_THRESHOLD;
 }
 
 export interface LifetimeStats {
@@ -84,16 +90,17 @@ export async function recordScan(
     .values(
       uniqueTraders.map((t) => {
         const lt = lifetimeByAddress.get(t.address);
+        const lifetimeTrades = lt?.trades ?? t.walletLifetimeTotalTrades ?? null;
         return {
           chain: token.chain,
           address: t.address,
           identityName: t.nickname,
           twitter: t.twitter,
           tags: t.tags,
-          isBot: looksLikeBot(t.tags),
+          isBot: looksLikeBot(t.tags, lifetimeTrades),
           lifetimePnlUsd: lt?.pnlUsd ?? t.walletLifetimeRealizedPnlUsd ?? null,
           lifetimeWinRate: lt?.winRate ?? null,
-          lifetimeTrades: lt?.trades ?? t.walletLifetimeTotalTrades ?? null,
+          lifetimeTrades,
           lifetimeTokensTraded: lt?.tokensTraded ?? t.walletLifetimeTokensTraded ?? null,
           lifetimeUpdatedAt: lt ? new Date() : null,
           timesSeen: 1,
