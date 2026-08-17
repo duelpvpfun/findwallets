@@ -79,8 +79,10 @@ export default function Home() {
     async function restore() {
       const params = new URLSearchParams(window.location.search);
       const keyFromUrl = params.get("key");
-      if (keyFromUrl) {
-        localStorage.setItem(OWNER_STORAGE_KEY, keyFromUrl);
+      if (keyFromUrl !== null) {
+        // `?key=` with an empty value clears it, so the owner can see the buyer's flow.
+        if (keyFromUrl) localStorage.setItem(OWNER_STORAGE_KEY, keyFromUrl);
+        else localStorage.removeItem(OWNER_STORAGE_KEY);
         params.delete("key");
         const qs = params.toString();
         window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
@@ -371,6 +373,18 @@ export default function Home() {
             <span className="rounded-full border border-emerald-900/60 bg-emerald-950/30 px-3 py-1 font-medium text-emerald-300">
               {ownerKey ? "Owner access · unlimited free scans" : `Credit ready · Top ${claim!.tier}`}
             </span>
+            {ownerKey && (
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem(OWNER_STORAGE_KEY);
+                  setOwnerKey(null);
+                }}
+                className="text-neutral-500 underline underline-offset-2 transition-colors hover:text-neutral-300"
+              >
+                Exit owner mode
+              </button>
+            )}
           </div>
         )}
 
