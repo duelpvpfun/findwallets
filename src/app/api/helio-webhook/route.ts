@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createCredit, hashNonce, logWebhook, tierForPaylink } from "@/lib/db/credits";
 import { isDbConfigured } from "@/lib/db";
 
@@ -14,17 +14,31 @@ function matches(provided: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function isAuthorized(request: NextRequest): boolean {
+function configuredSecrets(): string[] {
   // Helio issues a separate shared token per webhook, so accept a comma-separated list.
-  const expected = (process.env.HELIO_WEBHOOK_SECRET ?? "")
+  return (process.env.HELIO_WEBHOOK_SECRET ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (expected.length === 0) return false;
-  const provided =
+}
+
+function providedSecret(request: NextRequest): string {
+  return (
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
     request.headers.get("x-helio-signature") ??
-    "";
+    ""
+  );
+}
+
+/** Short digest so tokens can be compared in logs without ever storing them. */
+function fingerprint(value: string): string {
+  return value ? createHash("sha256").update(value).digest("hex").slice(0, 8) : "none";
+}
+
+function isAuthorized(request: NextRequest): boolean {
+  const expected = configuredSecrets();
+  if (expected.length === 0) return false;
+  const provided = providedSecret(request);
   if (!provided) return false;
   return expected.some((secret) => matches(provided, secret));
 }
@@ -35,11 +49,12 @@ export async function POST(request: NextRequest) {
   // Recorded before authorization so a rejected delivery still leaves evidence;
   // only a prefix of the credential is kept.
   const trace = async (outcome: string) => {
-    const auth =
-      request.headers.get("authorization") ?? request.headers.get("x-helio-signature") ?? "";
+    const provided = providedSecret(request);
+    const sent = fingerprint(provided);
+    const known = configuredSecrets().map(fingerprint).join(" ");
     await logWebhook({
       outcome,
-      authHeader: auth ? `${auth.slice(0, 12)}…(len ${auth.length})` : "none",
+      authHeader: `sent=${sent} len=${provided.length} | configured=[${known}]`,
       headerNames: [...request.headers.keys()].join(","),
       query: request.nextUrl.search,
       body: raw.slice(0, 4000),
