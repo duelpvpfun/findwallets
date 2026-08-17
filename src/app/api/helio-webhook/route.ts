@@ -31,9 +31,13 @@ function isAuthorized(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest) {
   if (!isAuthorized(request)) {
+    // A rejected webhook is a paid order that never became a credit, so it has to
+    // be visible in the logs rather than failing silently at Helio's end.
+    console.error("[helio-webhook] rejected: secret mismatch");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isDbConfigured()) {
+    console.error("[helio-webhook] rejected: database not configured");
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
@@ -58,11 +62,17 @@ export async function POST(request: NextRequest) {
     str(data.transactionSignature) ?? str(data.id) ?? str(data.transaction) ?? str(body.id);
 
   if (!paylinkId || !paymentId) {
+    console.error("[helio-webhook] rejected: missing ids", {
+      paylinkId: paylinkId ?? null,
+      hasPaymentId: Boolean(paymentId),
+      keys: Object.keys(data),
+    });
     return NextResponse.json({ error: "Missing paylinkId or payment id" }, { status: 400 });
   }
 
   const tier = tierForPaylink(paylinkId);
   if (!tier) {
+    console.error("[helio-webhook] rejected: unknown paylink", { paylinkId });
     return NextResponse.json({ error: "Unknown paylink" }, { status: 400 });
   }
 
@@ -79,6 +89,8 @@ export async function POST(request: NextRequest) {
     email: str(data.email) ?? null,
     payerWallet: str(data.senderPK) ?? str(data.sender) ?? null,
   });
+
+  console.log("[helio-webhook] credit created", { paylinkId, tier, hasNonce: Boolean(nonce) });
 
   // The claim token is intentionally not echoed back: this response goes to
   // Helio's infrastructure, not the buyer.
