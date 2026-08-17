@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "webhook:log": "env -u DATABASE_URL bash -c 'set -a; source .env.local; set +a; node scripts/webhook-log.mjs'"
   },
   "dependencies": {
     "@heliofi/checkout-react": "^4.0.9",

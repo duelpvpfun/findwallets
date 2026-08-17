@@ -64,8 +64,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const data = (body.data ?? body) as Record<string, unknown>;
   const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+  const obj = (v: unknown): Record<string, unknown> =>
+    typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+
+  // Helio wraps everything in `transactionObject`; the other shapes are older
+  // variants kept so a format change does not silently drop a payment.
+  const data = obj(body.transactionObject ?? body.data ?? body);
+  const meta = obj(data.meta);
+  const customer = obj(meta.customerDetails);
+
+  // A pending or failed transaction must never mint a credit.
+  const status = str(meta.transactionStatus) ?? str(data.transactionStatus);
+  if (status && status.toUpperCase() !== "SUCCESS") {
+    console.error("[helio-webhook] ignored: transaction not successful", { status });
+    await trace(`ignored_status_${status.toLowerCase()}`);
+    return NextResponse.json({ ok: false, ignored: status });
+  }
 
   // The query param is a fallback for Helio payloads that omit the paylink id.
   const paylinkId =
@@ -75,7 +90,7 @@ export async function POST(request: NextRequest) {
     request.nextUrl.searchParams.get("paylink") ??
     undefined;
   const paymentId =
-    str(data.transactionSignature) ?? str(data.id) ?? str(data.transaction) ?? str(body.id);
+    str(meta.transactionSignature) ?? str(data.transactionSignature) ?? str(data.id) ?? str(body.id);
 
   if (!paylinkId || !paymentId) {
     console.error("[helio-webhook] rejected: missing ids", {
@@ -96,7 +111,9 @@ export async function POST(request: NextRequest) {
 
   // The buyer's browser passes a nonce through Helio's additionalJSON; storing
   // it hashed is what stops anyone else redeeming a payment they merely observed.
-  const additional = parseAdditional(data.additionalJSON ?? body.additionalJSON);
+  const additional = parseAdditional(
+    customer.additionalJSON ?? data.additionalJSON ?? body.additionalJSON
+  );
   const nonce = str(additional?.nonce);
 
   const claimToken = await createCredit({
@@ -104,8 +121,8 @@ export async function POST(request: NextRequest) {
     paylinkId,
     tier,
     nonceHash: nonce ? hashNonce(nonce) : null,
-    email: str(data.email) ?? null,
-    payerWallet: str(data.senderPK) ?? str(data.sender) ?? null,
+    email: str(customer.email) ?? str(data.email) ?? null,
+    payerWallet: str(meta.senderPK) ?? str(data.senderPK) ?? str(data.sender) ?? null,
   });
 
   console.log("[helio-webhook] credit created", { paylinkId, tier, hasNonce: Boolean(nonce) });
