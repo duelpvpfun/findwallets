@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import type { TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
   formatCompactNumber,
-  formatDuration,
   formatMultiple,
   formatPercent,
   formatSol,
@@ -21,6 +20,16 @@ interface TradersTableProps {
   histories?: Record<string, WalletHistory>;
   /** Proves this scan was paid for; required by the wallet-detail endpoint. */
   scanSession?: string;
+  /** Returns to the search screen. Omit to hide the back control. */
+  onBack?: () => void;
+}
+
+/** Columns the user can sort by. Each cycles desc -> asc -> off. */
+type SortKey = "avgMultipleX" | "realizedPnlPercent" | "realizedPnlUsd";
+type SortDir = "desc" | "asc";
+interface Sort {
+  key: SortKey;
+  dir: SortDir;
 }
 
 interface Filters {
@@ -49,15 +58,16 @@ export default function TradersTable({
   isDemoData,
   histories = {},
   scanSession,
+  onBack,
 }: TradersTableProps) {
-  const [now] = useState(() => Date.now());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeWallet, setActiveWallet] = useState<string | null>(null);
   const [showMcap, setShowMcap] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sort, setSort] = useState<Sort | null>(null);
 
-  const filteredTraders = useMemo(() => {
+  const matchingTraders = useMemo(() => {
     const minX = parseFloat(filters.minX);
     const maxX = parseFloat(filters.maxX);
     const minPnlPercent = parseFloat(filters.minPnlPercent);
@@ -75,6 +85,22 @@ export default function TradersTable({
       return true;
     });
   }, [traders, filters]);
+
+  // Sorting sits on top of filtering so the two compose; with no sort active the
+  // list keeps the upstream ranking order.
+  const filteredTraders = useMemo(() => {
+    if (!sort) return matchingTraders;
+    const factor = sort.dir === "desc" ? -1 : 1;
+    return [...matchingTraders].sort((a, b) => (a[sort.key] - b[sort.key]) * factor);
+  }, [matchingTraders, sort]);
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) => {
+      if (prev?.key !== key) return { key, dir: "desc" };
+      if (prev.dir === "desc") return { key, dir: "asc" };
+      return null;
+    });
+  }
 
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
 
@@ -130,6 +156,15 @@ export default function TradersTable({
       {/* Token header */}
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/60 to-transparent px-5 py-4">
         <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label="Back to search"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              <BackIcon />
+            </button>
+          )}
           {token.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -298,18 +333,39 @@ export default function TradersTable({
               </th>
               <th className="py-2.5 font-medium">#</th>
               <th className="py-2.5 font-medium">Wallet</th>
-              <th className="py-2.5 font-medium">Last Trade</th>
-              <th className="py-2.5 font-medium">Avg Entry</th>
-              <th className="py-2.5 font-medium">Avg Exit</th>
+              <th className="py-2.5 font-medium" title="Volume-weighted average across every buy">
+                Avg Entry
+              </th>
+              <th className="py-2.5 font-medium" title="Volume-weighted average across every sell">
+                Avg Exit
+              </th>
               <th className="py-2.5 font-medium" title="Total USD spent buying this token">
                 Bought
               </th>
               <th className="py-2.5 font-medium" title="Total USD received selling this token">
                 Sold
               </th>
-              <th className="py-2.5 font-medium">Avg X</th>
-              <th className="py-2.5 font-medium">% PNL</th>
-              <th className="py-2.5 font-medium">$ PNL</th>
+              <SortableHeader
+                label="Avg X"
+                sortKey="avgMultipleX"
+                sort={sort}
+                onToggle={toggleSort}
+                title="Realized return on capital deployed, e.g. 1.40x = +40%"
+              />
+              <SortableHeader
+                label="% PNL"
+                sortKey="realizedPnlPercent"
+                sort={sort}
+                onToggle={toggleSort}
+                title="Realized PNL as a share of USD spent buying"
+              />
+              <SortableHeader
+                label="$ PNL"
+                sortKey="realizedPnlUsd"
+                sort={sort}
+                onToggle={toggleSort}
+                title="Realized profit in USD"
+              />
               <th className="py-2.5 pr-5 font-medium" title="Tokens still held, not yet sold">
                 {hasHoldingData ? "Remaining" : "Remaining (n/a)"}
               </th>
@@ -319,6 +375,7 @@ export default function TradersTable({
             {filteredTraders.length === 0 && (
               <tr>
                 <td colSpan={11} className="py-12 text-center text-sm text-neutral-500">
+                  {/* 11 = checkbox, #, wallet, entry, exit, bought, sold, X, %, $, remaining */}
                   No traders match the current filters.
                 </td>
               </tr>
@@ -366,9 +423,6 @@ export default function TradersTable({
                     )}
                     <HistoryBadge history={histories[t.address]} />
                   </div>
-                </td>
-                <td className="py-3 text-neutral-400">
-                  {t.lastTradeMs ? `${formatDuration((now - t.lastTradeMs) / 3_600_000)} ago` : "—"}
                 </td>
                 <td className="py-3 tabular-nums text-neutral-300">
                   {showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
@@ -547,6 +601,47 @@ function FilterIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 6h16M7 12h10M10 18h4" />
+    </svg>
+  );
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  sort,
+  onToggle,
+  title,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: Sort | null;
+  onToggle: (key: SortKey) => void;
+  title?: string;
+}) {
+  const active = sort?.key === sortKey ? sort.dir : null;
+  return (
+    <th className="py-2.5 font-medium">
+      <button
+        onClick={() => onToggle(sortKey)}
+        title={title}
+        className={`group flex items-center gap-1 uppercase tracking-wide transition-colors ${
+          active ? "text-blue-300" : "text-neutral-500 hover:text-neutral-300"
+        }`}
+      >
+        {label}
+        <span className={`text-[9px] leading-none ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`}>
+          {active === "asc" ? "\u25b2" : "\u25bc"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
     </svg>
   );
 }

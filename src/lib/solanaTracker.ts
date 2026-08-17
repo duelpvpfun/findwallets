@@ -187,6 +187,15 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   const avgSellPriceUsd = tokensSold > 0 ? sellUsd / tokensSold : 0;
   const remainingPercent = tokensBought > 0 ? Math.max(0, ((tokensBought - tokensSold) / tokensBought) * 100) : 0;
 
+  // Avg entry/exit are lifetime volume-weighted averages across every fill, so their
+  // ratio describes price movement, NOT what the wallet actually made: a trader who
+  // buys 100 and only sells 75 has cost in `buyUsd` that was never realized. Upstream
+  // `realized` matches sold lots to their own basis, so anchor both the % and the
+  // multiple to it instead. `h.roi` is unusable directly -- it leaks unrealized losses
+  // into the sign (wallet 4HwUKe reports roi -12.7 alongside realized +$3.16M).
+  const realizedPnlUsd = h.pnl?.token?.realized ?? 0;
+  const realizedPnlPercent = buyUsd > 0 ? (realizedPnlUsd / buyUsd) * 100 : 0;
+
   return {
     rank,
     address: h.wallet,
@@ -203,9 +212,9 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
     soldTokenAmount: tokensSold,
     boughtUsd: buyUsd,
     soldUsd: sellUsd,
-    realizedPnlUsd: h.pnl?.token?.realized ?? 0,
-    realizedPnlPercent: h.roi ?? 0,
-    avgMultipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+    realizedPnlUsd,
+    realizedPnlPercent,
+    avgMultipleX: buyUsd > 0 ? 1 + realizedPnlUsd / buyUsd : 0,
     remainingPercent,
     remainingValueUsd: h.current?.value ?? 0,
     isHolding: (h.current?.balance ?? 0) > 0,

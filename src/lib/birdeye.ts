@@ -189,8 +189,9 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
   const avgSellPriceUsd = item.volumeSell > 0 ? item.volumeSellUSD / item.volumeSell : 0;
   const boughtUsd = item.volumeBuyUSD;
   const soldUsd = item.volumeSellUSD;
-  const costBasisOfSold = item.volumeSell * avgBuyPriceUsd;
-  const realizedPnlPercent = costBasisOfSold > 0 ? (item.realizedPnl / costBasisOfSold) * 100 : 0;
+  // Same basis as the Solana path: realized PnL over capital deployed, so the %,
+  // the multiple and the dollar figure always tell the same story.
+  const realizedPnlPercent = boughtUsd > 0 ? (item.realizedPnl / boughtUsd) * 100 : 0;
 
   return {
     rank,
@@ -210,7 +211,7 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     soldUsd,
     realizedPnlUsd: item.realizedPnl,
     realizedPnlPercent,
-    avgMultipleX: avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : 0,
+    avgMultipleX: boughtUsd > 0 ? 1 + item.realizedPnl / boughtUsd : 0,
     // Not available from this endpoint on non-Solana chains (no live position data).
     remainingPercent: null,
     remainingValueUsd: null,

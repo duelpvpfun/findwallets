@@ -6,7 +6,12 @@ import TradersTable from "@/components/TradersTable";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
 import ProductPreview from "@/components/ProductPreview";
-import { CLAIM_STORAGE_KEY, OWNER_STORAGE_KEY, TIER_OPTIONS } from "@/lib/tiers";
+import {
+  CLAIM_STORAGE_KEY,
+  OWNER_STORAGE_KEY,
+  PREVIEW_DISMISSED_KEY,
+  TIER_OPTIONS,
+} from "@/lib/tiers";
 
 const LIMIT_OPTIONS = [100, 250, 500] as const;
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
@@ -52,6 +57,20 @@ export default function Home() {
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [samples, setSamples] = useState<ShowcaseToken[]>([]);
+  // Greet first-time visitors with the export preview unless they opted out.
+  // Closed during SSR and the first client render so hydration matches; the
+  // localStorage read happens in a frame callback, after paint.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      try {
+        setWelcomeOpen(!localStorage.getItem(PREVIEW_DISMISSED_KEY));
+      } catch {
+        // localStorage unavailable (private mode) — skip the greeting rather than throw.
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // Restore owner key / unused credit, and let the owner install their key via ?key=…
   useEffect(() => {
@@ -212,6 +231,13 @@ export default function Home() {
     startSearch(address, chain);
   }
 
+  /** Clears the current scan so the search screen is reachable again. */
+  function resetToHome() {
+    setResult(null);
+    setAddress("");
+    setError(null);
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       {/* Ambient background glow */}
@@ -222,7 +248,11 @@ export default function Home() {
 
       <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={resetToHome}
+            aria-label="Back to home"
+            className="flex items-center gap-3 rounded-lg text-left transition-opacity hover:opacity-80"
+          >
             <span className="alpha-glow select-none text-3xl leading-none font-semibold text-white">
               α
             </span>
@@ -230,7 +260,7 @@ export default function Home() {
               <h1 className="text-sm font-semibold leading-tight text-neutral-50">Alpha Wallet Finder</h1>
               <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
             </div>
-          </div>
+          </button>
           <a
             href="https://x.com/crypce0"
             target="_blank"
@@ -400,10 +430,7 @@ export default function Home() {
                     wallets.
                   </span>
                   <button
-                    onClick={() => {
-                      setResult(null);
-                      setAddress("");
-                    }}
+                    onClick={resetToHome}
                     className="ml-auto text-xs font-medium text-emerald-400 hover:text-emerald-300"
                   >
                     Scan your own token →
@@ -416,6 +443,7 @@ export default function Home() {
                 isDemoData={result.isDemoData}
                 histories={result.histories}
                 scanSession={result.scanSession}
+                onBack={resetToHome}
               />
             </div>
           ) : (
@@ -450,12 +478,13 @@ export default function Home() {
                   />
                 </div>
                 <WalletTicker />
-                <ProductPreview />
               </>
             )
           )}
         </div>
       </main>
+
+      {welcomeOpen && <ProductPreview onClose={() => setWelcomeOpen(false)} />}
 
       {paywallOpen && (
         <PaywallDialog

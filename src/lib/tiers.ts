@@ -18,3 +18,6 @@ export const CLAIM_STORAGE_KEY = "findwallets.claim";
 /** Owner key is pasted once via `?key=…`, then kept locally so every later
  * scan is free. It is only ever validated server-side. */
 export const OWNER_STORAGE_KEY = "findwallets.owner";
+
+/** Set when a visitor ticks "don't show again" on the welcome export preview. */
+export const PREVIEW_DISMISSED_KEY = "findwallets.previewDismissed";
