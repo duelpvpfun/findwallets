@@ -56,9 +56,9 @@ function drawPill(
   textColor: string,
   bgColor: string
 ): number {
-  ctx.font = "700 26px Arial, sans-serif";
-  const paddingX = 18;
-  const height = 42;
+  ctx.font = "700 38px Arial, sans-serif";
+  const paddingX = 26;
+  const height = 62;
   const width = ctx.measureText(text).width + paddingX * 2;
   roundRect(ctx, x, yCenter - height / 2, width, height, height / 2);
   ctx.fillStyle = bgColor;
@@ -81,18 +81,35 @@ function drawStatRow(
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#a3a3a3";
-  ctx.font = "500 24px Arial, sans-serif";
+  ctx.font = "600 32px Arial, sans-serif";
   ctx.fillText(label, xLeft, y);
   ctx.textAlign = "right";
   ctx.fillStyle = "#fafafa";
-  ctx.font = "700 28px Arial, sans-serif";
+  ctx.font = "700 40px Arial, sans-serif";
   ctx.fillText(value, xRight, y);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(xLeft, y + 28);
-  ctx.lineTo(xRight, y + 28);
+  ctx.moveTo(xLeft, y + 40);
+  ctx.lineTo(xRight, y + 40);
   ctx.stroke();
+}
+
+/** Draws the "α" mark used in the site header: a glowing light glyph on a
+ * dark rounded badge, sized for the card's top-left corner. */
+function drawAlphaLogo(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  roundRect(ctx, x, y, size, size, size * 0.28);
+  ctx.fillStyle = "#101014";
+  ctx.fill();
+  ctx.save();
+  ctx.shadowColor = "rgba(147,197,253,0.75)";
+  ctx.shadowBlur = size * 0.35;
+  ctx.fillStyle = "#f5f5f5";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${Math.round(size * 0.62)}px Arial, sans-serif`;
+  ctx.fillText("α", x + size / 2, y + size / 2 + size * 0.04);
+  ctx.restore();
 }
 
 export async function drawPnlCard(canvas: HTMLCanvasElement, data: ShareCardData): Promise<void> {
@@ -100,14 +117,14 @@ export async function drawPnlCard(canvas: HTMLCanvasElement, data: ShareCardData
   if (!ctx) throw new Error("Canvas is not supported in this browser.");
   const W = (canvas.width = CARD_WIDTH);
   const H = (canvas.height = CARD_HEIGHT);
-  const pad = 56;
+  const pad = 64;
 
   const bg = await loadImage(pickBackground(data.walletAddress));
   ctx.drawImage(bg, 0, 0, W, H);
 
   // Flat dark overlay so white text stays legible regardless of the
   // underlying background's own contrast.
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
   ctx.fillRect(0, 0, W, H);
 
   const positive = data.pnlUsd >= 0;
@@ -115,68 +132,59 @@ export async function drawPnlCard(canvas: HTMLCanvasElement, data: ShareCardData
   const accentDark = positive ? "#052e1c" : "#450a0a";
 
   // Logo mark, top-left.
-  ctx.fillStyle = "#f5f5f5";
-  roundRect(ctx, pad, 48, 56, 56, 14);
-  ctx.fill();
-  ctx.fillStyle = "#2563eb";
-  ctx.beginPath();
-  ctx.moveTo(pad + 28, 62);
-  ctx.lineTo(pad + 46, 92);
-  ctx.lineTo(pad + 10, 92);
-  ctx.closePath();
-  ctx.fill();
+  drawAlphaLogo(ctx, pad, 52, 68);
 
   // Brand, top-right.
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#fafafa";
-  ctx.font = "700 32px Arial, sans-serif";
-  ctx.fillText("AlphaWallets", W - pad, 76);
+  ctx.font = "700 40px Arial, sans-serif";
+  ctx.fillText("AlphaWallets", W - pad, 86);
 
   // Coin tag.
   ctx.textAlign = "left";
-  ctx.fillStyle = "#e5e5e5";
-  ctx.font = "700 42px Arial, sans-serif";
-  ctx.fillText(`$${data.symbol.toUpperCase()}`, pad, 176);
+  ctx.fillStyle = "#f5f5f5";
+  ctx.font = "800 72px Arial, sans-serif";
+  ctx.fillText(`$${data.symbol.toUpperCase()}`, pad, 238);
 
   // Big PNL box.
-  const boxY = 216;
-  const boxH = 108;
-  const boxW = 460;
-  roundRect(ctx, pad, boxY, boxW, boxH, 16);
+  const boxY = 276;
+  const boxH = 172;
+  const boxW = 700;
+  roundRect(ctx, pad, boxY, boxW, boxH, 22);
   ctx.fillStyle = accent;
   ctx.fill();
   ctx.fillStyle = accentDark;
-  ctx.font = "800 56px Arial, sans-serif";
+  ctx.font = "800 92px Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(`${positive ? "+" : "-"}${formatUsd(Math.abs(data.pnlUsd))}`, pad + 28, boxY + boxH / 2 + 2);
+  ctx.fillText(`${positive ? "+" : "-"}${formatUsd(Math.abs(data.pnlUsd))}`, pad + 36, boxY + boxH / 2 + 4);
 
-  // X multiple pill first, then the % pill right after it.
-  const pillY = boxY + boxH / 2;
-  let x = pad + boxW + 24;
-  x += drawPill(ctx, x, pillY, `${data.multipleX.toFixed(2)}x`, "#e5e5e5", "rgba(255,255,255,0.10)") + 14;
+  // X multiple pill above the % pill, stacked vertically to the right of the
+  // box so neither runs off the right edge of the card.
+  const pillX = pad + boxW + 28;
+  drawPill(ctx, pillX, boxY + boxH / 2 - 38, `${data.multipleX.toFixed(2)}x`, "#e5e5e5", "rgba(255,255,255,0.12)");
   drawPill(
     ctx,
-    x,
-    pillY,
+    pillX,
+    boxY + boxH / 2 + 38,
     `${positive ? "+" : ""}${data.pnlPercent.toFixed(1)}%`,
     accent,
-    "rgba(255,255,255,0.10)"
+    "rgba(255,255,255,0.12)"
   );
 
-  drawStatRow(ctx, pad, W - pad, 384, "Invested", formatUsd(Math.abs(data.investedUsd)));
-  drawStatRow(ctx, pad, W - pad, 444, "Position", formatUsd(Math.abs(data.positionUsd)));
+  drawStatRow(ctx, pad, W - pad, boxY + boxH + 90, "Invested", formatUsd(Math.abs(data.investedUsd)));
+  drawStatRow(ctx, pad, W - pad, boxY + boxH + 158, "Position", formatUsd(Math.abs(data.positionUsd)));
 
   // Footer: wallet address, left; site link, right.
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#a3a3a3";
-  ctx.font = "500 24px 'Courier New', monospace";
-  ctx.fillText(shortenAddress(data.walletAddress, 5), pad, H - 56);
+  ctx.fillStyle = "#d4d4d4";
+  ctx.font = "600 30px 'Courier New', monospace";
+  ctx.fillText(shortenAddress(data.walletAddress, 4), pad, H - 60);
 
   ctx.textAlign = "right";
-  ctx.fillStyle = "#a3a3a3";
-  ctx.font = "500 24px Arial, sans-serif";
-  ctx.fillText(data.siteHost, W - pad, H - 56);
+  ctx.fillStyle = "#d4d4d4";
+  ctx.font = "700 30px Arial, sans-serif";
+  ctx.fillText(data.siteHost, W - pad, H - 60);
 }
