@@ -8,6 +8,11 @@
  * exactly `realized_pnl_usd / bought_usd` -- both already stored, so no
  * upstream re-scan is needed.
  *
+ * Checks multiple_x and roi_percent independently: a stale one-off scan
+ * (times_observed = 1, never rescanned) can have a correct multiple_x but a
+ * stale roi_percent left over from before this fix, so either can drift on
+ * its own.
+ *
  * Usage: node scripts/backfill-pnl-math.mjs [--apply]
  * Without --apply it only reports what would change.
  */
@@ -26,12 +31,19 @@ if (!url) {
 const apply = process.argv.includes("--apply");
 const sql = postgres(url, { prepare: false, max: 1 });
 
+const WHERE_STALE = sql`
+  bought_usd > 0
+  and (
+    abs(multiple_x - (1 + realized_pnl_usd / bought_usd)) > 0.005
+    or abs(roi_percent - (realized_pnl_usd / bought_usd * 100)) > 1
+  )
+`;
+
 try {
   const [{ count: stale }] = await sql`
     select count(*)::int as count
     from wallet_tokens
-    where bought_usd > 0
-      and abs(multiple_x - (1 + realized_pnl_usd / bought_usd)) > 0.005
+    where ${WHERE_STALE}
   `;
 
   const [{ count: contradictory }] = await sql`
@@ -50,7 +62,7 @@ try {
              round((realized_pnl_usd / bought_usd * 100)::numeric, 2) as new_roi,
              round((1 + realized_pnl_usd / bought_usd)::numeric, 3) as new_x
       from wallet_tokens
-      where bought_usd > 0 and (realized_pnl_usd > 0) <> (multiple_x > 1)
+      where ${WHERE_STALE}
       order by realized_pnl_usd desc
       limit 5
     `;
@@ -61,8 +73,7 @@ try {
       update wallet_tokens
       set roi_percent = realized_pnl_usd / bought_usd * 100,
           multiple_x  = 1 + realized_pnl_usd / bought_usd
-      where bought_usd > 0
-        and abs(multiple_x - (1 + realized_pnl_usd / bought_usd)) > 0.005
+      where ${WHERE_STALE}
     `;
     console.log(`updated ${res.count} rows`);
   }

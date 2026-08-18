@@ -41,15 +41,23 @@ const EVM_ENRICH_LIMIT = 25;
 // Generous for a human (each scan is a paid action) but stops scripted hammering.
 const MAX_SCANS_PER_MINUTE = 12;
 
+// Wallets below this multiple aren't worth surfacing to customers, so they
+// never get written to the DB in the first place — keeps the table from
+// filling up with irrelevant/low-performing wallets on every scan.
+const MIN_MULTIPLE_X_TO_STORE = 2;
+
 async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   if (!isDbConfigured()) return;
   try {
+    const qualifying = traders.filter((t) => t.avgMultipleX >= MIN_MULTIPLE_X_TO_STORE);
+    if (qualifying.length === 0) return;
+
     // Wallets enriched recently keep their stored lifetime stats, so repeat
     // scans of overlapping wallet sets cost nothing extra.
     const candidates =
       token.chain === "solana"
-        ? traders.map((t) => t.address)
-        : traders.slice(0, EVM_ENRICH_LIMIT).map((t) => t.address);
+        ? qualifying.map((t) => t.address)
+        : qualifying.slice(0, EVM_ENRICH_LIMIT).map((t) => t.address);
     const needsEnrichment = await filterNeedsEnrichment(token.chain, candidates);
 
     let lifetime: LifetimeStats[] = [];
@@ -59,7 +67,7 @@ async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
           ? await fetchWalletLifetimeBatch(needsEnrichment)
           : await fetchEvmWalletLifetime(token.chain as EvmChain, needsEnrichment);
     }
-    await recordScan(token, traders, lifetime);
+    await recordScan(token, qualifying, lifetime);
   } catch (err) {
     console.error("[persistScan] failed:", err);
   }

@@ -469,7 +469,10 @@ export default function TradersTable({
                   {showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
                 </td>
                 <td className="py-3 tabular-nums text-neutral-300">
-                  {showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
+                  <div className="flex items-center gap-1">
+                    <span>{showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}</span>
+                    <SusExitBadge trader={t} />
+                  </div>
                 </td>
                 <td className="py-3 tabular-nums">
                   <div className="text-neutral-200">{formatUsd(t.boughtUsd)}</div>
@@ -615,6 +618,34 @@ function HistoryBadge({ history }: { history?: WalletHistory }) {
           {history.priorTokenCount > 1 ? ` +${history.priorTokenCount - 1}` : ""}
         </span>
       )}
+    </span>
+  );
+}
+
+/** Explains the "avg exit looks worse than avg entry, yet realized PNL is positive"
+ * case: avg entry/exit are lifetime volume-weighted averages across every fill, so
+ * their ratio describes price movement, not what the wallet actually made. Realized
+ * PNL is matched lot-by-lot by the upstream data source instead. Without this, a
+ * brand new visitor sees a "winner" with a lower exit price and assumes the numbers
+ * are broken. */
+function SusExitBadge({ trader }: { trader: WalletTrader }) {
+  if (trader.realizedPnlUsd <= 0) return null;
+  if (trader.avgSellMcapUsd <= 0 || trader.avgBuyMcapUsd <= 0) return null;
+  if (trader.avgSellMcapUsd >= trader.avgBuyMcapUsd) return null;
+
+  const hasRemaining = trader.remainingPercent !== null && trader.remainingPercent > 1;
+  const title = hasRemaining
+    ? `Avg exit looks lower than avg entry, but this wallet is still holding ${trader.remainingPercent!.toFixed(
+        0
+      )}% of its position — the unsold tokens aren't counted in "sold," and unrealized gains on them aren't shown here.`
+    : `Avg exit looks lower than avg entry, but realized PNL is matched trade-by-trade against cost basis, not against the lifetime average price. A wallet can sell its earliest (cheapest) tokens at a big profit while the lifetime average sell price still lands below the lifetime average buy price.`;
+
+  return (
+    <span
+      title={title}
+      className="inline-flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-400"
+    >
+      i
     </span>
   );
 }
