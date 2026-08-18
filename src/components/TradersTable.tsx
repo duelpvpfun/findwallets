@@ -1,13 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
+import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
+  NATIVE_UNIT,
   formatCompactNumber,
   formatMultiple,
   formatPercent,
   formatSol,
   formatUsd,
+  formatWinBadge,
   shortenAddress,
 } from "@/lib/format";
 import { buildExportJson, copyText } from "@/lib/export";
@@ -42,7 +44,11 @@ interface Row extends WalletTrader {
 // Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
 function avgXBasis(basis: PnlBasis) {
   const profit = basis === "total" ? "Total profit (sold + still held)" : "Realized profit";
-  return `${profit} \u00f7 total USD spent buying (e.g. 1.40x = +40%). This is not Avg Exit \u00f7 Avg Entry: Avg Entry covers every token bought, while Avg Exit only covers the tokens actually sold, so the two only line up when a wallet sold its entire position.`;
+  const basisLabel =
+    basis === "total"
+      ? "the USD cost of the tokens sold plus those still held"
+      : "the USD cost of the tokens actually sold";
+  return `${profit} \u00f7 ${basisLabel} (e.g. 1.40x = +40%). This is not Avg Exit \u00f7 Avg Entry: Avg Entry averages every token bought, including any the wallet never sold.`;
 }
 
 /** Columns the user can sort by. Each cycles desc -> asc -> off. */
@@ -111,12 +117,17 @@ export default function TradersTable({
             unsoldPnlUsd,
           };
         }
+        // Total covers sold lots plus the bag still held, so the denominator is
+        // the cost of both — not every dollar ever spent, which would include
+        // tokens transferred away.
         const pnlUsd = t.realizedPnlUsd + unsoldPnlUsd;
+        const heldCostUsd = Math.max(0, (t.remainingValueUsd ?? 0) - unsoldPnlUsd);
+        const totalBasis = t.soldCostBasisUsd + heldCostUsd || t.boughtUsd;
         return {
           ...t,
           pnlUsd,
-          pnlPercent: (pnlUsd / t.boughtUsd) * 100,
-          multipleX: 1 + pnlUsd / t.boughtUsd,
+          pnlPercent: (pnlUsd / totalBasis) * 100,
+          multipleX: 1 + pnlUsd / totalBasis,
           unsoldPnlUsd,
         };
       }),
@@ -138,7 +149,7 @@ export default function TradersTable({
       if (!Number.isNaN(minPnlUsd) && t.pnlUsd < minPnlUsd) return false;
       if (!Number.isNaN(maxPnlUsd) && t.pnlUsd > maxPnlUsd) return false;
       if (filters.holdingOnly && t.isHolding !== true) return false;
-      if (filters.provenOnly && !histories[t.address]?.priorTokenCount) return false;
+      if (filters.provenOnly && !hasTrackRecord(histories[t.address])) return false;
       return true;
     });
   }, [rows, filters, histories]);
@@ -168,7 +179,7 @@ export default function TradersTable({
 
   // Wallets our own database has already caught winning on a different token.
   const provenCount = useMemo(
-    () => traders.filter((t) => histories[t.address]?.priorTokenCount).length,
+    () => traders.filter((t) => hasTrackRecord(histories[t.address])).length,
     [traders, histories]
   );
 
@@ -373,6 +384,9 @@ export default function TradersTable({
                   Realized
                 </button>
               </div>
+              <span className="text-[10px] text-rose-400/90">
+                *Traders are ranked by realized PNL
+              </span>
             </div>
           )}
 
@@ -471,9 +485,10 @@ export default function TradersTable({
           Why Avg X isn&apos;t Exit ÷ Entry
         </summary>
         <p className="px-4 pb-2.5 text-[11px] leading-relaxed text-neutral-500 sm:px-5">
-          Avg X is {basis === "total" ? "total" : "realized"} profit ÷ total USD spent buying. Avg
-          Entry averages every token bought, while Avg Exit covers only the tokens actually sold — so
-          the two line up only when a wallet sold its entire position.
+          Avg X is {basis === "total" ? "total" : "realized"} profit ÷ the cost of the tokens it
+          applies to — the ones actually sold{basis === "total" ? ", plus those still held" : ""}.
+          Avg Entry averages every token bought, so it can include tokens the wallet never sold —
+          which is why Exit ÷ Entry doesn&apos;t match.
           {hasUnrealizedData && (
             <>
               {" "}
@@ -621,7 +636,11 @@ export default function TradersTable({
                 </td>
                 {hasHoldingData && (
                   <td className="py-3 pr-4 align-top xl:pr-5">
-                    <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} />
+                    <RemainingCell
+                      trader={t}
+                      nativePriceUsd={token.nativePriceUsd}
+                      chain={token.chain}
+                    />
                   </td>
                 )}
               </tr>
@@ -733,32 +752,74 @@ function FilterRangeInput({
   );
 }
 
-/** "Seen before" marker for wallets the database already recorded winning on other tokens. */
+function hasTrackRecord(history?: WalletHistory): boolean {
+  if (!history) return false;
+  return history.priorTokenCount > 0 || (history.winBadges?.length ?? 0) > 0;
+}
+
+/** How many win tags render inline before the rest collapse behind "…". */
+const INLINE_BADGE_LIMIT = 3;
+
+/**
+ * A wallet's proven wins on other tokens, as `[27X] $42.1K $WIF` tags. Wins
+ * found by our own scans and wins discovered by the enrichment worker are the
+ * same claim, so they render as one list.
+ */
 function HistoryBadge({ history }: { history?: WalletHistory }) {
-  if (!history || history.priorTokenCount === 0) return null;
-  const detail = history.wins
-    .map((w) => `${formatUsd(w.realizedPnlUsd)}${w.multipleX ? ` [${w.multipleX.toFixed(0)}X]` : ""} $${w.symbol}`)
-    .join("\n");
-  // The best prior win is spelled out inline: the tooltip carrying the whole
-  // track record is unreachable on touch devices.
-  const best = history.wins[0];
+  if (!hasTrackRecord(history) || !history) return null;
+
+  const scanned = history.wins.map((w) =>
+    formatWinBadge(w.multipleX ?? 1, w.realizedPnlUsd, w.symbol)
+  );
+  const all = [...scanned, ...(history.winBadges ?? [])];
+  if (all.length === 0) return null;
+
+  const inline = all.slice(0, INLINE_BADGE_LIMIT);
+  const overflow = all.slice(INLINE_BADGE_LIMIT);
+
   return (
-    <span
-      title={`Previously recorded winning on ${history.priorTokenCount} other token(s):\n${detail}`}
-      className="ml-0.5 inline-flex shrink-0 cursor-help items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
-    >
-      <span>🔥 {history.priorTokenCount}</span>
-      {best && (
-        <span className="hidden font-normal text-amber-200/70 sm:inline">
-          {best.multipleX ? `${best.multipleX.toFixed(1)}x ` : ""}${best.symbol}
-          {history.priorTokenCount > 1 ? ` +${history.priorTokenCount - 1}` : ""}
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+      {inline.map((badge) => (
+        <span
+          key={badge}
+          className="inline-flex shrink-0 items-center rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-amber-300"
+        >
+          {badge}
+        </span>
+      ))}
+      {overflow.length > 0 && (
+        // `group` + a hidden sibling rather than `title`, so the remaining wins
+        // can be read one per line instead of as a single run-on tooltip.
+        <span className="group relative inline-flex shrink-0">
+          <span
+            tabIndex={0}
+            aria-label={`${overflow.length} more wins: ${overflow.join(", ")}`}
+            className="cursor-help rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300/80 hover:bg-amber-500/20"
+          >
+            +{overflow.length}…
+          </span>
+          <span className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 hidden w-max max-w-[16rem] flex-col gap-1 rounded-lg border border-neutral-700 bg-neutral-950/95 p-2 shadow-xl group-hover:flex group-focus-within:flex">
+            {overflow.map((badge) => (
+              <span key={badge} className="whitespace-nowrap text-[10px] font-semibold tabular-nums text-amber-300">
+                {badge}
+              </span>
+            ))}
+          </span>
         </span>
       )}
     </span>
   );
 }
 
-function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativePriceUsd: number }) {
+function RemainingCell({
+  trader,
+  nativePriceUsd,
+  chain,
+}: {
+  trader: WalletTrader;
+  nativePriceUsd: number;
+  chain: Chain;
+}) {
   if (trader.remainingPercent === null || trader.remainingValueUsd === null) {
     // EVM gives no balance, but a non-zero unrealized PnL still proves a position.
     if (trader.isHolding && trader.unrealizedPnlUsd !== null) {
@@ -782,7 +843,9 @@ function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativ
   return (
     <div>
       <div className="flex items-center justify-between gap-1.5 text-xs">
-        <span className="tabular-nums text-neutral-300">{formatSol(remainingNative)}</span>
+        <span className="tabular-nums text-neutral-300">
+          {formatSol(remainingNative, NATIVE_UNIT[chain])}
+        </span>
         <span className="tabular-nums text-neutral-500">{trader.remainingPercent.toFixed(0)}%</span>
       </div>
       {trader.isHolding && trader.unrealizedPnlUsd !== null && trader.unrealizedPnlUsd !== 0 && (
@@ -1030,7 +1093,13 @@ function TraderCard({
           <div className="col-span-2">
             <CardField
               label="Remaining"
-              value={<RemainingCell trader={trader} nativePriceUsd={token.nativePriceUsd} />}
+              value={
+                <RemainingCell
+                  trader={trader}
+                  nativePriceUsd={token.nativePriceUsd}
+                  chain={token.chain}
+                />
+              }
             />
           </div>
         )}

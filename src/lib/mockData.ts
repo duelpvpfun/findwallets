@@ -1,4 +1,5 @@
 import { createRng, pick, randRange, randomBase58Address } from "./rng";
+import { realizedBasisUsd } from "./quality";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 
 // Fallback data used only when SOLANA_TRACKER_API_KEY is not configured, so the
@@ -85,10 +86,11 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
 
   const costBasisOfSold = soldTokenAmount * avgBuyPriceUsd;
   const realizedPnlUsd = soldUsd - costBasisOfSold;
-  // Realized over total deployed, matching both live adapters. Demo numbers that
-  // used a different basis made the sample table disagree with a paid scan.
-  const realizedPnlPercent = boughtUsd > 0 ? (realizedPnlUsd / boughtUsd) * 100 : 0;
-  const avgMultipleX = boughtUsd > 0 ? 1 + realizedPnlUsd / boughtUsd : 0;
+  // Realized over the sold lots' own basis, matching both live adapters. Demo
+  // numbers on a different basis made the sample table disagree with a paid scan.
+  const realizedBasis = realizedBasisUsd(costBasisOfSold, boughtUsd);
+  const realizedPnlPercent = realizedBasis > 0 ? (realizedPnlUsd / realizedBasis) * 100 : 0;
+  const avgMultipleX = realizedBasis > 0 ? 1 + realizedPnlUsd / realizedBasis : 0;
 
   // Mock wallets have no transfers or airdrops, so the leftover balance is
   // exactly bought minus sold -- the quantity the live path reads off-chain.
@@ -117,6 +119,7 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
     soldTokenAmount,
     boughtUsd,
     soldUsd,
+    soldCostBasisUsd: costBasisOfSold,
     realizedPnlUsd,
     realizedPnlPercent,
     avgMultipleX,

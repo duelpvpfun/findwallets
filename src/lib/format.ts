@@ -29,6 +29,12 @@ export function formatMultiple(value: number): string {
   return `${value.toFixed(2)}x`;
 }
 
+export const NATIVE_UNIT: Record<"solana" | "bsc" | "base", string> = {
+  solana: "SOL",
+  bsc: "BNB",
+  base: "ETH",
+};
+
 export function formatSol(value: number, unit = "SOL"): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
@@ -55,4 +61,10 @@ export function shortenAddress(address: string, chars = 4): string {
 export function tokenNameForExport(tokenName: string): string {
   const safe = tokenName.replace(/[^a-z0-9-_]+/gi, "").trim() || "token";
   return `highpnl ${safe}`;
+}
+
+/** One win badge, e.g. `[27X] $42.1K $WIF`. */
+export function formatWinBadge(multipleX: number, pnlUsd: number, symbol: string): string {
+  const ticker = symbol.replace(/^\$+/, "").trim() || "?";
+  return `[${Math.round(multipleX)}X] ${formatUsd(pnlUsd)} $${ticker}`;
 }

@@ -2,6 +2,7 @@
 // Never import this from a "use client" component — it reads the API key from env.
 import "server-only";
 import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
+import { realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://data.solanatracker.io";
 const RPC_URL = "https://api.mainnet-beta.solana.com";
@@ -228,8 +229,11 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   // Measure the leftover against the live balance, not bought-minus-sold: tokens
   // arrive by transfer and airdrop too, so on 21 of Pnut's top 100 wallets sold
   // exceeds bought and the subtraction invents a position that is already closed.
-  const balance = h.current?.balance ?? 0;
-  const remainingPercent = tokensBought > 0 ? Math.min(100, (balance / tokensBought) * 100) : 0;
+  // A null balance means upstream didn't report one — kept as unknown, since a 0
+  // here would claim the wallet fully exited.
+  const balance = h.current?.balance ?? null;
+  const remainingPercent =
+    balance === null ? null : tokensBought > 0 ? Math.min(100, (balance / tokensBought) * 100) : 0;
 
   // Avg entry/exit are lifetime volume-weighted averages across every fill, so their
   // ratio describes price movement, NOT what the wallet actually made: a trader who
@@ -238,7 +242,11 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   // multiple to it instead. `h.roi` is unusable directly -- it leaks unrealized losses
   // into the sign (wallet 4HwUKe reports roi -12.7 alongside realized +$3.16M).
   const realizedPnlUsd = h.pnl?.token?.realized ?? 0;
-  const realizedPnlPercent = buyUsd > 0 ? (realizedPnlUsd / buyUsd) * 100 : 0;
+  // ...and the denominator has to match: only the sold lots' own cost basis, or a
+  // wallet that offloaded 4% of its bag at 2.4x reports 1.06x.
+  const soldCostBasisUsd = Math.min(tokensSold, tokensBought) * avgBuyPriceUsd;
+  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, buyUsd);
+  const realizedPnlPercent = realizedBasis > 0 ? (realizedPnlUsd / realizedBasis) * 100 : 0;
 
   return {
     rank,
@@ -256,12 +264,13 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
     soldTokenAmount: tokensSold,
     boughtUsd: buyUsd,
     soldUsd: sellUsd,
+    soldCostBasisUsd,
     realizedPnlUsd,
     realizedPnlPercent,
-    avgMultipleX: buyUsd > 0 ? 1 + realizedPnlUsd / buyUsd : 0,
+    avgMultipleX: realizedBasis > 0 ? 1 + realizedPnlUsd / realizedBasis : 0,
     remainingPercent,
-    remainingValueUsd: h.current?.value ?? 0,
-    isHolding: (h.current?.balance ?? 0) > 0,
+    remainingValueUsd: balance === null ? null : h.current?.value ?? 0,
+    isHolding: balance === null ? null : balance > 0,
     unrealizedPnlUsd: h.pnl?.token?.unrealized ?? null,
     lastTradeMs: h.timing?.lastTrade ?? null,
     firstTradeMs: h.timing?.firstTrade ?? null,

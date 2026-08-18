@@ -5,6 +5,7 @@ import type { Chain, WalletDetail, WalletTrader } from "@/lib/types";
 import { buildWalletDetail } from "@/lib/mockData";
 import { OWNER_STORAGE_KEY } from "@/lib/tiers";
 import {
+  NATIVE_UNIT,
   formatCompactNumber,
   formatDuration,
   formatMultiple,
@@ -14,12 +15,11 @@ import {
   shortenAddress,
 } from "@/lib/format";
 
-const NATIVE_UNIT: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
-
-// Avg Multiple is realized PNL over capital deployed, so it deliberately does not
-// equal Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
+// Avg Multiple is realized PNL over the cost of the tokens actually sold, so it
+// deliberately does not equal Avg Exit / Avg Entry whenever a wallet didn't sell
+// everything it bought.
 const AVG_X_BASIS =
-  "Realized profit ÷ total USD spent buying. This is not Avg Exit ÷ Avg Entry: Avg Entry covers every token bought, while Avg Exit and the profit cover only the tokens actually sold.";
+  "Realized profit ÷ the USD cost of the tokens actually sold. Not Avg Exit ÷ Avg Entry: Avg Entry averages every token bought, including any the wallet still holds.";
 
 interface WalletDetailModalProps {
   chain: Chain;

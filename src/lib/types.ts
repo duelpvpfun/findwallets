@@ -16,6 +16,10 @@ export interface WalletTrader {
   soldTokenAmount: number;
   boughtUsd: number;
   soldUsd: number;
+  /** Cost basis of only the tokens actually sold. The denominator for realized
+   * returns: dividing by `boughtUsd` would charge a round trip for tokens the
+   * wallet still holds or transferred away, turning a 2.4x into 1.06x. */
+  soldCostBasisUsd: number;
   realizedPnlUsd: number;
   realizedPnlPercent: number;
   avgMultipleX: number;
@@ -57,6 +61,8 @@ export interface WalletHistory {
   lifetimePnlUsd: number | null;
   isBot: boolean;
   wins: Array<{ symbol: string; realizedPnlUsd: number; multipleX: number | null }>;
+  /** Pre-rendered `[27X] $42.1K $WIF` wins on tokens nobody scanned here. */
+  winBadges: string[];
 }
 
 export interface WalletDistributionBucket {

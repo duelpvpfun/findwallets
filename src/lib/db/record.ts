@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import { tokens, walletTokens, wallets } from "./schema";
+import { meetsQualityBar } from "../quality";
 import type { TokenMeta, WalletTrader } from "../types";
 
 const BOT_TAGS = ["arbitrage-bot", "sniper-bot", "bot", "arbitrage"];
@@ -46,9 +47,13 @@ export async function recordScan(
   const seenAddress = new Set<string>();
   const uniqueTraders = traders.filter((t) => {
     if (seenAddress.has(t.address)) return false;
+    // The bar is re-checked here rather than trusted from the caller, so no
+    // future write path can slip a sub-2x wallet into the table.
+    if (!meetsQualityBar(t.avgMultipleX, t.realizedPnlUsd)) return false;
     seenAddress.add(t.address);
     return true;
   });
+  if (uniqueTraders.length === 0) return;
 
   const isAllTime = token.rankingWindow === "all_time";
 

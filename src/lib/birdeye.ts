@@ -12,6 +12,7 @@
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
+import { realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
@@ -187,14 +188,27 @@ interface TopTradersResponse {
   items: TopTraderItem[];
 }
 
+/**
+ * Birdeye reports `counts.win_rate` as a RATIO (confirmed live: 0.1234 for a
+ * 12.3% wallet), while SolanaTracker's `analysis.winRate` is already a percent
+ * (21.53). Both land in the same column, so this normalises to percent.
+ */
+function toWinRatePercent(winRate: number | null | undefined): number | null {
+  if (winRate === null || winRate === undefined || !Number.isFinite(winRate)) return null;
+  return winRate * 100;
+}
+
 function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number): WalletTrader {
   const avgBuyPriceUsd = item.volumeBuy > 0 ? item.volumeBuyUSD / item.volumeBuy : 0;
   const avgSellPriceUsd = item.volumeSell > 0 ? item.volumeSellUSD / item.volumeSell : 0;
   const boughtUsd = item.volumeBuyUSD;
   const soldUsd = item.volumeSellUSD;
-  // Same basis as the Solana path: realized PnL over capital deployed, so the %,
-  // the multiple and the dollar figure always tell the same story.
-  const realizedPnlPercent = boughtUsd > 0 ? (item.realizedPnl / boughtUsd) * 100 : 0;
+  // Only the tokens that were actually sold can have a realized return. Charging
+  // the whole buy volume made a wallet that sold 4% of its bag at 2.4x read as
+  // 1.06x, contradicting the Entry -> Exit prices on the same row.
+  const soldCostBasisUsd = Math.min(item.volumeSell, item.volumeBuy) * avgBuyPriceUsd;
+  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd);
+  const realizedPnlPercent = realizedBasis > 0 ? (item.realizedPnl / realizedBasis) * 100 : 0;
 
   return {
     rank,
@@ -212,9 +226,10 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     soldTokenAmount: item.volumeSell,
     boughtUsd,
     soldUsd,
+    soldCostBasisUsd,
     realizedPnlUsd: item.realizedPnl,
     realizedPnlPercent,
-    avgMultipleX: boughtUsd > 0 ? 1 + item.realizedPnl / boughtUsd : 0,
+    avgMultipleX: realizedBasis > 0 ? 1 + item.realizedPnl / realizedBasis : 0,
     // Deliberately not seeded from item.unrealizedPnl: that figure is derived
     // from buy/sell volume inside the window, so transfers out read as holdings.
     // fetchEvmTopTraders fills these from an on-chain balanceOf instead.
@@ -337,7 +352,7 @@ export async function fetchEvmWalletLifetime(
         return {
           address,
           pnlUsd: res.summary?.pnl?.realized_profit_usd ?? null,
-          winRate: res.summary?.counts?.win_rate ?? null,
+          winRate: toWinRatePercent(res.summary?.counts?.win_rate),
           trades: res.summary?.counts?.total_trade ?? null,
           tokensTraded: null,
         };
@@ -422,7 +437,7 @@ export async function fetchEvmWalletDetail(
     nativeBalance: null,
     walletRealizedPnlUsd: summary.summary?.pnl?.realized_profit_usd ?? 0,
     walletUnrealizedPnlUsd: summary.summary?.pnl?.unrealized_usd ?? 0,
-    winRatePercent: summary.summary?.counts?.win_rate ?? null,
+    winRatePercent: toWinRatePercent(summary.summary?.counts?.win_rate),
     avgPnlPerAssetUsd: summary.summary?.pnl?.avg_profit_per_trade_usd ?? null,
     avgBuyValueUsd: null,
     tokensClosed: null,

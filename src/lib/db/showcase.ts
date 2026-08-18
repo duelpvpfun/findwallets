@@ -204,6 +204,15 @@ export async function fetchCachedScan(
     soldTokenAmount: tokenAmount(r.proceedsUsd, r.avgSellPriceUsd),
     boughtUsd: r.boughtUsd ?? 0,
     soldUsd: r.proceedsUsd ?? 0,
+    // Recovered from the stored averages: cost of the tokens that were sold.
+    // Clamped to tokens bought exactly as the live path does — wallets that
+    // received transfers can sell more than they bought, and without the clamp a
+    // cached preview reports a bigger basis than a paid scan of the same wallet.
+    soldCostBasisUsd:
+      Math.min(
+        tokenAmount(r.proceedsUsd, r.avgSellPriceUsd),
+        tokenAmount(r.boughtUsd, r.avgBuyPriceUsd)
+      ) * (r.avgBuyPriceUsd ?? 0),
     realizedPnlUsd: r.realizedPnlUsd,
     realizedPnlPercent: r.roiPercent ?? 0,
     avgMultipleX: r.multipleX ?? 0,
