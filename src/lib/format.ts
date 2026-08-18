@@ -16,7 +16,8 @@ export function formatCompactNumber(value: number): string {
   if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}${abs.toFixed(2)}`;
+  // Counts are usually whole here, and "416.00 wallets" reads like a bug.
+  return `${sign}${Number(abs.toFixed(2))}`;
 }
 
 export function formatPercent(value: number): string {

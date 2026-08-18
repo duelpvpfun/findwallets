@@ -463,12 +463,6 @@ export default function Home() {
                 ))}
               </>
             )}
-            {chain !== "solana" && (
-              <span className="text-neutral-600">
-                Note: on {CHAINS.find((c) => c.value === chain)?.label}, ranking covers the last 90
-                days only (not all-time) and wallet balance data isn&apos;t available.
-              </span>
-            )}
           </div>
         )}
 

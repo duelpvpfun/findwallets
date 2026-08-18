@@ -143,13 +143,17 @@ export default function TradersTable({
     });
   }, [rows, filters, histories]);
 
-  // Sorting sits on top of filtering so the two compose; with no sort active the
-  // list keeps the upstream ranking order.
+  // Sorting sits on top of filtering so the two compose. With no sort active the
+  // list keeps the upstream ranking order, except under Total — upstream ranks on
+  // realized alone, which would leave the biggest number partway down the table.
   const filteredTraders = useMemo(() => {
-    if (!sort) return matchingTraders;
+    if (!sort) {
+      if (basis !== "total") return matchingTraders;
+      return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
+    }
     const factor = sort.dir === "desc" ? -1 : 1;
     return [...matchingTraders].sort((a, b) => (a[sort.key] - b[sort.key]) * factor);
-  }, [matchingTraders, sort]);
+  }, [matchingTraders, sort, basis]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) => {
