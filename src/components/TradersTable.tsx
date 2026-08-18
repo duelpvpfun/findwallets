@@ -26,13 +26,27 @@ interface TradersTableProps {
   onBack?: () => void;
 }
 
-// Avg X is realized PNL over capital deployed, so it deliberately does not equal
+/** Realized counts only closed volume; total adds the paper value of tokens the
+ * wallet still holds, which upstream reports as unrealized PNL. */
+type PnlBasis = "realized" | "total";
+
+/** A trader with the PNL figures the current basis should display. */
+interface Row extends WalletTrader {
+  pnlUsd: number;
+  pnlPercent: number;
+  multipleX: number;
+  unsoldPnlUsd: number;
+}
+
+// Avg X is PNL over capital deployed, so it deliberately does not equal
 // Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
-const AVG_X_BASIS =
-  "Realized profit \u00f7 total USD spent buying (e.g. 1.40x = +40%). This is not Avg Exit \u00f7 Avg Entry: Avg Entry covers every token bought, while Avg Exit and the profit only cover the tokens actually sold, so the two only line up when a wallet sold its entire position.";
+function avgXBasis(basis: PnlBasis) {
+  const profit = basis === "total" ? "Total profit (sold + still held)" : "Realized profit";
+  return `${profit} \u00f7 total USD spent buying (e.g. 1.40x = +40%). This is not Avg Exit \u00f7 Avg Entry: Avg Entry covers every token bought, while Avg Exit only covers the tokens actually sold, so the two only line up when a wallet sold its entire position.`;
+}
 
 /** Columns the user can sort by. Each cycles desc -> asc -> off. */
-type SortKey = "avgMultipleX" | "realizedPnlPercent" | "realizedPnlUsd";
+type SortKey = "multipleX" | "pnlPercent" | "pnlUsd";
 type SortDir = "desc" | "asc";
 interface Sort {
   key: SortKey;
@@ -74,6 +88,40 @@ export default function TradersTable({
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<Sort | null>(null);
+  const [pnlBasis, setPnlBasis] = useState<PnlBasis>("total");
+
+  // Chains without an unrealized figure can only ever show realized, so the
+  // toggle is hidden there rather than offering two identical views.
+  const hasUnrealizedData = useMemo(
+    () => traders.some((t) => t.unrealizedPnlUsd !== null && t.unrealizedPnlUsd !== 0),
+    [traders]
+  );
+  const basis: PnlBasis = hasUnrealizedData ? pnlBasis : "realized";
+
+  const rows = useMemo<Row[]>(
+    () =>
+      traders.map((t) => {
+        const unsoldPnlUsd = t.unrealizedPnlUsd ?? 0;
+        if (basis === "realized" || unsoldPnlUsd === 0 || t.boughtUsd <= 0) {
+          return {
+            ...t,
+            pnlUsd: t.realizedPnlUsd,
+            pnlPercent: t.realizedPnlPercent,
+            multipleX: t.avgMultipleX,
+            unsoldPnlUsd,
+          };
+        }
+        const pnlUsd = t.realizedPnlUsd + unsoldPnlUsd;
+        return {
+          ...t,
+          pnlUsd,
+          pnlPercent: (pnlUsd / t.boughtUsd) * 100,
+          multipleX: 1 + pnlUsd / t.boughtUsd,
+          unsoldPnlUsd,
+        };
+      }),
+    [traders, basis]
+  );
 
   const matchingTraders = useMemo(() => {
     const minX = parseFloat(filters.minX);
@@ -82,18 +130,18 @@ export default function TradersTable({
     const maxPnlPercent = parseFloat(filters.maxPnlPercent);
     const minPnlUsd = parseFloat(filters.minPnlUsd);
     const maxPnlUsd = parseFloat(filters.maxPnlUsd);
-    return traders.filter((t) => {
-      if (!Number.isNaN(minX) && t.avgMultipleX < minX) return false;
-      if (!Number.isNaN(maxX) && t.avgMultipleX > maxX) return false;
-      if (!Number.isNaN(minPnlPercent) && t.realizedPnlPercent < minPnlPercent) return false;
-      if (!Number.isNaN(maxPnlPercent) && t.realizedPnlPercent > maxPnlPercent) return false;
-      if (!Number.isNaN(minPnlUsd) && t.realizedPnlUsd < minPnlUsd) return false;
-      if (!Number.isNaN(maxPnlUsd) && t.realizedPnlUsd > maxPnlUsd) return false;
+    return rows.filter((t) => {
+      if (!Number.isNaN(minX) && t.multipleX < minX) return false;
+      if (!Number.isNaN(maxX) && t.multipleX > maxX) return false;
+      if (!Number.isNaN(minPnlPercent) && t.pnlPercent < minPnlPercent) return false;
+      if (!Number.isNaN(maxPnlPercent) && t.pnlPercent > maxPnlPercent) return false;
+      if (!Number.isNaN(minPnlUsd) && t.pnlUsd < minPnlUsd) return false;
+      if (!Number.isNaN(maxPnlUsd) && t.pnlUsd > maxPnlUsd) return false;
       if (filters.holdingOnly && t.isHolding !== true) return false;
       if (filters.provenOnly && !histories[t.address]?.priorTokenCount) return false;
       return true;
     });
-  }, [traders, filters, histories]);
+  }, [rows, filters, histories]);
 
   // Sorting sits on top of filtering so the two compose; with no sort active the
   // list keeps the upstream ranking order.
@@ -128,11 +176,11 @@ export default function TradersTable({
   // Summed over the filtered rows: a stats strip that describes wallets the
   // filter is hiding contradicts the table underneath it.
   const summary = useMemo(() => {
-    const totalPnl = filteredTraders.reduce((sum, t) => sum + t.realizedPnlUsd, 0);
-    const winners = filteredTraders.filter((t) => t.realizedPnlUsd > 0).length;
+    const totalPnl = filteredTraders.reduce((sum, t) => sum + t.pnlUsd, 0);
+    const winners = filteredTraders.filter((t) => t.pnlUsd > 0).length;
     const avgX =
       filteredTraders.length > 0
-        ? filteredTraders.reduce((sum, t) => sum + t.avgMultipleX, 0) / filteredTraders.length
+        ? filteredTraders.reduce((sum, t) => sum + t.multipleX, 0) / filteredTraders.length
         : 0;
     return { totalPnl, winners, avgX };
   }, [filteredTraders]);
@@ -266,7 +314,11 @@ export default function TradersTable({
 
       {/* Quick stats strip */}
       <div className="grid grid-cols-3 divide-x divide-neutral-800/80 border-b border-neutral-800/80 bg-neutral-950/40">
-        <StatCell label="Combined Realized PNL" value={formatUsd(summary.totalPnl)} positive={summary.totalPnl >= 0} />
+        <StatCell
+          label={basis === "total" ? "Combined Total PNL" : "Combined Realized PNL"}
+          value={formatUsd(summary.totalPnl)}
+          positive={summary.totalPnl >= 0}
+        />
         <StatCell label="Winning Wallets" value={`${summary.winners} / ${traders.length}`} />
         <StatCell label="Avg Multiple" value={formatMultiple(summary.avgX)} />
       </div>
@@ -289,6 +341,36 @@ export default function TradersTable({
           <span className="text-xs text-neutral-600">
             {filteredTraders.length} / {traders.length} shown
           </span>
+
+          {hasUnrealizedData && (
+            <div className="flex items-center gap-1.5">
+              <span className="hidden text-xs text-neutral-500 sm:inline">PNL</span>
+              <div className="flex overflow-hidden rounded-lg border border-neutral-800 text-xs font-medium">
+                <button
+                  onClick={() => setPnlBasis("total")}
+                  title="Realized profit plus the paper value of tokens still held"
+                  className={`px-2.5 py-1.5 transition-colors ${
+                    pnlBasis === "total"
+                      ? "bg-blue-500/20 text-blue-300"
+                      : "bg-neutral-900 text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  Total
+                </button>
+                <button
+                  onClick={() => setPnlBasis("realized")}
+                  title="Profit from tokens actually sold"
+                  className={`px-2.5 py-1.5 transition-colors ${
+                    pnlBasis === "realized"
+                      ? "bg-blue-500/20 text-blue-300"
+                      : "bg-neutral-900 text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  Realized
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-1.5">
             <span className="hidden text-xs text-neutral-500 sm:inline">Entry/Exit as</span>
@@ -385,9 +467,19 @@ export default function TradersTable({
           Why Avg X isn&apos;t Exit ÷ Entry
         </summary>
         <p className="px-4 pb-2.5 text-[11px] leading-relaxed text-neutral-500 sm:px-5">
-          Avg X is realized profit ÷ total USD spent buying. Avg Entry averages every token bought,
-          while Avg Exit and the profit cover only the tokens actually sold — so the two line up only
-          when a wallet sold its entire position.
+          Avg X is {basis === "total" ? "total" : "realized"} profit ÷ total USD spent buying. Avg
+          Entry averages every token bought, while Avg Exit covers only the tokens actually sold — so
+          the two line up only when a wallet sold its entire position.
+          {hasUnrealizedData && (
+            <>
+              {" "}
+              Wallets often receive or send tokens outside of trades, so bought and sold amounts
+              don&apos;t have to match. <strong className="font-medium text-neutral-400">Total</strong>{" "}
+              PNL adds the current paper value of whatever is still held;{" "}
+              <strong className="font-medium text-neutral-400">Realized</strong> counts only closed
+              trades.
+            </>
+          )}
         </p>
       </details>
 
@@ -414,27 +506,31 @@ export default function TradersTable({
               <th className="w-[26%] py-2.5 font-medium">Wallet</th>
               <SortableHeader
                 label="Avg X"
-                sortKey="avgMultipleX"
+                sortKey="multipleX"
                 sort={sort}
                 onToggle={toggleSort}
-                title={AVG_X_BASIS}
+                title={avgXBasis(basis)}
                 className="w-[9%]"
               />
               <th className="w-[15%] py-2.5 font-medium">
                 <div className="flex items-center gap-2">
                   <SortButton
-                    label="$ PNL"
-                    sortKey="realizedPnlUsd"
+                    label={basis === "total" ? "Total PNL" : "$ PNL"}
+                    sortKey="pnlUsd"
                     sort={sort}
                     onToggle={toggleSort}
-                    title="Realized profit in USD"
+                    title={
+                      basis === "total"
+                        ? "Realized profit plus the paper value of tokens still held"
+                        : "Realized profit in USD"
+                    }
                   />
                   <SortButton
                     label="%"
-                    sortKey="realizedPnlPercent"
+                    sortKey="pnlPercent"
                     sort={sort}
                     onToggle={toggleSort}
-                    title="Realized PNL as a share of USD spent buying"
+                    title="PNL as a share of USD spent buying"
                   />
                 </div>
               </th>
@@ -486,27 +582,28 @@ export default function TradersTable({
                 </td>
                 <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
                   <span
-                    title={AVG_X_BASIS}
+                    title={avgXBasis(basis)}
                     className="cursor-help border-b border-dotted border-neutral-700"
                   >
-                    {formatMultiple(t.avgMultipleX)}
+                    {formatMultiple(t.multipleX)}
                   </span>
                 </td>
                 <td className="py-3 align-top tabular-nums">
                   <div
                     className={`font-semibold ${
-                      t.realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+                      t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
                     }`}
                   >
-                    {formatUsd(t.realizedPnlUsd)}
+                    {formatUsd(t.pnlUsd)}
                   </div>
                   <div
                     className={`text-[11px] ${
-                      t.realizedPnlPercent >= 0 ? "text-emerald-400/70" : "text-rose-400/70"
+                      t.pnlPercent >= 0 ? "text-emerald-400/70" : "text-rose-400/70"
                     }`}
                   >
-                    {formatPercent(t.realizedPnlPercent)}
+                    {formatPercent(t.pnlPercent)}
                   </div>
+                  <PnlSplit row={t} basis={basis} />
                 </td>
                 <td className="py-3 align-top tabular-nums text-neutral-300">
                   <ArrowPair
@@ -538,6 +635,7 @@ export default function TradersTable({
             token={token}
             history={histories[t.address]}
             showMcap={showMcap}
+            basis={basis}
             hasHoldingData={hasHoldingData}
             selected={selected.has(t.address)}
             onToggle={() => toggleOne(t.address)}
@@ -780,6 +878,19 @@ function RankBadge({ rank }: { rank: number }) {
   );
 }
 
+/** Spells out how much of a Total figure is still unsold, so a paper gain is
+ * never mistaken for cash taken off the table. */
+function PnlSplit({ row, basis }: { row: Row; basis: PnlBasis }) {
+  if (basis !== "total" || row.unsoldPnlUsd === 0) return null;
+  return (
+    <div className="mt-0.5 text-[10px] leading-tight text-neutral-500">
+      {formatUsd(row.realizedPnlUsd)} sold
+      <span className="text-neutral-600"> + </span>
+      {formatUsd(row.unsoldPnlUsd)} held
+    </div>
+  );
+}
+
 /** Omitted entirely when unknown, so a missing count never reads as "sold 0". */
 function TokenAmounts({
   trader,
@@ -844,21 +955,23 @@ function TraderCard({
   token,
   history,
   showMcap,
+  basis,
   hasHoldingData,
   selected,
   onToggle,
   onShare,
 }: {
-  trader: WalletTrader;
+  trader: Row;
   token: TokenMeta;
   history?: WalletHistory;
   showMcap: boolean;
+  basis: PnlBasis;
   hasHoldingData: boolean;
   selected: boolean;
   onToggle: () => void;
   onShare: () => void;
 }) {
-  const positive = trader.realizedPnlUsd >= 0;
+  const positive = trader.pnlUsd >= 0;
   return (
     <div className={`px-4 py-3.5 transition-colors ${selected ? "bg-blue-500/5" : ""}`}>
       <div className="flex items-start gap-2.5">
@@ -876,16 +989,17 @@ function TraderCard({
         </div>
         <div className="shrink-0 text-right tabular-nums">
           <div className={`text-base font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>
-            {formatUsd(trader.realizedPnlUsd)}
+            {formatUsd(trader.pnlUsd)}
           </div>
           <div className="flex items-center justify-end gap-1.5 text-[11px]">
             <span className={positive ? "text-emerald-400/70" : "text-rose-400/70"}>
-              {formatPercent(trader.realizedPnlPercent)}
+              {formatPercent(trader.pnlPercent)}
             </span>
             <span className="font-semibold text-blue-300">
-              {formatMultiple(trader.avgMultipleX)}
+              {formatMultiple(trader.multipleX)}
             </span>
           </div>
+          <PnlSplit row={trader} basis={basis} />
         </div>
       </div>
 
