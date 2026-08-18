@@ -2,7 +2,7 @@
 // Never import this from a "use client" component — it reads the API key from env.
 import "server-only";
 import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
-import { realizedBasisUsd } from "./quality";
+import { displayMultiple, realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://data.solanatracker.io";
 const RPC_URL = "https://api.mainnet-beta.solana.com";
@@ -246,7 +246,8 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   // wallet that offloaded 4% of its bag at 2.4x reports 1.06x.
   const soldCostBasisUsd = Math.min(tokensSold, tokensBought) * avgBuyPriceUsd;
   const realizedBasis = realizedBasisUsd(soldCostBasisUsd, buyUsd);
-  const realizedPnlPercent = realizedBasis > 0 ? (realizedPnlUsd / realizedBasis) * 100 : 0;
+  const multiple = displayMultiple(realizedPnlUsd, realizedBasis);
+  const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 
   return {
     rank,
@@ -271,7 +272,7 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
     soldCostBasisUsd,
     realizedPnlUsd,
     realizedPnlPercent,
-    avgMultipleX: realizedBasis > 0 ? 1 + realizedPnlUsd / realizedBasis : 0,
+    avgMultipleX: multiple,
     remainingPercent,
     remainingValueUsd: balance === null ? null : h.current?.value ?? 0,
     isHolding: balance === null ? null : balance > 0,

@@ -36,9 +36,13 @@ type PnlBasis = "realized" | "total";
 interface Row extends WalletTrader {
   pnlUsd: number;
   pnlPercent: number;
-  multipleX: number;
+  /** Null when the basis was too small to measure a return against. */
+  multipleX: number | null;
   unsoldPnlUsd: number;
 }
+
+const NO_MULTIPLE_REASON =
+  "No measurable return: almost all of these tokens arrived by transfer rather than being bought, so there is no cost basis to divide the profit by. The PNL is still real.";
 
 // Avg X is PNL over capital deployed, so it deliberately does not equal
 // Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
@@ -142,8 +146,8 @@ export default function TradersTable({
     const minPnlUsd = parseFloat(filters.minPnlUsd);
     const maxPnlUsd = parseFloat(filters.maxPnlUsd);
     return rows.filter((t) => {
-      if (!Number.isNaN(minX) && t.multipleX < minX) return false;
-      if (!Number.isNaN(maxX) && t.multipleX > maxX) return false;
+      if (!Number.isNaN(minX) && (t.multipleX === null || t.multipleX < minX)) return false;
+      if (!Number.isNaN(maxX) && (t.multipleX === null || t.multipleX > maxX)) return false;
       if (!Number.isNaN(minPnlPercent) && t.pnlPercent < minPnlPercent) return false;
       if (!Number.isNaN(maxPnlPercent) && t.pnlPercent > maxPnlPercent) return false;
       if (!Number.isNaN(minPnlUsd) && t.pnlUsd < minPnlUsd) return false;
@@ -163,7 +167,15 @@ export default function TradersTable({
       return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
     }
     const factor = sort.dir === "desc" ? -1 : 1;
-    return [...matchingTraders].sort((a, b) => (a[sort.key] - b[sort.key]) * factor);
+    // Rows with no measurable multiple sort last in either direction rather than
+    // being treated as 0x.
+    return [...matchingTraders].sort((a, b) => {
+      const av = a[sort.key];
+      const bv = b[sort.key];
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return (av - bv) * factor;
+    });
   }, [matchingTraders, sort, basis]);
 
   function toggleSort(key: SortKey) {
@@ -193,9 +205,12 @@ export default function TradersTable({
   const summary = useMemo(() => {
     const totalPnl = filteredTraders.reduce((sum, t) => sum + t.pnlUsd, 0);
     const winners = filteredTraders.filter((t) => t.pnlUsd > 0).length;
+    // Rows with no measurable multiple are left out of the average rather than
+    // counted as 0x, which would drag the headline figure down.
+    const measurable = filteredTraders.filter((t) => t.multipleX !== null);
     const avgX =
-      filteredTraders.length > 0
-        ? filteredTraders.reduce((sum, t) => sum + t.multipleX, 0) / filteredTraders.length
+      measurable.length > 0
+        ? measurable.reduce((sum, t) => sum + (t.multipleX ?? 0), 0) / measurable.length
         : 0;
     return { totalPnl, winners, avgX };
   }, [filteredTraders]);
@@ -601,10 +616,14 @@ export default function TradersTable({
                 </td>
                 <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
                   <span
-                    title={avgXBasis(basis)}
+                    title={t.multipleX === null ? NO_MULTIPLE_REASON : avgXBasis(basis)}
                     className="cursor-help border-b border-dotted border-neutral-700"
                   >
-                    {formatMultiple(t.multipleX)}
+                    {t.multipleX === null ? (
+                      <span className="text-neutral-500">n/a</span>
+                    ) : (
+                      formatMultiple(t.multipleX)
+                    )}
                   </span>
                 </td>
                 <td className="py-3 align-top tabular-nums">
@@ -1080,8 +1099,8 @@ function TraderCard({
             <span className={positive ? "text-emerald-400/70" : "text-rose-400/70"}>
               {formatPercent(trader.pnlPercent)}
             </span>
-            <span className="font-semibold text-blue-300">
-              {formatMultiple(trader.multipleX)}
+            <span className={trader.multipleX === null ? "text-neutral-500" : "font-semibold text-blue-300"}>
+              {trader.multipleX === null ? "n/a" : formatMultiple(trader.multipleX)}
             </span>
           </div>
           <PnlSplit row={trader} basis={basis} />

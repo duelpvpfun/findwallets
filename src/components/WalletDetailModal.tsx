@@ -303,8 +303,12 @@ export default function WalletDetailModal({
                   />
                   <Stat
                     label="Avg Multiple"
-                    value={formatMultiple(trader.avgMultipleX)}
-                    title={AVG_X_BASIS}
+                    value={trader.avgMultipleX === null ? "n/a" : formatMultiple(trader.avgMultipleX)}
+                    title={
+                      trader.avgMultipleX === null
+                        ? "No measurable return: almost all of these tokens arrived by transfer rather than being bought, so there is no cost basis to divide the profit by."
+                        : AVG_X_BASIS
+                    }
                   />
                   <Stat
                     label="% PNL"

@@ -29,7 +29,12 @@ export interface WalletTrader {
   soldCostBasisUsd: number;
   realizedPnlUsd: number;
   realizedPnlPercent: number;
-  avgMultipleX: number;
+  /**
+   * Null when the cost basis is too small to divide by — a wallet whose tokens
+   * mostly arrived by transfer has a real PNL but no measurable return. The PNL
+   * is still shown; the ratio is withheld rather than reported as 587x.
+   */
+  avgMultipleX: number | null;
   // Not available on non-Solana chains (no live position-balance data there).
   remainingPercent: number | null;
   remainingValueUsd: number | null;

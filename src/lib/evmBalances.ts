@@ -13,9 +13,23 @@ import type { Chain } from "./types";
 
 type EvmChain = Extract<Chain, "bsc" | "base">;
 
-const RPC_URLS: Record<EvmChain, string> = {
-  bsc: process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org",
-  base: process.env.BASE_RPC_URL || "https://mainnet.base.org",
+// Tried in order. The public Base endpoint throttles hard enough to lose ~70% of
+// a 50-wallet scan (confirmed live: -32016 on 35 of 50 wallets while
+// base-rpc.publicnode.com answered the same calls fine), so one URL is not
+// enough. A paid endpoint in BSC_RPC_URL / BASE_RPC_URL is always tried first.
+const RPC_URLS: Record<EvmChain, string[]> = {
+  bsc: [
+    process.env.BSC_RPC_URL,
+    "https://bsc-dataseed.binance.org",
+    "https://bsc-rpc.publicnode.com",
+    "https://bsc-dataseed1.defibit.io",
+  ].filter((u): u is string => Boolean(u)),
+  base: [
+    process.env.BASE_RPC_URL,
+    "https://base-rpc.publicnode.com",
+    "https://mainnet.base.org",
+    "https://base.drpc.org",
+  ].filter((u): u is string => Boolean(u)),
 };
 
 // balanceOf(address) and decimals() selectors.
@@ -40,9 +54,12 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function rpcBatch(chain: EvmChain, calls: Array<{ to: string; data: string }>) {
+async function rpcBatchOnce(
+  url: string,
+  calls: Array<{ to: string; data: string }>
+): Promise<Array<string | null>> {
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(RPC_URLS[chain], {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -56,7 +73,15 @@ async function rpcBatch(chain: EvmChain, calls: Array<{ to: string; data: string
       cache: "no-store",
     });
     if (!res.ok) throw new Error(`RPC ${res.status}`);
-    const body = (await res.json()) as RpcResponse[] | RpcResponse;
+
+    // A throttled public node can answer 200 with an HTML error page.
+    const text = await res.text();
+    let body: RpcResponse[] | RpcResponse;
+    try {
+      body = JSON.parse(text) as RpcResponse[] | RpcResponse;
+    } catch {
+      throw new Error("RPC returned non-JSON");
+    }
     const list = Array.isArray(body) ? body : [body];
 
     // Throttling surfaces either as one id:null error or as an error on every
@@ -73,6 +98,18 @@ async function rpcBatch(chain: EvmChain, calls: Array<{ to: string; data: string
     }
     return out;
   }
+}
+
+async function rpcBatch(chain: EvmChain, calls: Array<{ to: string; data: string }>) {
+  let lastErr: unknown;
+  for (const url of RPC_URLS[chain]) {
+    try {
+      return await rpcBatchOnce(url, calls);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("All RPC endpoints failed");
 }
 
 function toNumber(hex: string | null, decimals: number): number | null {

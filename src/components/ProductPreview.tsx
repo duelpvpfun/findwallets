@@ -206,7 +206,7 @@ export default function ProductPreview({ onClose }: { onClose: () => void }) {
                     {t.nickname ?? shortenAddress(t.address, 4)}
                   </span>
                   <span className="ml-auto text-xs font-medium text-blue-300">
-                    {formatMultiple(t.avgMultipleX)}
+                    {t.avgMultipleX === null ? "—" : formatMultiple(t.avgMultipleX)}
                   </span>
                   <span className="w-16 text-right text-xs font-semibold text-emerald-400">
                     {formatUsd(t.realizedPnlUsd)}

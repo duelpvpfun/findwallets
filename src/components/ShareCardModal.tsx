@@ -37,7 +37,7 @@ export default function ShareCardModal({ token, trader, onClose }: ShareCardModa
       walletAddress: trader.address,
       pnlUsd: totalPnlUsd,
       pnlPercent: investedUsd > 0 ? (totalPnlUsd / investedUsd) * 100 : trader.realizedPnlPercent,
-      multipleX: investedUsd > 0 ? positionUsd / investedUsd : trader.avgMultipleX,
+      multipleX: investedUsd > 0 ? positionUsd / investedUsd : trader.avgMultipleX ?? 0,
       investedUsd,
       positionUsd,
       siteHost: window.location.host,

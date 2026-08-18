@@ -12,7 +12,7 @@
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
-import { realizedBasisUsd } from "./quality";
+import { displayMultiple, realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
@@ -208,7 +208,8 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
   // 1.06x, contradicting the Entry -> Exit prices on the same row.
   const soldCostBasisUsd = Math.min(item.volumeSell, item.volumeBuy) * avgBuyPriceUsd;
   const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd);
-  const realizedPnlPercent = realizedBasis > 0 ? (item.realizedPnl / realizedBasis) * 100 : 0;
+  const multiple = displayMultiple(item.realizedPnl, realizedBasis);
+  const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 
   return {
     rank,
@@ -231,7 +232,7 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     soldCostBasisUsd,
     realizedPnlUsd: item.realizedPnl,
     realizedPnlPercent,
-    avgMultipleX: realizedBasis > 0 ? 1 + item.realizedPnl / realizedBasis : 0,
+    avgMultipleX: multiple,
     // Deliberately not seeded from item.unrealizedPnl: that figure is derived
     // from buy/sell volume inside the window, so transfers out read as holdings.
     // fetchEvmTopTraders fills these from an on-chain balanceOf instead.

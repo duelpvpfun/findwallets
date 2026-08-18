@@ -18,6 +18,14 @@ export const MIN_WALLET_PNL_USD = 1000;
 export const MIN_COST_BASIS_USD = 100;
 
 /**
+ * Above this, a multiple is an artifact rather than a trade. Live example: a
+ * wallet with ONE $39.46 buy and 225 sells of 15.95M tokens reports 587x — the
+ * $23,152 profit is real, but the tokens it sold mostly arrived by transfer, so
+ * there is no basis to measure a return against.
+ */
+export const MAX_PLAUSIBLE_MULTIPLE_X = 500;
+
+/**
  * Denominator for a realized return: the cost of the tokens actually sold.
  *
  * Falls back to total buy volume when that basis is dust, which understates the
@@ -27,6 +35,16 @@ export const MIN_COST_BASIS_USD = 100;
 export function realizedBasisUsd(soldCostBasisUsd: number, boughtUsd: number): number {
   if (soldCostBasisUsd >= MIN_COST_BASIS_USD) return soldCostBasisUsd;
   return Math.max(soldCostBasisUsd, boughtUsd);
+}
+
+/**
+ * The multiple to display, or null when the basis is too small to divide by.
+ * The PNL stays visible either way — an absent ratio is honest, a 587x is not.
+ */
+export function displayMultiple(pnlUsd: number, basisUsd: number): number | null {
+  if (!Number.isFinite(pnlUsd) || !Number.isFinite(basisUsd) || basisUsd <= 0) return null;
+  const x = 1 + pnlUsd / basisUsd;
+  return x > MAX_PLAUSIBLE_MULTIPLE_X ? null : x;
 }
 
 /** True when a result is worth storing or tagging. */

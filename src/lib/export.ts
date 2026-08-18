@@ -53,6 +53,9 @@ function buildName(
       ? `#${trader.rank} - ${tokenSymbol}`
       : opts.nameStyle === "address"
       ? shortenAddress(trader.address)
+      : trader.avgMultipleX === null
+      ? // No measurable multiple, so name it by the figure that is real.
+        `${formatUsd(trader.realizedPnlUsd)} - ${tokenSymbol}`
       : `${formatMultiple(trader.avgMultipleX)} - ${tokenSymbol}`;
   return `${opts.namePrefix}${base}`;
 }
