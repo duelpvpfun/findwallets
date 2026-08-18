@@ -112,7 +112,6 @@ export default function TradersTable({
 
   // Only Solana reports live balances; elsewhere the column would be all dashes.
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
-  const columnCount = hasHoldingData ? 11 : 10;
 
   // Wallets our own database has already caught winning on a different token.
   const provenCount = useMemo(
@@ -179,8 +178,8 @@ export default function TradersTable({
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-800/80 bg-neutral-900/40 shadow-xl shadow-black/10">
       {/* Token header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/60 to-transparent px-5 py-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/60 to-transparent px-4 py-4 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
           {onBack && (
             <button
               onClick={onBack}
@@ -195,16 +194,16 @@ export default function TradersTable({
             <img
               src={token.imageUrl}
               alt=""
-              className="h-11 w-11 rounded-full border border-neutral-800 object-cover"
+              className="h-10 w-10 shrink-0 rounded-full border border-neutral-800 object-cover sm:h-11 sm:w-11"
             />
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-800 text-sm font-bold text-neutral-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-sm font-bold text-neutral-400 sm:h-11 sm:w-11">
               {token.symbol.slice(0, 2)}
             </div>
           )}
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-neutral-50">{token.name}</h2>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-base font-semibold text-neutral-50">{token.name}</h2>
               <span className="rounded-md bg-neutral-800 px-1.5 py-0.5 text-[11px] font-medium text-neutral-400">
                 {token.symbol}
               </span>
@@ -222,20 +221,20 @@ export default function TradersTable({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <span className="hidden text-xs text-neutral-500 sm:inline">
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <button
             onClick={() => setExportTargets(selectedTraders)}
             disabled={selected.size === 0}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-700 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-700 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
           >
-            Export Selected
+            Export{selected.size > 0 ? ` (${selected.size})` : " Selected"}
           </button>
           <button
             onClick={() => setExportTargets(filteredTraders)}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500 sm:flex-none"
           >
             <DownloadIcon />
             Export All
@@ -251,7 +250,7 @@ export default function TradersTable({
       </div>
 
       {/* Filter bar */}
-      <div className="border-b border-neutral-800/80 px-5 py-3">
+      <div className="border-b border-neutral-800/80 px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setFiltersOpen((v) => !v)}
@@ -293,7 +292,7 @@ export default function TradersTable({
         </div>
 
         {filtersOpen && (
-          <div className="mt-3 flex flex-wrap items-end gap-4 rounded-xl border border-neutral-800/80 bg-neutral-950/40 p-3 animate-fade-in">
+          <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3 rounded-xl border border-neutral-800/80 bg-neutral-950/40 p-3 animate-fade-in">
             <FilterRangeInput
               label="Avg X"
               minValue={filters.minX}
@@ -356,18 +355,32 @@ export default function TradersTable({
         )}
       </div>
 
-      <p className="border-t border-neutral-900 px-5 py-2.5 text-[11px] leading-relaxed text-neutral-500">
-        <span className="text-neutral-400">How Avg X is calculated:</span> realized profit ÷ total
-        USD spent buying — not Avg Exit ÷ Avg Entry. Avg Entry averages every token bought, while
-        Avg Exit and the profit cover only the tokens actually sold, so the two match only when a
-        wallet sold its entire position.
-      </p>
+      <details className="group border-b border-neutral-800/80 bg-neutral-950/30">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-2 text-[11px] text-neutral-500 hover:text-neutral-300 sm:px-5">
+          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-400">
+            ?
+          </span>
+          Why Avg X isn&apos;t Exit ÷ Entry
+        </summary>
+        <p className="px-4 pb-2.5 text-[11px] leading-relaxed text-neutral-500 sm:px-5">
+          Avg X is realized profit ÷ total USD spent buying. Avg Entry averages every token bought,
+          while Avg Exit and the profit cover only the tokens actually sold — so the two line up only
+          when a wallet sold its entire position.
+        </p>
+      </details>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1320px] text-left text-sm">
+      {filteredTraders.length === 0 && (
+        <div className="py-12 text-center text-sm text-neutral-500">
+          No traders match the current filters.
+        </div>
+      )}
+
+      {/* Desktop: merged columns keep every number on screen without sideways scrolling. */}
+      <div className="hidden lg:block">
+        <table className="w-full table-fixed text-left text-sm">
           <thead>
             <tr className="border-b border-neutral-800/80 text-[11px] uppercase tracking-wide text-neutral-500">
-              <th className="w-10 py-2.5 pl-5">
+              <th className="w-9 py-2.5 pl-4 xl:pl-5">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -375,153 +388,119 @@ export default function TradersTable({
                   className="h-3.5 w-3.5 accent-blue-500"
                 />
               </th>
-              <th className="py-2.5 font-medium">#</th>
-              <th className="py-2.5 font-medium">Wallet</th>
-              <th
-                className="py-2.5 font-medium"
-                title="Volume-weighted average across every buy — includes tokens the wallet never sold, so this is not the cost basis of the sold tokens."
-              >
-                Avg Entry <span className="text-neutral-600 normal-case">(all buys)</span>
-              </th>
-              <th
-                className="py-2.5 font-medium"
-                title="Volume-weighted average across every sell — covers only the tokens that were actually sold."
-              >
-                Avg Exit <span className="text-neutral-600 normal-case">(sold only)</span>
-              </th>
-              <th className="py-2.5 font-medium" title="Total USD spent buying this token">
-                Bought
-              </th>
-              <th className="py-2.5 font-medium" title="Total USD received selling this token">
-                Sold
-              </th>
+              <th className="w-11 py-2.5 font-medium">#</th>
+              <th className="w-[26%] py-2.5 font-medium">Wallet</th>
               <SortableHeader
                 label="Avg X"
                 sortKey="avgMultipleX"
                 sort={sort}
                 onToggle={toggleSort}
                 title={AVG_X_BASIS}
+                className="w-[9%]"
               />
-              <SortableHeader
-                label="% PNL"
-                sortKey="realizedPnlPercent"
-                sort={sort}
-                onToggle={toggleSort}
-                title="Realized PNL as a share of USD spent buying"
-              />
-              <SortableHeader
-                label="$ PNL"
-                sortKey="realizedPnlUsd"
-                sort={sort}
-                onToggle={toggleSort}
-                title="Realized profit in USD"
-              />
+              <th className="w-[15%] py-2.5 font-medium">
+                <div className="flex items-center gap-2">
+                  <SortButton
+                    label="$ PNL"
+                    sortKey="realizedPnlUsd"
+                    sort={sort}
+                    onToggle={toggleSort}
+                    title="Realized profit in USD"
+                  />
+                  <SortButton
+                    label="%"
+                    sortKey="realizedPnlPercent"
+                    sort={sort}
+                    onToggle={toggleSort}
+                    title="Realized PNL as a share of USD spent buying"
+                  />
+                </div>
+              </th>
+              <th
+                className="w-[17%] py-2.5 font-medium"
+                title="Avg entry averages every token bought; avg exit covers only the tokens actually sold."
+              >
+                Entry → Exit
+              </th>
+              <th
+                className="w-[16%] py-2.5 font-medium"
+                title="Total USD spent buying, then total USD received selling"
+              >
+                Bought → Sold
+              </th>
               {hasHoldingData && (
-                <th className="py-2.5 pr-5 font-medium" title="Tokens still held, not yet sold">
+                <th
+                  className="w-[14%] py-2.5 pr-4 font-medium xl:pr-5"
+                  title="Tokens still held, not yet sold"
+                >
                   Remaining
                 </th>
               )}
             </tr>
           </thead>
           <tbody>
-            {filteredTraders.length === 0 && (
-              <tr>
-                <td colSpan={columnCount} className="py-12 text-center text-sm text-neutral-500">
-                  No traders match the current filters.
-                </td>
-              </tr>
-            )}
             {filteredTraders.map((t) => (
-              <tr key={t.address} className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20">
-                <td className="py-3 pl-5">
+              <tr
+                key={t.address}
+                className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20"
+              >
+                <td className="py-3 pl-4 align-top xl:pl-5">
                   <input
                     type="checkbox"
                     checked={selected.has(t.address)}
                     onChange={() => toggleOne(t.address)}
-                    className="h-3.5 w-3.5 accent-blue-500"
+                    className="mt-0.5 h-3.5 w-3.5 accent-blue-500"
                   />
                 </td>
-                <td className="py-3 text-neutral-500">
-                  {t.rank <= 3 ? (
-                    <span
-                      className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
-                        t.rank === 1
-                          ? "bg-amber-400/20 text-amber-300"
-                          : t.rank === 2
-                          ? "bg-neutral-400/20 text-neutral-300"
-                          : "bg-orange-500/20 text-orange-300"
-                      }`}
-                    >
-                      {t.rank}
-                    </span>
-                  ) : (
-                    t.rank
-                  )}
+                <td className="py-3 align-top text-neutral-500">
+                  <RankBadge rank={t.rank} />
                 </td>
-                <td className="py-3">
-                  <div className="flex items-center gap-1.5">
-                    {t.tags.includes("kol") && <span title="KOL">⭐</span>}
-                    {t.tags.includes("bot") && <span title="Bot">🤖</span>}
-                    <span className="font-mono text-xs text-neutral-200">
-                      {shortenAddress(t.address)}
-                    </span>
-                    {t.nickname && (
-                      <span className="text-xs text-neutral-500">({t.nickname})</span>
-                    )}
-                    <HistoryBadge history={histories[t.address]} />
-                    <button
-                      onClick={() => setShareTarget(t)}
-                      title="Share PNL card"
-                      className="ml-0.5 rounded-md p-1 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="18" cy="5" r="3" />
-                        <circle cx="6" cy="12" r="3" />
-                        <circle cx="18" cy="19" r="3" />
-                        <path d="M8.6 13.5l6.8 3.9M15.4 6.6l-6.8 3.9" />
-                      </svg>
-                    </button>
-                  </div>
+                <td className="py-3 align-top">
+                  <WalletCell
+                    trader={t}
+                    history={histories[t.address]}
+                    onShare={() => setShareTarget(t)}
+                  />
                 </td>
-                <td className="py-3 tabular-nums text-neutral-300">
-                  {showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
-                </td>
-                <td className="py-3 tabular-nums text-neutral-300">
-                  {showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
-                </td>
-                <td className="py-3 tabular-nums">
-                  <div className="text-neutral-200">{formatUsd(t.boughtUsd)}</div>
-                  <div className="text-[11px] text-neutral-500">
-                    {formatCompactNumber(t.boughtTokenAmount)} {token.symbol}
-                  </div>
-                </td>
-                <td className="py-3 tabular-nums">
-                  <div className="text-neutral-200">{formatUsd(t.soldUsd)}</div>
-                  <div className="text-[11px] text-neutral-500">
-                    {formatCompactNumber(t.soldTokenAmount)} {token.symbol}
-                  </div>
-                </td>
-                <td className="py-3 tabular-nums font-medium text-neutral-200">
-                  <span title={AVG_X_BASIS} className="cursor-help border-b border-dotted border-neutral-700">
+                <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
+                  <span
+                    title={AVG_X_BASIS}
+                    className="cursor-help border-b border-dotted border-neutral-700"
+                  >
                     {formatMultiple(t.avgMultipleX)}
                   </span>
                 </td>
-                <td
-                  className={`py-3 tabular-nums font-medium ${
-                    t.realizedPnlPercent >= 0 ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {formatPercent(t.realizedPnlPercent)}
+                <td className="py-3 align-top tabular-nums">
+                  <div
+                    className={`font-semibold ${
+                      t.realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {formatUsd(t.realizedPnlUsd)}
+                  </div>
+                  <div
+                    className={`text-[11px] ${
+                      t.realizedPnlPercent >= 0 ? "text-emerald-400/70" : "text-rose-400/70"
+                    }`}
+                  >
+                    {formatPercent(t.realizedPnlPercent)}
+                  </div>
                 </td>
-                <td
-                  className={`py-3 tabular-nums font-medium ${
-                    t.realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {formatUsd(t.realizedPnlUsd)}
+                <td className="py-3 align-top tabular-nums text-neutral-300">
+                  <ArrowPair
+                    from={showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
+                    to={showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
+                  />
+                </td>
+                <td className="py-3 align-top tabular-nums">
+                  <ArrowPair from={formatUsd(t.boughtUsd)} to={formatUsd(t.soldUsd)} />
+                  <div className="mt-0.5 text-[11px] text-neutral-500">
+                    {formatCompactNumber(t.boughtTokenAmount)} →{" "}
+                    {formatCompactNumber(t.soldTokenAmount)} {token.symbol}
+                  </div>
                 </td>
                 {hasHoldingData && (
-                  <td className="py-3 pr-5">
+                  <td className="py-3 pr-4 align-top xl:pr-5">
                     <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} />
                   </td>
                 )}
@@ -529,6 +508,23 @@ export default function TradersTable({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile / tablet: one card per wallet, PNL first so nothing is buried off-screen. */}
+      <div className="divide-y divide-neutral-900/70 lg:hidden">
+        {filteredTraders.map((t) => (
+          <TraderCard
+            key={t.address}
+            trader={t}
+            token={token}
+            history={histories[t.address]}
+            showMcap={showMcap}
+            hasHoldingData={hasHoldingData}
+            selected={selected.has(t.address)}
+            onToggle={() => toggleOne(t.address)}
+            onShare={() => setShareTarget(t)}
+          />
+        ))}
       </div>
 
       {exportTargets && (
@@ -549,8 +545,8 @@ export default function TradersTable({
 
 function StatCell({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
-    <div className="px-5 py-3">
-      <div className="text-[11px] text-neutral-500">{label}</div>
+    <div className="px-3 py-3 sm:px-5">
+      <div className="text-[10px] leading-tight text-neutral-500 sm:text-[11px]">{label}</div>
       <div
         className={`mt-0.5 text-sm font-semibold tabular-nums ${
           positive === undefined ? "text-neutral-100" : positive ? "text-emerald-400" : "text-rose-400"
@@ -591,23 +587,25 @@ function FilterRangeInput({
   maxPlaceholder: string;
 }) {
   return (
-    <div className="flex flex-col gap-1 text-xs text-neutral-400">
+    <div className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-neutral-400 sm:flex-none">
       {label}
       <div className="flex items-center gap-1.5">
         <input
           type="number"
+          inputMode="decimal"
           value={minValue}
           onChange={(e) => onMinChange(e.target.value)}
           placeholder={minPlaceholder}
-          className="w-20 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
+          className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:w-20"
         />
         <span className="text-neutral-600">–</span>
         <input
           type="number"
+          inputMode="decimal"
           value={maxValue}
           onChange={(e) => onMaxChange(e.target.value)}
           placeholder={maxPlaceholder}
-          className="w-20 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
+          className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:w-20"
         />
       </div>
     </div>
@@ -644,7 +642,7 @@ function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativ
     // EVM gives no balance, but a non-zero unrealized PnL still proves a position.
     if (trader.isHolding && trader.unrealizedPnlUsd !== null) {
       return (
-        <div className="min-w-[110px] text-xs">
+        <div className="text-xs">
           <span className="text-neutral-400">Still holding</span>
           <div
             className={`tabular-nums ${
@@ -661,8 +659,8 @@ function RemainingCell({ trader, nativePriceUsd }: { trader: WalletTrader; nativ
   }
   const remainingNative = nativePriceUsd > 0 ? trader.remainingValueUsd / nativePriceUsd : 0;
   return (
-    <div className="min-w-[110px]">
-      <div className="flex items-center justify-between text-xs">
+    <div>
+      <div className="flex items-center justify-between gap-1.5 text-xs">
         <span className="tabular-nums text-neutral-300">{formatSol(remainingNative)}</span>
         <span className="tabular-nums text-neutral-500">{trader.remainingPercent.toFixed(0)}%</span>
       </div>
@@ -694,7 +692,7 @@ function FilterIcon() {
   );
 }
 
-function SortableHeader({
+function SortButton({
   label,
   sortKey,
   sort,
@@ -709,20 +707,202 @@ function SortableHeader({
 }) {
   const active = sort?.key === sortKey ? sort.dir : null;
   return (
-    <th className="py-2.5 font-medium">
-      <button
-        onClick={() => onToggle(sortKey)}
-        title={title}
-        className={`group flex items-center gap-1 uppercase tracking-wide transition-colors ${
-          active ? "text-blue-300" : "text-neutral-500 hover:text-neutral-300"
+    <button
+      onClick={() => onToggle(sortKey)}
+      title={title}
+      className={`group flex items-center gap-1 uppercase tracking-wide transition-colors ${
+        active ? "text-blue-300" : "text-neutral-500 hover:text-neutral-300"
+      }`}
+    >
+      {label}
+      <span
+        className={`text-[9px] leading-none ${
+          active ? "opacity-100" : "opacity-0 group-hover:opacity-40"
         }`}
       >
-        {label}
-        <span className={`text-[9px] leading-none ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`}>
-          {active === "asc" ? "\u25b2" : "\u25bc"}
-        </span>
-      </button>
+        {active === "asc" ? "\u25b2" : "\u25bc"}
+      </span>
+    </button>
+  );
+}
+
+function SortableHeader({
+  className,
+  ...props
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: Sort | null;
+  onToggle: (key: SortKey) => void;
+  title?: string;
+  className?: string;
+}) {
+  return (
+    <th className={`py-2.5 font-medium ${className ?? ""}`}>
+      <SortButton {...props} />
     </th>
+  );
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank > 3) return <span className="text-sm">{rank}</span>;
+  return (
+    <span
+      className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
+        rank === 1
+          ? "bg-amber-400/20 text-amber-300"
+          : rank === 2
+          ? "bg-neutral-400/20 text-neutral-300"
+          : "bg-orange-500/20 text-orange-300"
+      }`}
+    >
+      {rank}
+    </span>
+  );
+}
+
+function ArrowPair({ from, to }: { from: string; to: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+      <span className="text-neutral-400">{from}</span>
+      <span className="text-neutral-600">→</span>
+      <span className="text-neutral-200">{to}</span>
+    </div>
+  );
+}
+
+function WalletCell({
+  trader,
+  history,
+  onShare,
+}: {
+  trader: WalletTrader;
+  history?: WalletHistory;
+  onShare: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+      {trader.tags.includes("kol") && <span title="KOL">⭐</span>}
+      {trader.tags.includes("bot") && <span title="Bot">🤖</span>}
+      <span className="font-mono text-xs text-neutral-200">{shortenAddress(trader.address)}</span>
+      {trader.nickname && (
+        <span className="truncate text-xs text-neutral-500">({trader.nickname})</span>
+      )}
+      <HistoryBadge history={history} />
+      <button
+        onClick={onShare}
+        title="Share PNL card"
+        aria-label="Share PNL card"
+        className="rounded-md p-1 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+      >
+        <ShareIcon />
+      </button>
+    </div>
+  );
+}
+
+function TraderCard({
+  trader,
+  token,
+  history,
+  showMcap,
+  hasHoldingData,
+  selected,
+  onToggle,
+  onShare,
+}: {
+  trader: WalletTrader;
+  token: TokenMeta;
+  history?: WalletHistory;
+  showMcap: boolean;
+  hasHoldingData: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onShare: () => void;
+}) {
+  const positive = trader.realizedPnlUsd >= 0;
+  return (
+    <div className={`px-4 py-3.5 transition-colors ${selected ? "bg-blue-500/5" : ""}`}>
+      <div className="flex items-start gap-2.5">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          className="mt-1 h-4 w-4 shrink-0 accent-blue-500"
+        />
+        <div className="w-6 shrink-0 pt-0.5 text-xs text-neutral-500">
+          <RankBadge rank={trader.rank} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <WalletCell trader={trader} history={history} onShare={onShare} />
+        </div>
+        <div className="shrink-0 text-right tabular-nums">
+          <div className={`text-base font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+            {formatUsd(trader.realizedPnlUsd)}
+          </div>
+          <div className="flex items-center justify-end gap-1.5 text-[11px]">
+            <span className={positive ? "text-emerald-400/70" : "text-rose-400/70"}>
+              {formatPercent(trader.realizedPnlPercent)}
+            </span>
+            <span className="font-semibold text-blue-300">
+              {formatMultiple(trader.avgMultipleX)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 pl-[3.1rem] text-xs">
+        <CardField
+          label={showMcap ? "Entry → Exit (mcap)" : "Entry → Exit (price)"}
+          value={
+            <ArrowPair
+              from={showMcap ? formatUsd(trader.avgBuyMcapUsd) : `$${trader.avgBuyPriceUsd.toPrecision(3)}`}
+              to={showMcap ? formatUsd(trader.avgSellMcapUsd) : `$${trader.avgSellPriceUsd.toPrecision(3)}`}
+            />
+          }
+        />
+        <CardField
+          label="Bought → Sold"
+          value={
+            <>
+              <ArrowPair from={formatUsd(trader.boughtUsd)} to={formatUsd(trader.soldUsd)} />
+              <div className="mt-0.5 text-[10px] text-neutral-500">
+                {formatCompactNumber(trader.boughtTokenAmount)} →{" "}
+                {formatCompactNumber(trader.soldTokenAmount)} {token.symbol}
+              </div>
+            </>
+          }
+        />
+        {hasHoldingData && (
+          <div className="col-span-2">
+            <CardField
+              label="Remaining"
+              value={<RemainingCell trader={trader} nativePriceUsd={token.nativePriceUsd} />}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CardField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</div>
+      <div className="mt-0.5 tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 3.9M15.4 6.6l-6.8 3.9" />
+    </svg>
   );
 }
 
