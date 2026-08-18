@@ -16,6 +16,11 @@ import {
 
 const NATIVE_UNIT: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
 
+// Avg Multiple is realized PNL over capital deployed, so it deliberately does not
+// equal Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
+const AVG_X_BASIS =
+  "Realized profit ÷ total USD spent buying. This is not Avg Exit ÷ Avg Entry: Avg Entry covers every token bought, while Avg Exit and the profit cover only the tokens actually sold.";
+
 interface WalletDetailModalProps {
   chain: Chain;
   tokenAddress: string;
@@ -287,14 +292,20 @@ export default function WalletDetailModal({
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <Stat
-                    label="Avg Entry"
+                    label="Avg Entry (all buys)"
                     value={showMcap ? formatUsd(trader.avgBuyMcapUsd) : `$${trader.avgBuyPriceUsd.toPrecision(3)}`}
+                    title="Volume-weighted average across every buy — includes tokens the wallet never sold."
                   />
                   <Stat
-                    label="Avg Exit"
+                    label="Avg Exit (sold only)"
                     value={showMcap ? formatUsd(trader.avgSellMcapUsd) : `$${trader.avgSellPriceUsd.toPrecision(3)}`}
+                    title="Volume-weighted average across every sell — covers only the tokens actually sold."
                   />
-                  <Stat label="Avg Multiple" value={formatMultiple(trader.avgMultipleX)} />
+                  <Stat
+                    label="Avg Multiple"
+                    value={formatMultiple(trader.avgMultipleX)}
+                    title={AVG_X_BASIS}
+                  />
                   <Stat
                     label="% PNL"
                     value={formatPercent(trader.realizedPnlPercent)}
@@ -346,9 +357,21 @@ export default function WalletDetailModal({
                     <thead>
                       <tr className="border-b border-neutral-800/80 bg-neutral-900/40 text-[11px] uppercase tracking-wide text-neutral-500">
                         <th className="py-2 pl-3 font-medium">Token</th>
-                        <th className="py-2 font-medium">Avg Entry</th>
-                        <th className="py-2 font-medium">Avg Exit</th>
-                        <th className="py-2 font-medium">X</th>
+                        <th
+                          className="py-2 font-medium"
+                          title="Volume-weighted average across every buy — includes tokens the wallet never sold."
+                        >
+                          Avg Entry <span className="text-neutral-600 normal-case">(all buys)</span>
+                        </th>
+                        <th
+                          className="py-2 font-medium"
+                          title="Volume-weighted average across every sell — covers only the tokens actually sold."
+                        >
+                          Avg Exit <span className="text-neutral-600 normal-case">(sold)</span>
+                        </th>
+                        <th className="py-2 font-medium" title={AVG_X_BASIS}>
+                          X
+                        </th>
                         <th className="py-2 font-medium">% PNL</th>
                         <th className="py-2 pr-3 font-medium">$ PNL</th>
                       </tr>
@@ -467,13 +490,15 @@ function Stat({
   label,
   value,
   positive,
+  title,
 }: {
   label: string;
   value: string;
   positive?: boolean;
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title} className={title ? "cursor-help" : undefined}>
       <div className="text-[11px] text-neutral-500">{label}</div>
       <div
         className={`text-sm font-semibold tabular-nums ${

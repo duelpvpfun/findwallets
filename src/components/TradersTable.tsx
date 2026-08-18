@@ -25,6 +25,11 @@ interface TradersTableProps {
   onBack?: () => void;
 }
 
+// Avg X is realized PNL over capital deployed, so it deliberately does not equal
+// Avg Exit / Avg Entry whenever a wallet didn't sell everything it bought.
+const AVG_X_BASIS =
+  "Realized profit \u00f7 total USD spent buying (e.g. 1.40x = +40%). This is not Avg Exit \u00f7 Avg Entry: Avg Entry covers every token bought, while Avg Exit and the profit only cover the tokens actually sold, so the two only line up when a wallet sold its entire position.";
+
 /** Columns the user can sort by. Each cycles desc -> asc -> off. */
 type SortKey = "avgMultipleX" | "realizedPnlPercent" | "realizedPnlUsd";
 type SortDir = "desc" | "asc";
@@ -351,6 +356,13 @@ export default function TradersTable({
         )}
       </div>
 
+      <p className="border-t border-neutral-900 px-5 py-2.5 text-[11px] leading-relaxed text-neutral-500">
+        <span className="text-neutral-400">How Avg X is calculated:</span> realized profit ÷ total
+        USD spent buying — not Avg Exit ÷ Avg Entry. Avg Entry averages every token bought, while
+        Avg Exit and the profit cover only the tokens actually sold, so the two match only when a
+        wallet sold its entire position.
+      </p>
+
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1320px] text-left text-sm">
           <thead>
@@ -365,11 +377,17 @@ export default function TradersTable({
               </th>
               <th className="py-2.5 font-medium">#</th>
               <th className="py-2.5 font-medium">Wallet</th>
-              <th className="py-2.5 font-medium" title="Volume-weighted average across every buy">
-                Avg Entry
+              <th
+                className="py-2.5 font-medium"
+                title="Volume-weighted average across every buy — includes tokens the wallet never sold, so this is not the cost basis of the sold tokens."
+              >
+                Avg Entry <span className="text-neutral-600 normal-case">(all buys)</span>
               </th>
-              <th className="py-2.5 font-medium" title="Volume-weighted average across every sell">
-                Avg Exit
+              <th
+                className="py-2.5 font-medium"
+                title="Volume-weighted average across every sell — covers only the tokens that were actually sold."
+              >
+                Avg Exit <span className="text-neutral-600 normal-case">(sold only)</span>
               </th>
               <th className="py-2.5 font-medium" title="Total USD spent buying this token">
                 Bought
@@ -382,7 +400,7 @@ export default function TradersTable({
                 sortKey="avgMultipleX"
                 sort={sort}
                 onToggle={toggleSort}
-                title="Realized return on capital deployed, e.g. 1.40x = +40%"
+                title={AVG_X_BASIS}
               />
               <SortableHeader
                 label="% PNL"
@@ -469,10 +487,7 @@ export default function TradersTable({
                   {showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
                 </td>
                 <td className="py-3 tabular-nums text-neutral-300">
-                  <div className="flex items-center gap-1">
-                    <span>{showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}</span>
-                    <SusExitBadge trader={t} />
-                  </div>
+                  {showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
                 </td>
                 <td className="py-3 tabular-nums">
                   <div className="text-neutral-200">{formatUsd(t.boughtUsd)}</div>
@@ -487,7 +502,9 @@ export default function TradersTable({
                   </div>
                 </td>
                 <td className="py-3 tabular-nums font-medium text-neutral-200">
-                  {formatMultiple(t.avgMultipleX)}
+                  <span title={AVG_X_BASIS} className="cursor-help border-b border-dotted border-neutral-700">
+                    {formatMultiple(t.avgMultipleX)}
+                  </span>
                 </td>
                 <td
                   className={`py-3 tabular-nums font-medium ${
@@ -618,34 +635,6 @@ function HistoryBadge({ history }: { history?: WalletHistory }) {
           {history.priorTokenCount > 1 ? ` +${history.priorTokenCount - 1}` : ""}
         </span>
       )}
-    </span>
-  );
-}
-
-/** Explains the "avg exit looks worse than avg entry, yet realized PNL is positive"
- * case: avg entry/exit are lifetime volume-weighted averages across every fill, so
- * their ratio describes price movement, not what the wallet actually made. Realized
- * PNL is matched lot-by-lot by the upstream data source instead. Without this, a
- * brand new visitor sees a "winner" with a lower exit price and assumes the numbers
- * are broken. */
-function SusExitBadge({ trader }: { trader: WalletTrader }) {
-  if (trader.realizedPnlUsd <= 0) return null;
-  if (trader.avgSellMcapUsd <= 0 || trader.avgBuyMcapUsd <= 0) return null;
-  if (trader.avgSellMcapUsd >= trader.avgBuyMcapUsd) return null;
-
-  const hasRemaining = trader.remainingPercent !== null && trader.remainingPercent > 1;
-  const title = hasRemaining
-    ? `Avg exit looks lower than avg entry, but this wallet is still holding ${trader.remainingPercent!.toFixed(
-        0
-      )}% of its position — the unsold tokens aren't counted in "sold," and unrealized gains on them aren't shown here.`
-    : `Avg exit looks lower than avg entry, but realized PNL is matched trade-by-trade against cost basis, not against the lifetime average price. A wallet can sell its earliest (cheapest) tokens at a big profit while the lifetime average sell price still lands below the lifetime average buy price.`;
-
-  return (
-    <span
-      title={title}
-      className="inline-flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-400"
-    >
-      i
     </span>
   );
 }

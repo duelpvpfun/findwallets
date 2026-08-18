@@ -1,9 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatCompactNumber, formatMultiple, formatUsd } from "@/lib/format";
 import type { Chain } from "@/lib/types";
+
+// Avg X is realized PNL over capital deployed, so it deliberately does not equal
+// avg exit / avg entry whenever a wallet didn't sell everything it bought.
+const AVG_X_BASIS =
+  "Realized profit ÷ total USD spent buying. This is not avg exit ÷ avg entry: avg entry covers every token bought, while avg exit and the profit cover only the tokens actually sold.";
 
 interface TickerWallet {
   address: string;
@@ -199,14 +204,28 @@ function WalletRow({
 
       <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 min-[420px]:grid-cols-3 sm:grid-cols-5">
         <Stat label="Buy amount" value={buyLabel} />
-        <Stat label="Avg entry" value={formatUsd(wallet.avgBuyMcapUsd)} />
         <Stat
-          label="Avg exit"
-          value={formatUsd(wallet.avgSellMcapUsd)}
-          badge={<SusExitBadge wallet={wallet} />}
+          label="Avg entry (all buys)"
+          value={formatUsd(wallet.avgBuyMcapUsd)}
+          title="Volume-weighted average across every buy — includes tokens the wallet never sold."
         />
-        <Stat label="Avg X" value={formatMultiple(wallet.multipleX)} tone="blue" />
-        <Stat label="PNL %" value={`+${formatCompactNumber(wallet.roiPercent)}%`} tone="green" />
+        <Stat
+          label="Avg exit (sold)"
+          value={formatUsd(wallet.avgSellMcapUsd)}
+          title="Volume-weighted average across every sell — covers only the tokens actually sold."
+        />
+        <Stat
+          label="Avg X"
+          value={formatMultiple(wallet.multipleX)}
+          tone="blue"
+          title={AVG_X_BASIS}
+        />
+        <Stat
+          label="PNL %"
+          value={`+${formatCompactNumber(wallet.roiPercent)}%`}
+          tone="green"
+          title="Realized profit as a share of total USD spent buying."
+        />
       </div>
 
       {wallet.alsoWon.length > 0 && (
@@ -233,45 +252,19 @@ function Stat({
   label,
   value,
   tone,
-  badge,
+  title,
 }: {
   label: string;
   value: string;
   tone?: "blue" | "green";
-  badge?: ReactNode;
+  title?: string;
 }) {
   const color =
     tone === "blue" ? "text-blue-300" : tone === "green" ? "text-emerald-400" : "text-neutral-200";
   return (
-    <div>
+    <div title={title} className={title ? "cursor-help" : undefined}>
       <div className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</div>
-      <div className={`mt-0.5 flex items-center gap-1 text-xs font-medium tabular-nums ${color}`}>
-        <span>{value}</span>
-        {badge}
-      </div>
+      <div className={`mt-0.5 text-xs font-medium tabular-nums ${color}`}>{value}</div>
     </div>
-  );
-}
-
-/** Same explanation as TradersTable's SusExitBadge, adapted to the ticker's shape. */
-function SusExitBadge({ wallet }: { wallet: TickerWallet }) {
-  if (wallet.realizedPnlUsd <= 0) return null;
-  if (wallet.avgSellMcapUsd <= 0 || wallet.avgBuyMcapUsd <= 0) return null;
-  if (wallet.avgSellMcapUsd >= wallet.avgBuyMcapUsd) return null;
-
-  const hasRemaining = wallet.remainingPercent !== null && wallet.remainingPercent > 1;
-  const title = hasRemaining
-    ? `Avg exit looks lower than avg entry, but this wallet is still holding ${wallet.remainingPercent!.toFixed(
-        0
-      )}% of its position — the unsold tokens aren't counted in "sold," and unrealized gains on them aren't shown here.`
-    : `Avg exit looks lower than avg entry, but realized PNL is matched trade-by-trade against cost basis, not against the lifetime average price. A wallet can sell its earliest (cheapest) tokens at a big profit while the lifetime average sell price still lands below the lifetime average buy price.`;
-
-  return (
-    <span
-      title={title}
-      className="inline-flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-500"
-    >
-      i
-    </span>
   );
 }
