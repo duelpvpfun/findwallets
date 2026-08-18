@@ -12,7 +12,7 @@
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
-import { displayMultiple, realizedBasisUsd } from "./quality";
+import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
@@ -299,6 +299,11 @@ async function applyOnChainHoldings(
   });
 }
 
+// Churn bots are dropped after ranking, so ask for extra pages to still fill the
+// requested count. ~8% of a top-40 sample were artifacts; 30% headroom covers it
+// without doubling the CU spend.
+const ARTIFACT_HEADROOM = 1.3;
+
 export async function fetchEvmTopTraders(
   chain: EvmChain,
   address: string,
@@ -307,7 +312,7 @@ export async function fetchEvmTopTraders(
   timeFrame: string = "90d",
   priceUsd: number = 0
 ): Promise<WalletTrader[]> {
-  const pageCount = Math.ceil(limit / PAGE_SIZE);
+  const pageCount = Math.ceil((limit * ARTIFACT_HEADROOM) / PAGE_SIZE);
   const traders: WalletTrader[] = [];
 
   for (let batchStart = 0; batchStart < pageCount; batchStart += MAX_CONCURRENT_PAGES) {
@@ -335,9 +340,12 @@ export async function fetchEvmTopTraders(
         exhausted = true;
         continue;
       }
-      page.items.forEach((item) =>
-        traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply))
-      );
+      for (const item of page.items) {
+        // Dropped before mapping: a wallet whose "bag" is most of the supply
+        // poisons every derived column on the row (see isVolumeArtifact).
+        if (isVolumeArtifact(item.trade, item.volumeBuy, estimatedSupply)) continue;
+        traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply));
+      }
     }
     if (exhausted) break;
   }

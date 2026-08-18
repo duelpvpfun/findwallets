@@ -2,7 +2,7 @@
 // Never import this from a "use client" component — it reads the API key from env.
 import "server-only";
 import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
-import { displayMultiple, realizedBasisUsd } from "./quality";
+import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
 
 const BASE_URL = "https://data.solanatracker.io";
 const RPC_URL = "https://api.mainnet-beta.solana.com";
@@ -291,15 +291,23 @@ export async function fetchTopTraders(address: string, limit: number, estimatedS
   const PAGE_SIZE = 200;
 
   while (traders.length < limit) {
-    const remaining = limit - traders.length;
+    // A full page every time, not `limit - traders.length`: dropping artifacts
+    // would otherwise leave the result short of what the buyer paid for.
     const page = await stFetch<TokenTradersResponse>(`/v2/pnl/tokens/${address}/traders`, {
       sort: "realized",
       direction: "desc",
-      limit: Math.min(PAGE_SIZE, remaining),
+      limit: PAGE_SIZE,
       cursor,
     });
 
-    page.traders.forEach((h) => traders.push(mapHolder(h, traders.length + 1, estimatedSupply)));
+    for (const h of page.traders) {
+      // Churn bots are excluded before mapping — see isVolumeArtifact.
+      if (isVolumeArtifact(h.counts?.total ?? 0, h.volume.tokensBought ?? 0, estimatedSupply)) {
+        continue;
+      }
+      if (traders.length >= limit) break;
+      traders.push(mapHolder(h, traders.length + 1, estimatedSupply));
+    }
 
     if (!page.pagination.hasMore || !page.pagination.nextCursor) break;
     cursor = page.pagination.nextCursor;

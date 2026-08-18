@@ -53,3 +53,33 @@ export function meetsQualityBar(multipleX: number | null, pnlUsd: number | null)
   if (!Number.isFinite(multipleX) || !Number.isFinite(pnlUsd)) return false;
   return multipleX >= MIN_WALLET_MULTIPLE_X && pnlUsd >= MIN_WALLET_PNL_USD;
 }
+
+/**
+ * Both upstreams report CUMULATIVE trade volume per wallet, not a net position.
+ * For a wallet that round-trips the same tokens thousands of times, every figure
+ * derived from those volumes — avg entry, avg exit, bag size, transferred-out
+ * share, multiple — describes the bot's churn, not a trade anyone can copy.
+ *
+ * Live example (BSC 老吴, 0x8b7a…7777, a 7-day-old token): the top three rows by
+ * realized PNL were wallets with 6,900+ trades each that had "bought" 98.8%,
+ * 83.3% and 76.0% of the entire circulating supply. Their top-40 buy volumes
+ * summed to 3.67x total supply. Rendered as positions they read
+ * "$699.1K -> $1.57M entry/exit, sold 4.2% of bag, 96% moved out". GMGN excludes
+ * all three from its top 100 for the same token; these two tests reproduce that
+ * decision exactly while keeping every wallet GMGN does rank.
+ *
+ * Deliberately NOT keyed off upstream bot tags: Birdeye labels wallets with 2
+ * buys and 9 sells "arbitrage-bot", and one of those is GMGN's #6 trader.
+ */
+export const MAX_PLAUSIBLE_TOKEN_TRADES = 1000;
+export const MAX_PLAUSIBLE_SUPPLY_SHARE = 0.5;
+
+export function isVolumeArtifact(
+  tokenTrades: number,
+  boughtTokenAmount: number,
+  estimatedSupply: number
+): boolean {
+  if (tokenTrades > MAX_PLAUSIBLE_TOKEN_TRADES) return true;
+  if (estimatedSupply <= 0) return false;
+  return boughtTokenAmount / estimatedSupply > MAX_PLAUSIBLE_SUPPLY_SHARE;
+}
