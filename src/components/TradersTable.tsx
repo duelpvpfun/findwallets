@@ -10,6 +10,7 @@ import {
   formatUsd,
   shortenAddress,
 } from "@/lib/format";
+import { buildExportJson, copyText } from "@/lib/export";
 import ExportDialog from "./ExportDialog";
 import ShareCardModal from "./ShareCardModal";
 
@@ -160,6 +161,16 @@ export default function TradersTable({
   );
 
   const [exportTargets, setExportTargets] = useState<WalletTrader[] | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  // Selecting rows narrows both buttons; otherwise they act on everything shown.
+  const copyTargets = selectedTraders.length > 0 ? selectedTraders : filteredTraders;
+
+  async function handleCopy() {
+    const ok = await copyText(buildExportJson(token.symbol, copyTargets));
+    setCopyState(ok ? "copied" : "failed");
+    setTimeout(() => setCopyState("idle"), 2000);
+  }
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -226,18 +237,29 @@ export default function TradersTable({
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <button
-            onClick={() => setExportTargets(selectedTraders)}
-            disabled={selected.size === 0}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-700 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
+            onClick={handleCopy}
+            title="Copy the export JSON to your clipboard — no download needed"
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
+              copyState === "copied"
+                ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
+                : copyState === "failed"
+                ? "border-rose-800/60 bg-rose-950/40 text-rose-300"
+                : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:border-neutral-700 hover:bg-neutral-800"
+            }`}
           >
-            Export{selected.size > 0 ? ` (${selected.size})` : " Selected"}
+            {copyState === "copied" ? <CheckIcon /> : <CopyIcon />}
+            {copyState === "copied"
+              ? "Copied!"
+              : copyState === "failed"
+              ? "Copy failed"
+              : `Copy JSON${selected.size > 0 ? ` (${selected.size})` : ""}`}
           </button>
           <button
-            onClick={() => setExportTargets(filteredTraders)}
+            onClick={() => setExportTargets(copyTargets)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500 sm:flex-none"
           >
             <DownloadIcon />
-            Export All
+            Export{selected.size > 0 ? ` (${selected.size})` : " All"}
           </button>
         </div>
       </div>
@@ -494,10 +516,7 @@ export default function TradersTable({
                 </td>
                 <td className="py-3 align-top tabular-nums">
                   <ArrowPair from={formatUsd(t.boughtUsd)} to={formatUsd(t.soldUsd)} />
-                  <div className="mt-0.5 text-[11px] text-neutral-500">
-                    {formatCompactNumber(t.boughtTokenAmount)} →{" "}
-                    {formatCompactNumber(t.soldTokenAmount)} {token.symbol}
-                  </div>
+                  <TokenAmounts trader={t} symbol={token.symbol} className="mt-0.5 text-[11px]" />
                 </td>
                 {hasHoldingData && (
                   <td className="py-3 pr-4 align-top xl:pr-5">
@@ -761,6 +780,25 @@ function RankBadge({ rank }: { rank: number }) {
   );
 }
 
+/** Omitted entirely when unknown, so a missing count never reads as "sold 0". */
+function TokenAmounts({
+  trader,
+  symbol,
+  className = "",
+}: {
+  trader: WalletTrader;
+  symbol: string;
+  className?: string;
+}) {
+  if (trader.boughtTokenAmount <= 0 && trader.soldTokenAmount <= 0) return null;
+  return (
+    <div className={`text-neutral-500 ${className}`}>
+      {formatCompactNumber(trader.boughtTokenAmount)} → {formatCompactNumber(trader.soldTokenAmount)}{" "}
+      {symbol}
+    </div>
+  );
+}
+
 function ArrowPair({ from, to }: { from: string; to: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
@@ -866,10 +904,7 @@ function TraderCard({
           value={
             <>
               <ArrowPair from={formatUsd(trader.boughtUsd)} to={formatUsd(trader.soldUsd)} />
-              <div className="mt-0.5 text-[10px] text-neutral-500">
-                {formatCompactNumber(trader.boughtTokenAmount)} →{" "}
-                {formatCompactNumber(trader.soldTokenAmount)} {token.symbol}
-              </div>
+              <TokenAmounts trader={trader} symbol={token.symbol} className="mt-0.5 text-[10px]" />
             </>
           }
         />
@@ -919,6 +954,23 @@ function DownloadIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 012-2h10" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 6L9 17l-5-5" />
     </svg>
   );
 }

@@ -109,6 +109,12 @@ export async function isShowcaseToken(chain: Chain, address: string): Promise<st
   return row?.address ?? null;
 }
 
+/** Recovers a token count from its USD total and average unit price. */
+function tokenAmount(usd: number | null, avgPriceUsd: number | null): number {
+  if (!usd || !avgPriceUsd || avgPriceUsd <= 0) return 0;
+  return usd / avgPriceUsd;
+}
+
 /**
  * Replays a stored scan straight from the database. No upstream API call, so a
  * free preview costs nothing per view no matter how often it's opened.
@@ -192,8 +198,10 @@ export async function fetchCachedScan(
     avgSellMcapUsd: r.avgSellMcapUsd ?? 0,
     buyTxns: 0,
     sellTxns: 0,
-    boughtTokenAmount: 0,
-    soldTokenAmount: 0,
+    // Token counts aren't stored, but the avg prices were derived as USD/tokens
+    // upstream, so dividing back out returns the original amounts exactly.
+    boughtTokenAmount: tokenAmount(r.boughtUsd, r.avgBuyPriceUsd),
+    soldTokenAmount: tokenAmount(r.proceedsUsd, r.avgSellPriceUsd),
     boughtUsd: r.boughtUsd ?? 0,
     soldUsd: r.proceedsUsd ?? 0,
     realizedPnlUsd: r.realizedPnlUsd,

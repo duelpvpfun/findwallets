@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { WalletTrader } from "@/lib/types";
 import {
   buildExportEntries,
+  buildExportJson,
+  copyText,
   DEFAULT_EXPORT_OPTIONS,
   exportTraders,
   type ExportOptions,
@@ -32,6 +34,7 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
     ...DEFAULT_EXPORT_OPTIONS,
     filename: tokenNameForExport(tokenName),
   });
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -53,6 +56,12 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
   function handleExport() {
     exportTraders(tokenName, tokenSymbol, traders, opts);
     onClose();
+  }
+
+  async function handleCopy() {
+    const ok = await copyText(buildExportJson(tokenSymbol, traders, opts));
+    setCopyState(ok ? "copied" : "failed");
+    setTimeout(() => setCopyState("idle"), 2000);
   }
 
   return (
@@ -203,10 +212,20 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
           </button>
           <div className="flex gap-2">
             <button
-              onClick={onClose}
-              className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs font-medium text-neutral-300 hover:border-neutral-700"
+              onClick={handleCopy}
+              className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                copyState === "copied"
+                  ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
+                  : copyState === "failed"
+                  ? "border-rose-800/60 bg-rose-950/40 text-rose-300"
+                  : "border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700"
+              }`}
             >
-              Cancel
+              {copyState === "copied"
+                ? "Copied!"
+                : copyState === "failed"
+                ? "Copy failed"
+                : "Copy JSON"}
             </button>
             <button
               onClick={handleExport}

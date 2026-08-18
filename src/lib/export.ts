@@ -74,6 +74,42 @@ export function buildExportEntries(
   }));
 }
 
+/** The exact bytes `exportTraders` would download, for pasting straight into a bot. */
+export function buildExportJson(
+  tokenSymbol: string,
+  traders: WalletTrader[],
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+): string {
+  return JSON.stringify(buildExportEntries(tokenSymbol, traders, options), null, 2);
+}
+
+/** Falls back to a hidden textarea because clipboard.writeText needs a secure
+ * context, which excludes plain-http and some in-app browsers. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy path.
+  }
+  try {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
