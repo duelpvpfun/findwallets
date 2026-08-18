@@ -52,6 +52,9 @@ export const wallets = pgTable(
     lifetimeTrades: integer("lifetime_trades"),
     lifetimeTokensTraded: integer("lifetime_tokens_traded"),
     lifetimeUpdatedAt: timestamp("lifetime_updated_at", { withTimezone: true }),
+    /** Pre-rendered "[27X] $42.1K $WIF" strings from `walletPositions`. */
+    winBadges: text("win_badges").array().notNull().default([]),
+    enrichedAt: timestamp("enriched_at", { withTimezone: true }),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     /** How many distinct scans this wallet has shown up in. */
@@ -60,6 +63,43 @@ export const wallets = pgTable(
   (t) => [
     uniqueIndex("wallets_chain_address_idx").on(t.chain, t.address),
     index("wallets_lifetime_pnl_idx").on(t.lifetimePnlUsd),
+    index("wallets_enriched_at_idx").on(t.enrichedAt),
+  ]
+);
+
+/**
+ * A wallet's trades on tokens we never scanned, pulled from GMGN's free API.
+ * `walletTokens` only knows about tokens someone paid to scan, so a wallet's
+ * actual track record is invisible there — this table is what proves a top-50
+ * placing wasn't a one-off.
+ */
+export const walletPositions = pgTable(
+  "wallet_positions",
+  {
+    walletId: integer("wallet_id")
+      .notNull()
+      .references(() => wallets.id),
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    symbol: text("symbol"),
+    name: text("name"),
+    realizedPnlUsd: doublePrecision("realized_pnl_usd"),
+    unrealizedPnlUsd: doublePrecision("unrealized_pnl_usd"),
+    totalPnlUsd: doublePrecision("total_pnl_usd"),
+    boughtUsd: doublePrecision("bought_usd"),
+    soldUsd: doublePrecision("sold_usd"),
+    multipleX: doublePrecision("multiple_x"),
+    avgCostUsd: doublePrecision("avg_cost_usd"),
+    balance: doublePrecision("balance"),
+    valueUsd: doublePrecision("value_usd"),
+    buyTxCount: integer("buy_tx_count"),
+    sellTxCount: integer("sell_tx_count"),
+    lastTradeMs: bigint("last_trade_ms", { mode: "number" }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.walletId, t.tokenAddress] }),
+    index("wallet_positions_total_pnl_idx").on(t.totalPnlUsd),
   ]
 );
 

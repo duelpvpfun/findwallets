@@ -4,6 +4,10 @@ import { getDb } from "./index";
 import { tokens, walletTokens, wallets } from "./schema";
 import type { Chain, WalletHistory } from "../types";
 
+function emptyHistory(): WalletHistory {
+  return { priorTokenCount: 0, lifetimePnlUsd: null, isBot: false, wins: [], winBadges: [] };
+}
+
 /**
  * Looks up prior wins for wallets in the current scan, excluding the token being
  * scanned. Returns {} when no database is configured so callers can ignore it.
@@ -49,12 +53,9 @@ export async function fetchWalletHistories(
 
     const byAddress: Record<string, WalletHistory> = {};
     for (const r of rows) {
-      const entry = (byAddress[r.address] ??= {
-        priorTokenCount: 0,
-        lifetimePnlUsd: r.lifetimePnlUsd ?? null,
-        isBot: r.isBot,
-        wins: [],
-      });
+      const entry = (byAddress[r.address] ??= emptyHistory());
+      entry.lifetimePnlUsd = r.lifetimePnlUsd ?? entry.lifetimePnlUsd;
+      entry.isBot = r.isBot;
       entry.priorTokenCount++;
       if (entry.wins.length < 5) {
         entry.wins.push({
@@ -64,6 +65,27 @@ export async function fetchWalletHistories(
         });
       }
     }
+
+    // Badges cover tokens nobody paid to scan here, so a wallet can have these
+    // and no `wins` at all.
+    const badgeRows = await db
+      .select({
+        address: wallets.address,
+        winBadges: wallets.winBadges,
+        lifetimePnlUsd: wallets.lifetimePnlUsd,
+        isBot: wallets.isBot,
+      })
+      .from(wallets)
+      .where(and(eq(wallets.chain, chain), inArray(wallets.address, addresses)));
+
+    for (const r of badgeRows) {
+      if (r.winBadges.length === 0) continue;
+      const entry = (byAddress[r.address] ??= emptyHistory());
+      entry.lifetimePnlUsd = r.lifetimePnlUsd ?? entry.lifetimePnlUsd;
+      entry.isBot = r.isBot;
+      entry.winBadges = r.winBadges;
+    }
+
     return byAddress;
   } catch {
     // History is a bonus signal; a DB hiccup must never break a scan.
