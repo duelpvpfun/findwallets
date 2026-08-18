@@ -60,29 +60,6 @@ body {
   animation: fadeIn 0.18s ease-out;
 }
 
-/* Ticker rows cascade in, top to bottom, on every rotation. */
-@keyframes tickerIn {
-  0% {
-    opacity: 0;
-    transform: translateY(14px) scale(0.97);
-    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
-  }
-  55% {
-    opacity: 1;
-    transform: translateY(-2px) scale(1.008);
-    box-shadow: 0 0 24px rgba(59, 130, 246, 0.16);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
-  }
-}
-
-.animate-ticker-in {
-  animation: tickerIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 /* Softly breathing white glow behind the wordmark. */
 @keyframes alphaPulse {
   0%,
@@ -144,10 +121,6 @@ body {
     text-shadow:
       0 0 10px rgba(255, 255, 255, 0.7),
       0 0 26px rgba(147, 197, 253, 0.45);
-  }
-
-  .animate-ticker-in {
-    animation: none;
   }
 
   .animate-success-ring {

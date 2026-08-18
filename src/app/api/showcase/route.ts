@@ -5,7 +5,7 @@ import { fetchShowcaseStats, fetchShowcaseTokens, fetchTickerWallets } from "@/l
 export const dynamic = "force-dynamic";
 
 const MAX_REQUESTS_PER_MINUTE = 30;
-const TICKER_SIZE = 40;
+const TICKER_SIZE = 60;
 
 /**
  * Public marketing data: anonymised-by-truncation wallet stats for the homepage

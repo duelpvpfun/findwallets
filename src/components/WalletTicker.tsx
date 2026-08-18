@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { formatCompactNumber, formatMultiple, formatUsd } from "@/lib/format";
 import type { Chain } from "@/lib/types";
@@ -35,17 +36,29 @@ const CHAIN_DOT: Record<Chain, string> = {
   base: "bg-blue-400",
 };
 
-/** How long each wallet stays on screen. Slow on purpose — it's meant to be read. */
-const ROTATE_MS = 4200;
-const VISIBLE = 3;
+/** How long a wallet stays visible before the next one pushes in above it. */
+const ROTATE_MS = 2600;
+/** Rows shown at once. Bigger than a glance-able 3 on purpose — this is the
+ * "look how much data we have" section. */
+const VISIBLE = 10;
+
+/** One row currently on screen. `id` is a per-insertion counter, not the
+ * wallet's identity, so the same wallet cycling back through the window still
+ * gets a fresh mount and replays its entrance animation. */
+interface VisibleRow {
+  id: number;
+  wallet: TickerWallet;
+}
 
 export default function WalletTicker() {
   const [wallets, setWallets] = useState<TickerWallet[]>([]);
   const [stats, setStats] = useState<ShowcaseStats | null>(null);
-  const [offset, setOffset] = useState(0);
+  const [visible, setVisible] = useState<VisibleRow[]>([]);
   const [nativeMode, setNativeMode] = useState(false);
   const [paused, setPaused] = useState(false);
   const loaded = useRef(false);
+  const pointer = useRef(0);
+  const nextId = useRef(0);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -55,8 +68,12 @@ export default function WalletTicker() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
-        setWallets(Array.isArray(data.wallets) ? data.wallets : []);
+        const list: TickerWallet[] = Array.isArray(data.wallets) ? data.wallets : [];
+        setWallets(list);
         setStats(data.stats ?? null);
+        const initial = list.slice(0, VISIBLE).map((wallet) => ({ id: nextId.current++, wallet }));
+        pointer.current = initial.length;
+        setVisible(initial);
       })
       .catch(() => {
         /* the ticker is decorative; failing quietly is correct */
@@ -68,16 +85,15 @@ export default function WalletTicker() {
 
   useEffect(() => {
     if (paused || wallets.length <= VISIBLE) return;
-    const id = setInterval(() => setOffset((o) => (o + 1) % wallets.length), ROTATE_MS);
+    const id = setInterval(() => {
+      const wallet = wallets[pointer.current % wallets.length];
+      pointer.current += 1;
+      setVisible((prev) => [{ id: nextId.current++, wallet }, ...prev].slice(0, VISIBLE));
+    }, ROTATE_MS);
     return () => clearInterval(id);
-  }, [paused, wallets.length]);
+  }, [paused, wallets]);
 
-  if (wallets.length === 0) return null;
-
-  const visible = Array.from(
-    { length: Math.min(VISIBLE, wallets.length) },
-    (_, i) => wallets[(offset + i) % wallets.length]
-  );
+  if (visible.length === 0) return null;
 
   return (
     <section className="mt-8 sm:mt-12">
@@ -113,17 +129,23 @@ export default function WalletTicker() {
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
       >
-        {visible.map((w, i) => (
-          // Keyed by rotation tick + slot, not wallet identity, so every visible
-          // row replays its entrance animation each time the ticker rotates —
-          // a cascading refresh instead of only the newest row animating.
-          <WalletRow
-            key={`${offset}-${i}`}
-            wallet={w}
-            nativeMode={nativeMode}
-            delayMs={i * 90}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {visible.map((row) => (
+            // Keyed by insertion id, not wallet identity, so a wallet cycling
+            // back through the window still mounts fresh and animates in —
+            // `layout` handles the gentle downward push as new rows arrive.
+            <motion.div
+              key={row.id}
+              layout
+              initial={{ opacity: 0, y: -18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.96 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <WalletRow wallet={row.wallet} nativeMode={nativeMode} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </section>
   );
@@ -132,11 +154,9 @@ export default function WalletTicker() {
 function WalletRow({
   wallet,
   nativeMode,
-  delayMs,
 }: {
   wallet: TickerWallet;
   nativeMode: boolean;
-  delayMs: number;
 }) {
   const buyLabel =
     nativeMode && wallet.boughtNative !== null
@@ -144,10 +164,7 @@ function WalletRow({
       : formatUsd(wallet.boughtUsd);
 
   return (
-    <div
-      className="animate-ticker-in rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700"
-      style={{ animationDelay: `${delayMs}ms` }}
-    >
+    <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-4 py-3 transition-colors hover:border-neutral-700">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CHAIN_DOT[wallet.chain]}`} />
         {/* Already masked server-side. */}

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Alpha Wallet Finder — Solana Top Trader Lookup",
+  title: "Alpha Wallet Finder",
   description: "Paste a Solana memecoin contract address to surface its top trading wallets, entry/exit prices, and PNL.",
 };
 

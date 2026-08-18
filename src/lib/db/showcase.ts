@@ -261,7 +261,9 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
         isNotNull(walletTokens.roiPercent)
       )
     )
-    .orderBy(desc(walletTokens.realizedPnlUsd))
+    // Recency first — the ticker is meant to showcase what we've *just*
+    // added, not the same all-time-best rows forever.
+    .orderBy(desc(walletTokens.firstObservedAt))
     .limit(Math.max(limit * 5, 150));
 
   if (rows.length === 0) return [];
