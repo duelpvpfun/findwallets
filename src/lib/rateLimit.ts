@@ -57,12 +57,22 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
   return { ok: true, remaining: limit - existing.count, retryAfterSeconds: 0 };
 }
 
-/** Vercel always sets x-forwarded-for; the left-most entry is the client. */
+/**
+ * A caller can send its own `x-forwarded-for`, and the proxy appends the real IP
+ * to the right — so the LEFT-most entry is attacker-chosen and rotating it grants
+ * an unlimited fresh bucket. Prefer the headers Vercel sets itself, and take the
+ * right-most XFF entry as the last resort.
+ */
 export function clientIp(request: NextRequest): string {
+  const trusted =
+    request.headers.get("x-vercel-forwarded-for")?.trim() ||
+    request.headers.get("x-real-ip")?.trim();
+  if (trusted) return trusted.split(",").pop()?.trim() || "unknown";
+
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
+    const last = forwarded.split(",").pop()?.trim();
+    if (last) return last;
   }
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
+  return "unknown";
 }

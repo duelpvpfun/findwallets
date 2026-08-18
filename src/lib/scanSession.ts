@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Chain } from "./types";
 
 /**
@@ -13,11 +13,15 @@ import type { Chain } from "./types";
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 function secret(): string {
+  const explicit = process.env.SCAN_SESSION_SECRET;
+  if (explicit) return explicit;
+
   // Falls back to a value that already exists in every deployment so a missing
-  // extra env var can never silently disable signing.
-  const value = process.env.SCAN_SESSION_SECRET || process.env.OWNER_ACCESS_KEY;
-  if (!value) throw new Error("No signing secret configured for scan sessions.");
-  return value;
+  // extra env var can never silently disable signing. Derived rather than used
+  // raw, so the owner credential itself is never the HMAC key.
+  const owner = process.env.OWNER_ACCESS_KEY;
+  if (!owner) throw new Error("No signing secret configured for scan sessions.");
+  return createHash("sha256").update(`scan-session:${owner}`).digest("hex");
 }
 
 export interface ScanSession {

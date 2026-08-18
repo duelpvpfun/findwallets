@@ -62,7 +62,9 @@ export async function GET(request: NextRequest) {
       outcome: `pay_confirm_rejected_${verified.reason}`,
       authHeader: "",
       headerNames: "",
-      query: request.nextUrl.search,
+      // Not request.nextUrl.search: it carries the raw nonce, which is stored
+      // only as a hash everywhere else precisely so a DB leak can't replay it.
+      query: `intentId=${intentId}`,
       body: JSON.stringify({ intentId, signature }),
     });
     return NextResponse.json(

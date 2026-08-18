@@ -53,16 +53,31 @@ export async function createCredit(input: CreateCreditInput): Promise<string | n
   if (existing.length > 0) return existing[0].claimToken;
 
   const claimToken = newClaimToken();
-  await db.insert(scanCredits).values({
-    paymentId: input.paymentId,
-    method: input.method,
-    tier: input.tier,
-    claimToken,
-    claimNonceHash: input.nonceHash ?? null,
-    email: input.email ?? null,
-    payerWallet: input.payerWallet ?? null,
-  });
-  return claimToken;
+  // The SELECT above can't stop two concurrent confirms; without
+  // onConflictDoNothing the loser raises a unique violation and the buyer sees a
+  // 500 for a payment that actually succeeded.
+  const inserted = await db
+    .insert(scanCredits)
+    .values({
+      paymentId: input.paymentId,
+      method: input.method,
+      tier: input.tier,
+      claimToken,
+      claimNonceHash: input.nonceHash ?? null,
+      email: input.email ?? null,
+      payerWallet: input.payerWallet ?? null,
+    })
+    .onConflictDoNothing({ target: scanCredits.paymentId })
+    .returning({ claimToken: scanCredits.claimToken });
+
+  if (inserted.length > 0) return inserted[0].claimToken;
+
+  const raced = await db
+    .select({ claimToken: scanCredits.claimToken })
+    .from(scanCredits)
+    .where(eq(scanCredits.paymentId, input.paymentId))
+    .limit(1);
+  return raced[0]?.claimToken ?? null;
 }
 
 export interface CreditStatus {

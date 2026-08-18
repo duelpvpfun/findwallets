@@ -44,7 +44,12 @@ export async function resolveAccess(
     return { allowed: true, maxLimit: Number.MAX_SAFE_INTEGER, isOwner: true };
   }
 
+  // Deliberately open when unset (pre-launch behaviour), but a deploy that drops
+  // the var in production would hand the product away, so that case is loud.
   if (process.env.PAYMENTS_ENABLED !== "true") {
+    if (process.env.VERCEL_ENV === "production" && process.env.PAYMENTS_ENABLED === undefined) {
+      console.error("[access] PAYMENTS_ENABLED is unset in production — scans are FREE.");
+    }
     return { allowed: true, maxLimit: Number.MAX_SAFE_INTEGER, isOwner: false };
   }
 

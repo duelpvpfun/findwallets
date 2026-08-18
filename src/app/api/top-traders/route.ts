@@ -30,6 +30,7 @@ import {
 } from "@/lib/chains";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { issueScanSession } from "@/lib/scanSession";
+import { meetsQualityBar } from "@/lib/quality";
 import type { TokenMeta, WalletTrader } from "@/lib/types";
 
 // 50 is retired from the pricing table but still accepted, so anyone holding an
@@ -41,15 +42,12 @@ const EVM_ENRICH_LIMIT = 25;
 // Generous for a human (each scan is a paid action) but stops scripted hammering.
 const MAX_SCANS_PER_MINUTE = 12;
 
-// Wallets below this multiple aren't worth surfacing to customers, so they
-// never get written to the DB in the first place — keeps the table from
-// filling up with irrelevant/low-performing wallets on every scan.
-const MIN_MULTIPLE_X_TO_STORE = 2;
-
 async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   if (!isDbConfigured()) return;
   try {
-    const qualifying = traders.filter((t) => t.avgMultipleX >= MIN_MULTIPLE_X_TO_STORE);
+    // Filtered here as well as in recordScan so the enrichment calls below are
+    // only spent on wallets that will actually be stored.
+    const qualifying = traders.filter((t) => meetsQualityBar(t.avgMultipleX, t.realizedPnlUsd));
     if (qualifying.length === 0) return;
 
     // Wallets enriched recently keep their stored lifetime stats, so repeat
@@ -193,6 +191,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     await refundCredit(access);
+    console.error("[top-traders] upstream failed:", err);
     return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }
 }

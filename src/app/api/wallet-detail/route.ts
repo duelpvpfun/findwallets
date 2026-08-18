@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     await setCachedWalletDetail(chain, tokenAddress, walletAddress, detail);
     return NextResponse.json({ ...detail, isDemoData: false });
   } catch (err) {
+    console.error("[wallet-detail] upstream failed:", err);
     return NextResponse.json(
       { error: upstreamMessage(err, "Failed to fetch wallet detail.") },
       { status: upstreamStatus(err) }
