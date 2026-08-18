@@ -71,6 +71,8 @@ export interface CreditStatus {
   reason?: "not_found" | "already_used" | "no_db";
 }
 
+/** Read-only status for the UI. Never use this to authorize a scan: the gap
+ * between reading it and acting on it is a double-spend window — reserve instead. */
 export async function checkCredit(claimToken: string): Promise<CreditStatus> {
   const db = getDb();
   if (!db) return { valid: false, tier: null, reason: "no_db" };
@@ -87,23 +89,43 @@ export async function checkCredit(claimToken: string): Promise<CreditStatus> {
 }
 
 /**
- * Marks a credit used. Only called after a scan actually returned traders, so a
- * failed or empty scan never burns the buyer's payment.
- * The `isNull(consumedAt)` guard makes concurrent redemptions safe.
+ * Claims the credit up front, in a single atomic compare-and-set, and returns
+ * the tier it unlocked. Checking validity first and consuming after the scan
+ * would let N concurrent requests all pass the check and share one purchase;
+ * the UPDATE ... WHERE consumed_at IS NULL can only win once.
  */
-export async function consumeCredit(
+export async function reserveCredit(
   claimToken: string,
   chain: string,
   tokenAddress: string
-): Promise<boolean> {
+): Promise<CreditStatus> {
   const db = getDb();
-  if (!db) return false;
+  if (!db) return { valid: false, tier: null, reason: "no_db" };
 
-  const updated = await db
+  const reserved = await db
     .update(scanCredits)
     .set({ consumedAt: new Date(), consumedChain: chain, consumedTokenAddress: tokenAddress })
     .where(and(eq(scanCredits.claimToken, claimToken), isNull(scanCredits.consumedAt)))
-    .returning({ id: scanCredits.id });
+    .returning({ tier: scanCredits.tier });
 
-  return updated.length > 0;
+  if (reserved.length > 0) return { valid: true, tier: reserved[0].tier as Tier };
+
+  // Lost the race or never existed — distinguished only to give a clear message.
+  return checkCredit(claimToken).then((status) =>
+    status.valid ? { valid: false, tier: status.tier, reason: "already_used" } : status
+  );
+}
+
+/**
+ * Hands a reserved credit back when the scan it was reserved for delivered
+ * nothing, so an empty result or upstream failure never costs the buyer.
+ */
+export async function releaseCredit(claimToken: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  await db
+    .update(scanCredits)
+    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null })
+    .where(eq(scanCredits.claimToken, claimToken));
 }

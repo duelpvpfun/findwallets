@@ -19,7 +19,7 @@ import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
 import { fetchWalletHistories } from "@/lib/db/history";
 import { filterNeedsEnrichment } from "@/lib/db/enriched";
-import { consumeCredit } from "@/lib/db/credits";
+import { releaseCredit } from "@/lib/db/credits";
 import { resolveAccess, type AccessResult } from "@/lib/access";
 import {
   addressMismatchMessage,
@@ -73,19 +73,15 @@ async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   }
 }
 
-/** Burns the credit only when the scan produced wallets, so a token with no
- * trader data never costs the buyer their purchase. */
-async function settleCredit(
-  access: AccessResult,
-  chain: Chain,
-  address: string,
-  traderCount: number
-) {
-  if (!access.claimToken || traderCount === 0) return;
-  const consumed = await consumeCredit(access.claimToken, chain, address);
-  if (!consumed) {
-    // The scan was still delivered; surface it so unbilled usage is visible.
-    console.error("[settleCredit] credit not consumed", { chain, address });
+/** The credit was already claimed before the scan ran, so settling means giving
+ * it back when no wallets were delivered — an empty result or a failed upstream
+ * call must never cost the buyer their purchase. */
+async function refundCredit(access: AccessResult) {
+  if (!access.claimToken) return;
+  try {
+    await releaseCredit(access.claimToken);
+  } catch (err) {
+    console.error("[refundCredit] failed to release credit:", err);
   }
 }
 
@@ -129,7 +125,9 @@ export async function GET(request: NextRequest) {
   // header so it stays out of access logs, proxies and Referer headers.
   const access = await resolveAccess(
     request.headers.get("x-owner-key"),
-    request.headers.get("x-claim-token")
+    request.headers.get("x-claim-token"),
+    chain,
+    address
   );
   if (!access.allowed) {
     return NextResponse.json(
@@ -170,10 +168,11 @@ export async function GET(request: NextRequest) {
           token.priceUsd
         );
 
+    if (traders.length === 0) await refundCredit(access);
+
     // Read prior wins before persisting, so this scan doesn't show up as its own history.
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
     await persistScan(token, traders);
-    await settleCredit(access, chain, address, traders.length);
 
     // An EVM address is valid on every EVM chain, so a token pasted under the
     // wrong one looks like an empty result. Say so instead of leaving the buyer
@@ -193,6 +192,7 @@ export async function GET(request: NextRequest) {
       scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
     });
   } catch (err) {
+    await refundCredit(access);
     return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }
 }

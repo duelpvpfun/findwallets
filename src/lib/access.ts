@@ -1,6 +1,7 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
-import { checkCredit, type Tier } from "./db/credits";
+import { reserveCredit, type Tier } from "./db/credits";
+import type { Chain } from "./types";
 
 /** Free unlimited access for the owner. Compared in constant time so the key
  * can't be recovered by timing the endpoint. */
@@ -28,10 +29,16 @@ export interface AccessResult {
  * Decides how many wallets a request is entitled to. Gating lives here, on the
  * server, because anything enforced in the browser can be bypassed via devtools.
  * When PAYMENTS_ENABLED is not "true" the app stays fully open (current behavior).
+ *
+ * A paid credit is claimed here, before the scan runs, so two concurrent
+ * requests can never both be authorized off the same purchase. The caller must
+ * release it if the scan ends up delivering nothing.
  */
 export async function resolveAccess(
   ownerKey: string | null,
-  claimToken: string | null
+  claimToken: string | null,
+  chain: Chain,
+  tokenAddress: string
 ): Promise<AccessResult> {
   if (isOwnerKey(ownerKey)) {
     return { allowed: true, maxLimit: Number.MAX_SAFE_INTEGER, isOwner: true };
@@ -45,7 +52,7 @@ export async function resolveAccess(
     return { allowed: false, maxLimit: 0, isOwner: false, reason: "payment_required" };
   }
 
-  const status = await checkCredit(claimToken);
+  const status = await reserveCredit(claimToken, chain, tokenAddress);
   if (!status.valid) {
     return {
       allowed: false,
