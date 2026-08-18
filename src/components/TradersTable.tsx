@@ -561,7 +561,7 @@ export default function TradersTable({
               </th>
               <th
                 className="w-[16%] py-2.5 font-medium"
-                title="Total USD spent buying, then total USD received selling"
+                title="Total USD spent buying, then total USD received selling. These cover different quantities of tokens whenever a wallet didn't sell everything it bought, so the two figures are not a round trip and their difference is not the PNL."
               >
                 Bought → Sold
               </th>
@@ -969,10 +969,28 @@ function TokenAmounts({
   className?: string;
 }) {
   if (trader.boughtTokenAmount <= 0 && trader.soldTokenAmount <= 0) return null;
+  const soldShare =
+    trader.boughtTokenAmount > 0
+      ? (Math.min(trader.soldTokenAmount, trader.boughtTokenAmount) / trader.boughtTokenAmount) * 100
+      : 0;
+  const movedOut = trader.transferredOutPercent ?? 0;
   return (
     <div className={`text-neutral-500 ${className}`}>
       {formatCompactNumber(trader.boughtTokenAmount)} → {formatCompactNumber(trader.soldTokenAmount)}{" "}
       {symbol}
+      {/* Without this a wallet that sold 4% of its bag and moved the rest out
+          looks like it dumped everything for a fraction of what it paid. */}
+      {trader.boughtTokenAmount > 0 && soldShare < 99 && (
+        <div className="text-neutral-600">
+          sold {soldShare.toFixed(soldShare < 10 ? 1 : 0)}% of bag
+          {movedOut >= 1 && (
+            <span title="Left the wallet without being sold — common for wallets that split a position across addresses">
+              {" "}
+              · {movedOut.toFixed(0)}% moved out
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

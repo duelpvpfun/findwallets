@@ -262,6 +262,10 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
     sellTxns: h.counts?.sells ?? 0,
     boughtTokenAmount: tokensBought,
     soldTokenAmount: tokensSold,
+    transferredOutPercent:
+      balance === null || tokensBought <= 0
+        ? null
+        : Math.min(100, Math.max(0, ((tokensBought - tokensSold - balance) / tokensBought) * 100)),
     boughtUsd: buyUsd,
     soldUsd: sellUsd,
     soldCostBasisUsd,

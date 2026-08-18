@@ -224,6 +224,8 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     sellTxns: item.tradeSell,
     boughtTokenAmount: item.volumeBuy,
     soldTokenAmount: item.volumeSell,
+    // Needs the on-chain balance; applyOnChainHoldings fills it in.
+    transferredOutPercent: null,
     boughtUsd,
     soldUsd,
     soldCostBasisUsd,
@@ -277,6 +279,10 @@ async function applyOnChainHoldings(
     const remainingValueUsd = balance * priceUsd;
     // Cost basis of the unsold tokens, so unrealized PnL is gain — not gross value.
     const costOfRemaining = balance * t.avgBuyPriceUsd;
+    // Bought, minus sold, minus what's still there: tokens that left the wallet
+    // without a sale. Routine for bundlers splitting a bag across addresses, and
+    // the reason a 4%-sold wallet can still show a zero balance.
+    const movedOut = t.boughtTokenAmount - t.soldTokenAmount - balance;
     return {
       ...t,
       isHolding: balance > 0,
@@ -284,6 +290,10 @@ async function applyOnChainHoldings(
         t.boughtTokenAmount > 0 ? Math.min(100, (balance / t.boughtTokenAmount) * 100) : 0,
       remainingValueUsd,
       unrealizedPnlUsd: balance > 0 ? remainingValueUsd - costOfRemaining : 0,
+      transferredOutPercent:
+        t.boughtTokenAmount > 0
+          ? Math.min(100, Math.max(0, (movedOut / t.boughtTokenAmount) * 100))
+          : null,
     };
   });
 }

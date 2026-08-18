@@ -14,6 +14,13 @@ export interface WalletTrader {
   sellTxns: number;
   boughtTokenAmount: number;
   soldTokenAmount: number;
+  /**
+   * Share of the bag that left the wallet without being sold (0-100), or null
+   * when the live balance is unknown. Without this, a wallet that bought 974M
+   * tokens, sold 41M and moved the rest out reads as a catastrophic loss:
+   * "Bought $666K -> Sold $65K" describes two different quantities of tokens.
+   */
+  transferredOutPercent: number | null;
   boughtUsd: number;
   soldUsd: number;
   /** Cost basis of only the tokens actually sold. The denominator for realized

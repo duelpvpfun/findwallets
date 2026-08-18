@@ -37,6 +37,7 @@ function trader(
     sellTxns: 0,
     boughtTokenAmount: 0,
     soldTokenAmount: 0,
+    transferredOutPercent: null,
     soldCostBasisUsd: 0,
     boughtUsd: 0,
     soldUsd: 0,

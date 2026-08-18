@@ -202,6 +202,8 @@ export async function fetchCachedScan(
     // upstream, so dividing back out returns the original amounts exactly.
     boughtTokenAmount: tokenAmount(r.boughtUsd, r.avgBuyPriceUsd),
     soldTokenAmount: tokenAmount(r.proceedsUsd, r.avgSellPriceUsd),
+    // Not stored, and not derivable without the live balance this scan saw.
+    transferredOutPercent: null,
     boughtUsd: r.boughtUsd ?? 0,
     soldUsd: r.proceedsUsd ?? 0,
     // Recovered from the stored averages: cost of the tokens that were sold.

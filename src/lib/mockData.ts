@@ -117,6 +117,8 @@ function buildTrader(address: string, rank: number, rng: () => number): WalletTr
     sellTxns: Math.floor(randRange(rng, 1, 35)),
     boughtTokenAmount,
     soldTokenAmount,
+    // Mock wallets never transfer, so the leftover is exactly bought minus sold.
+    transferredOutPercent: 0,
     boughtUsd,
     soldUsd,
     soldCostBasisUsd: costBasisOfSold,
