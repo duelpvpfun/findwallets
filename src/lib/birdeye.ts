@@ -11,6 +11,7 @@
 //   no "wallet value" figure).
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
+import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
@@ -214,12 +215,13 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
     realizedPnlUsd: item.realizedPnl,
     realizedPnlPercent,
     avgMultipleX: boughtUsd > 0 ? 1 + item.realizedPnl / boughtUsd : 0,
-    // No live balance on this endpoint, so the share still held is unknown —
-    // but a non-zero unrealized PnL proves the position isn't fully closed.
+    // Deliberately not seeded from item.unrealizedPnl: that figure is derived
+    // from buy/sell volume inside the window, so transfers out read as holdings.
+    // fetchEvmTopTraders fills these from an on-chain balanceOf instead.
     remainingPercent: null,
     remainingValueUsd: null,
-    isHolding: item.unrealizedPnl !== 0 ? true : null,
-    unrealizedPnlUsd: item.unrealizedPnl ?? null,
+    isHolding: null,
+    unrealizedPnlUsd: null,
     lastTradeMs: null,
     firstTradeMs: null,
     walletLifetimeRealizedPnlUsd: null,
@@ -231,12 +233,53 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
 const PAGE_SIZE = 10; // Hard API limit, confirmed live — see module doc comment.
 const MAX_CONCURRENT_PAGES = 10; // Pacing is enforced by acquireRateLimitSlot().
 
+/**
+ * Prices each wallet's *actual* on-chain balance, replacing Birdeye's derived
+ * unrealized PnL. Wallets whose balance can't be read keep null (unknown)
+ * rather than being reported as flat.
+ */
+async function applyOnChainHoldings(
+  chain: EvmChain,
+  token: string,
+  traders: WalletTrader[],
+  priceUsd: number
+): Promise<WalletTrader[]> {
+  const decimals = await fetchTokenDecimals(chain, token);
+  if (decimals === null) return traders;
+
+  const balances = await fetchTokenBalances(
+    chain,
+    token,
+    traders.map((t) => t.address),
+    decimals
+  );
+  if (balances.size === 0) return traders;
+
+  return traders.map((t) => {
+    const balance = balances.get(t.address.toLowerCase());
+    if (balance === undefined) return t;
+
+    const remainingValueUsd = balance * priceUsd;
+    // Cost basis of the unsold tokens, so unrealized PnL is gain — not gross value.
+    const costOfRemaining = balance * t.avgBuyPriceUsd;
+    return {
+      ...t,
+      isHolding: balance > 0,
+      remainingPercent:
+        t.boughtTokenAmount > 0 ? Math.min(100, (balance / t.boughtTokenAmount) * 100) : 0,
+      remainingValueUsd,
+      unrealizedPnlUsd: balance > 0 ? remainingValueUsd - costOfRemaining : 0,
+    };
+  });
+}
+
 export async function fetchEvmTopTraders(
   chain: EvmChain,
   address: string,
   limit: number,
   estimatedSupply: number,
-  timeFrame: string = "90d"
+  timeFrame: string = "90d",
+  priceUsd: number = 0
 ): Promise<WalletTrader[]> {
   const pageCount = Math.ceil(limit / PAGE_SIZE);
   const traders: WalletTrader[] = [];
@@ -273,7 +316,8 @@ export async function fetchEvmTopTraders(
     if (exhausted) break;
   }
 
-  return traders.slice(0, limit).map((t, i) => ({ ...t, rank: i + 1 }));
+  const ranked = traders.slice(0, limit).map((t, i) => ({ ...t, rank: i + 1 }));
+  return applyOnChainHoldings(chain, address, ranked, priceUsd);
 }
 
 /**

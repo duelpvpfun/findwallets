@@ -161,7 +161,14 @@ export async function GET(request: NextRequest) {
       : await fetchEvmTokenMeta(chain as EvmChain, address);
     const traders = isSolana
       ? await fetchTopTraders(address, limit, token.estimatedSupply)
-      : await fetchEvmTopTraders(chain as EvmChain, address, limit, token.estimatedSupply);
+      : await fetchEvmTopTraders(
+          chain as EvmChain,
+          address,
+          limit,
+          token.estimatedSupply,
+          "90d",
+          token.priceUsd
+        );
 
     // Read prior wins before persisting, so this scan doesn't show up as its own history.
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
