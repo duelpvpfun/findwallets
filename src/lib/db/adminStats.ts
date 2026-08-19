@@ -23,6 +23,7 @@ export type PaymentRow = {
   consumedAt: string | null;
   consumedChain: string | null;
   consumedTokenAddress: string | null;
+  consumedTokenSymbol: string | null;
 };
 
 export type VisitorTotals = {
@@ -34,8 +35,10 @@ export type VisitorTotals = {
   visitorsAll: number;
 };
 
-export type DailyPoint = {
-  day: string;
+/** One point of the traffic/revenue chart. `bucket` is a day or an hour label
+ * depending on which series it came from. */
+export type TimePoint = {
+  bucket: string;
   views: number;
   visitors: number;
   payments: number;
@@ -69,7 +72,8 @@ export interface AdminStats {
   revenue: RevenueTotals;
   payments: PaymentRow[];
   visitors: VisitorTotals;
-  daily: DailyPoint[];
+  daily: TimePoint[];
+  hourly: TimePoint[];
   usageToday: UsageRow[];
   usage7d: UsageRow[];
   funnel: FunnelRow;
@@ -100,6 +104,7 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
     payments,
     visitors,
     daily,
+    hourly,
     usageToday,
     usage7d,
     funnel,
@@ -117,19 +122,27 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
         coalesce(sum(${TIER_PRICE}) filter (where created_at > now() - interval '7 days'), 0)::float8 as "revenue7d"
       from scan_credits`),
 
+    // Case-insensitive address join: EVM addresses are stored checksummed in
+    // `tokens` but arrive lowercased on the credit, so `=` misses them.
     db.execute<PaymentRow>(sql`
       select
-        payment_id as "paymentId",
-        method,
-        tier,
-        (${TIER_PRICE})::float8 as "amountUsd",
-        payer_wallet as "payerWallet",
-        created_at as "createdAt",
-        consumed_at as "consumedAt",
-        consumed_chain as "consumedChain",
-        consumed_token_address as "consumedTokenAddress"
-      from scan_credits
-      order by created_at desc
+        c.payment_id as "paymentId",
+        c.method,
+        c.tier,
+        (case c.tier
+          when 50 then 1.99 when 100 then 2.99
+          when 250 then 4.45 when 500 then 5.99 else 0 end)::float8 as "amountUsd",
+        c.payer_wallet as "payerWallet",
+        c.created_at as "createdAt",
+        c.consumed_at as "consumedAt",
+        c.consumed_chain as "consumedChain",
+        c.consumed_token_address as "consumedTokenAddress",
+        t.symbol as "consumedTokenSymbol"
+      from scan_credits c
+      left join tokens t
+        on t.chain = c.consumed_chain
+       and lower(t.address) = lower(c.consumed_token_address)
+      order by c.created_at desc
       limit 100`),
 
     db.execute<VisitorTotals>(sql`
@@ -144,7 +157,7 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
 
     // generate_series supplies the full 30-day axis, so quiet days render as
     // zeroes instead of silently compressing the chart.
-    db.execute<DailyPoint>(sql`
+    db.execute<TimePoint>(sql`
       with days as (
         select generate_series(
           (now() - interval '29 days')::date, now()::date, interval '1 day'
@@ -167,7 +180,7 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
         group by 1
       )
       select
-        to_char(days.day, 'YYYY-MM-DD') as day,
+        to_char(days.day, 'YYYY-MM-DD') as bucket,
         coalesce(v.views, 0)::int as views,
         coalesce(v.visitors, 0)::int as visitors,
         coalesce(p.payments, 0)::int as payments,
@@ -176,6 +189,43 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
       left join v on v.day = days.day
       left join p on p.day = days.day
       order by days.day`),
+
+    // Same shape at hourly resolution over 48h. Buckets are UTC; the client
+    // relabels them in local time so the axis matches the payment timestamps.
+    db.execute<TimePoint>(sql`
+      with hours as (
+        select generate_series(
+          date_trunc('hour', now() - interval '47 hours'),
+          date_trunc('hour', now()),
+          interval '1 hour'
+        ) as hour
+      ),
+      v as (
+        select date_trunc('hour', created_at) as hour,
+               count(*)::int as views,
+               count(distinct visitor_hash)::int as visitors
+        from site_visits
+        where created_at > now() - interval '48 hours'
+        group by 1
+      ),
+      p as (
+        select date_trunc('hour', created_at) as hour,
+               count(*)::int as payments,
+               coalesce(sum(${TIER_PRICE}), 0)::float8 as revenue
+        from scan_credits
+        where created_at > now() - interval '48 hours'
+        group by 1
+      )
+      select
+        to_char(hours.hour at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+        coalesce(v.views, 0)::int as views,
+        coalesce(v.visitors, 0)::int as visitors,
+        coalesce(p.payments, 0)::int as payments,
+        coalesce(p.revenue, 0)::float8 as "revenueUsd"
+      from hours
+      left join v on v.hour = hours.hour
+      left join p on p.hour = hours.hour
+      order by hours.hour`),
 
     db.execute<UsageRow>(sql`
       select provider, endpoint,
@@ -229,6 +279,7 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
     payments: [...payments],
     visitors: visitors[0],
     daily: [...daily],
+    hourly: [...hourly],
     usageToday: [...usageToday],
     usage7d: [...usage7d],
     funnel: funnel[0],

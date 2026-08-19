@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { AdminStats, UsageRow } from "@/lib/db/adminStats";
+import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 
 const REFRESH_MS = 60_000;
@@ -102,18 +102,28 @@ function UsageTable({ rows }: { rows: UsageRow[] }) {
   );
 }
 
+/** Hourly buckets arrive as UTC ISO strings; render them in the viewer's zone
+ * so the chart lines up with the timestamps in the payments table. */
+function bucketLabel(bucket: string, hourly: boolean): string {
+  if (!hourly) return bucket;
+  const d = new Date(bucket);
+  return Number.isNaN(d.getTime())
+    ? bucket
+    : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
+}
+
 /** Inline sparkline-style bars; avoids pulling in a charting dependency. */
-function DailyBars({ stats }: { stats: AdminStats }) {
-  const maxViews = Math.max(1, ...stats.daily.map((d) => d.views));
-  const maxRevenue = Math.max(0.01, ...stats.daily.map((d) => d.revenueUsd));
+function TrafficBars({ points, hourly }: { points: TimePoint[]; hourly: boolean }) {
+  const maxViews = Math.max(1, ...points.map((d) => d.views));
+  const maxRevenue = Math.max(0.01, ...points.map((d) => d.revenueUsd));
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
       <div className="flex h-32 items-end gap-1">
-        {stats.daily.map((d) => (
+        {points.map((d) => (
           <div
-            key={d.day}
+            key={d.bucket}
             className="group relative flex-1"
-            title={`${d.day}\n${d.views} views / ${d.visitors} visitors\n${d.payments} payments / ${usd(d.revenueUsd)}`}
+            title={`${bucketLabel(d.bucket, hourly)}\n${d.views} views / ${d.visitors} visitors\n${d.payments} payments / ${usd(d.revenueUsd)}`}
           >
             <div className="flex h-32 flex-col justify-end gap-[2px]">
               {d.revenueUsd > 0 ? (
@@ -131,7 +141,7 @@ function DailyBars({ stats }: { stats: AdminStats }) {
         ))}
       </div>
       <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
-        <span>{stats.daily[0]?.day}</span>
+        <span>{bucketLabel(points[0]?.bucket ?? "", hourly)}</span>
         <span className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <i className="inline-block h-2 w-2 rounded-sm bg-neutral-700" /> views
@@ -140,15 +150,57 @@ function DailyBars({ stats }: { stats: AdminStats }) {
             <i className="inline-block h-2 w-2 rounded-sm bg-emerald-500" /> revenue
           </span>
         </span>
-        <span>{stats.daily[stats.daily.length - 1]?.day}</span>
+        <span>{bucketLabel(points[points.length - 1]?.bucket ?? "", hourly)}</span>
       </div>
     </div>
+  );
+}
+
+/** Shows the token symbol and copies its full contract address on click. */
+function TokenCell({ payment }: { payment: PaymentRow }) {
+  const [copied, setCopied] = useState(false);
+  const address = payment.consumedTokenAddress;
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  if (!payment.consumedAt || !address) {
+    return <span className="text-neutral-600">unused</span>;
+  }
+
+  // Falls back to a truncated address for tokens scanned before we cached a symbol.
+  const label = payment.consumedTokenSymbol ?? shortenAddress(address, 4);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(address!);
+      setCopied(true);
+    } catch {
+      // Clipboard blocked (insecure context) — the title attribute still shows the CA.
+    }
+  }
+
+  return (
+    <button
+      onClick={copy}
+      title={address}
+      className="group inline-flex items-center gap-1.5 text-neutral-200 hover:text-white"
+    >
+      <span className="font-medium">{label}</span>
+      <span className={`text-[10px] ${copied ? "text-emerald-400" : "text-neutral-600 group-hover:text-neutral-400"}`}>
+        {copied ? "copied" : "\u29C9"}
+      </span>
+    </button>
   );
 }
 
 export default function AdminDashboard({ initial }: { initial: AdminStats }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
+  const [hourly, setHourly] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -225,9 +277,32 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
         />
       </div>
 
-      <Section title="Last 30 days">
-        <DailyBars stats={stats} />
-      </Section>
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-300">
+            {hourly ? "Last 48 hours" : "Last 30 days"}
+          </h2>
+          <div className="flex rounded-lg border border-neutral-800 p-0.5 text-xs">
+            {([
+              ["Hourly", true],
+              ["Daily", false],
+            ] as const).map(([label, value]) => (
+              <button
+                key={label}
+                onClick={() => setHourly(value)}
+                className={`rounded-md px-2.5 py-1 transition ${
+                  hourly === value
+                    ? "bg-neutral-100 text-neutral-950"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <TrafficBars points={hourly ? stats.hourly : stats.daily} hourly={hourly} />
+      </section>
 
       <Section title={`Payments to treasury${stats.treasury ? ` · ${shortenAddress(stats.treasury, 6)}` : ""}`}>
         {stats.payments.length === 0 ? (
@@ -258,12 +333,8 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
                     <td className="px-3 py-2 font-mono text-[11px] text-neutral-400">
                       {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
                     </td>
-                    <td className="px-3 py-2 text-neutral-400">
-                      {p.consumedAt
-                        ? `${p.consumedChain ?? "?"} ${
-                            p.consumedTokenAddress ? shortenAddress(p.consumedTokenAddress, 4) : ""
-                          }`
-                        : "unused"}
+                    <td className="px-3 py-2">
+                      <TokenCell payment={p} />
                     </td>
                     <td className="px-3 py-2">
                       <a
