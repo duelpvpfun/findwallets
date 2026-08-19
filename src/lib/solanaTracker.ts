@@ -3,6 +3,7 @@
 import "server-only";
 import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
+import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://data.solanatracker.io";
 const RPC_URL = "https://api.mainnet-beta.solana.com";
@@ -20,6 +21,11 @@ function apiKey(): string {
     throw new SolanaTrackerError("SOLANA_TRACKER_API_KEY is not configured.");
   }
   return key;
+}
+
+/** Collapses addresses out of paths so `/tokens/<mint>` groups as one endpoint. */
+function normalizeEndpoint(path: string): string {
+  return path.replace(/\/[1-9A-HJ-NP-Za-km-z]{32,44}/g, "/:address");
 }
 
 async function stFetch<T>(
@@ -43,6 +49,8 @@ async function stFetch<T>(
     // Trader/PNL data changes fast; avoid stale cached responses.
     cache: "no-store",
   });
+  // Path-only (no ids) so the usage table stays a small fixed set of endpoints.
+  trackApiCall("solanatracker", normalizeEndpoint(path), !res.ok);
   if (!res.ok) {
     let message = `Solana Tracker request failed (${res.status})`;
     try {

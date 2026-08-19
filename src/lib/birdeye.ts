@@ -13,6 +13,7 @@ import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
 import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
+import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
@@ -80,6 +81,7 @@ async function beFetch<T>(
       cache: "no-store",
     });
     const body = await res.json().catch(() => null);
+    trackApiCall("birdeye", path, !res.ok);
 
     if (res.status === 429 && attempt < MAX_ATTEMPTS) {
       await sleep(500 * 2 ** (attempt - 1));

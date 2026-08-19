@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  date,
   doublePrecision,
   index,
   integer,
@@ -248,4 +249,43 @@ export const walletDetailCache = pgTable(
   (t) => [
     uniqueIndex("wallet_detail_cache_key_idx").on(t.chain, t.tokenAddress, t.walletAddress),
   ]
+);
+
+/** One row per page view, for the owner dashboard only. */
+export const siteVisits = pgTable(
+  "site_visits",
+  {
+    id: serial("id").primaryKey(),
+    path: text("path").notNull(),
+    referrer: text("referrer"),
+    country: text("country"),
+    /** Salted digest of IP + user agent. The raw IP is never persisted. */
+    visitorHash: text("visitor_hash").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("site_visits_created_at_idx").on(t.createdAt),
+    index("site_visits_visitor_idx").on(t.visitorHash),
+  ]
+);
+
+/**
+ * Paid upstream spend, rolled up per day + endpoint. Aggregated rather than one
+ * row per request because a single 500-wallet scan fires ~50 Birdeye calls.
+ */
+export const apiUsage = pgTable(
+  "api_usage",
+  {
+    id: serial("id").primaryKey(),
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    endpoint: text("endpoint").notNull(),
+    calls: integer("calls").notNull().default(0),
+    /** Provider-specific units: Birdeye compute units, Solana Tracker requests. */
+    credits: doublePrecision("credits").notNull().default(0),
+    errors: integer("errors").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("api_usage_day_endpoint_idx").on(t.day, t.provider, t.endpoint)]
 );

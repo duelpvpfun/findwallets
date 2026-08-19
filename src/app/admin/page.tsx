@@ -1,0 +1,35 @@
+import { isAdminConfigured, isAdminRequest } from "@/lib/adminAuth";
+import { fetchAdminStats } from "@/lib/db/adminStats";
+import AdminLogin from "@/components/admin/AdminLogin";
+import AdminDashboard from "@/components/admin/AdminDashboard";
+
+// Never cached and never indexed: this page renders live revenue data.
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Admin", robots: { index: false, follow: false } };
+
+export default async function AdminPage() {
+  if (!isAdminConfigured()) {
+    return (
+      <main className="mx-auto max-w-md px-6 py-24 text-sm text-neutral-400">
+        <h1 className="mb-3 text-lg font-semibold text-neutral-100">Admin disabled</h1>
+        <p>
+          Set <code className="text-amber-300">ADMIN_PASSWORD</code> in the Vercel project
+          environment variables and redeploy to enable this page.
+        </p>
+      </main>
+    );
+  }
+
+  if (!(await isAdminRequest())) return <AdminLogin />;
+
+  const stats = await fetchAdminStats();
+  if (!stats) {
+    return (
+      <main className="mx-auto max-w-md px-6 py-24 text-sm text-neutral-400">
+        No database configured, so there is nothing to report.
+      </main>
+    );
+  }
+
+  return <AdminDashboard initial={stats} />;
+}
