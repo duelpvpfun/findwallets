@@ -267,6 +267,8 @@ export const siteVisits = pgTable(
   (t) => [
     index("site_visits_created_at_idx").on(t.createdAt),
     index("site_visits_visitor_idx").on(t.visitorHash),
+    // Covers every dashboard panel: filter by window, count distinct visitors.
+    index("site_visits_created_visitor_idx").on(t.createdAt, t.visitorHash),
   ]
 );
 

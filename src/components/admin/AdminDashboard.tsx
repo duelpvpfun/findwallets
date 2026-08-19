@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 
@@ -10,10 +10,9 @@ function usd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-/** "3m ago" / "2d ago" — the dashboard cares about recency, not clock time. */
-function timeAgo(iso: string | null): string {
+function timeAgo(iso: string | null, now: number): string {
   if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
+  const ms = now - new Date(iso).getTime();
   if (!Number.isFinite(ms)) return "—";
   const mins = Math.floor(ms / 60_000);
   if (mins < 1) return "just now";
@@ -31,7 +30,7 @@ function localTime(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
 }
 
-function Card({
+const Card = memo(function Card({
   label,
   value,
   sub,
@@ -47,7 +46,7 @@ function Card({
       {sub ? <div className="mt-1 text-xs text-neutral-500">{sub}</div> : null}
     </div>
   );
-}
+});
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -58,7 +57,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function UsageTable({ rows }: { rows: UsageRow[] }) {
+const UsageTable = memo(function UsageTable({ rows }: { rows: UsageRow[] }) {
   if (rows.length === 0) {
     return <p className="text-xs text-neutral-500">No calls recorded in this window.</p>;
   }
@@ -100,10 +99,10 @@ function UsageTable({ rows }: { rows: UsageRow[] }) {
       </table>
     </div>
   );
-}
+});
 
-/** Hourly buckets arrive as UTC ISO strings; render them in the viewer's zone
- * so the chart lines up with the timestamps in the payments table. */
+/** Hourly buckets arrive as UTC ISO strings; rendered in the viewer's zone so
+ * the chart lines up with the timestamps in the payments table. */
 function bucketLabel(bucket: string, hourly: boolean): string {
   if (!hourly) return bucket;
   const d = new Date(bucket);
@@ -113,35 +112,51 @@ function bucketLabel(bucket: string, hourly: boolean): string {
 }
 
 /** Inline sparkline-style bars; avoids pulling in a charting dependency. */
-function TrafficBars({ points, hourly }: { points: TimePoint[]; hourly: boolean }) {
-  const maxViews = Math.max(1, ...points.map((d) => d.views));
-  const maxRevenue = Math.max(0.01, ...points.map((d) => d.revenueUsd));
+const TrafficBars = memo(function TrafficBars({
+  points,
+  hourly,
+}: {
+  points: TimePoint[];
+  hourly: boolean;
+}) {
+  // Labels go through Intl, which is slow enough that doing it per bar on every
+  // poll is the bulk of the render cost — 48 bars x a tooltip each.
+  const bars = useMemo(() => {
+    const maxViews = Math.max(1, ...points.map((d) => d.views));
+    const maxRevenue = Math.max(0.01, ...points.map((d) => d.revenueUsd));
+    return points.map((d) => ({
+      bucket: d.bucket,
+      title: `${bucketLabel(d.bucket, hourly)}\n${d.views} views / ${d.visitors} visitors\n${d.payments} payments / ${usd(d.revenueUsd)}`,
+      viewHeight: (d.views / maxViews) * 80,
+      revenueHeight: d.revenueUsd > 0 ? Math.max(4, (d.revenueUsd / maxRevenue) * 40) : 0,
+    }));
+  }, [points, hourly]);
+
+  const first = bars[0]?.bucket ?? "";
+  const last = bars[bars.length - 1]?.bucket ?? "";
+
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
       <div className="flex h-32 items-end gap-1">
-        {points.map((d) => (
-          <div
-            key={d.bucket}
-            className="group relative flex-1"
-            title={`${bucketLabel(d.bucket, hourly)}\n${d.views} views / ${d.visitors} visitors\n${d.payments} payments / ${usd(d.revenueUsd)}`}
-          >
+        {bars.map((b) => (
+          <div key={b.bucket} className="group relative flex-1" title={b.title}>
             <div className="flex h-32 flex-col justify-end gap-[2px]">
-              {d.revenueUsd > 0 ? (
+              {b.revenueHeight > 0 ? (
                 <div
                   className="w-full rounded-sm bg-emerald-500"
-                  style={{ height: `${Math.max(4, (d.revenueUsd / maxRevenue) * 40)}px` }}
+                  style={{ height: `${b.revenueHeight}px` }}
                 />
               ) : null}
               <div
                 className="w-full rounded-sm bg-neutral-700 group-hover:bg-neutral-500"
-                style={{ height: `${(d.views / maxViews) * 80}px` }}
+                style={{ height: `${b.viewHeight}px` }}
               />
             </div>
           </div>
         ))}
       </div>
       <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
-        <span>{bucketLabel(points[0]?.bucket ?? "", hourly)}</span>
+        <span>{bucketLabel(first, hourly)}</span>
         <span className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <i className="inline-block h-2 w-2 rounded-sm bg-neutral-700" /> views
@@ -150,14 +165,14 @@ function TrafficBars({ points, hourly }: { points: TimePoint[]; hourly: boolean 
             <i className="inline-block h-2 w-2 rounded-sm bg-emerald-500" /> revenue
           </span>
         </span>
-        <span>{bucketLabel(points[points.length - 1]?.bucket ?? "", hourly)}</span>
+        <span>{bucketLabel(last, hourly)}</span>
       </div>
     </div>
   );
-}
+});
 
 /** Shows the token symbol and copies its full contract address on click. */
-function TokenCell({ payment }: { payment: PaymentRow }) {
+const TokenCell = memo(function TokenCell({ payment }: { payment: PaymentRow }) {
   const [copied, setCopied] = useState(false);
   const address = payment.consumedTokenAddress;
 
@@ -167,21 +182,22 @@ function TokenCell({ payment }: { payment: PaymentRow }) {
     return () => clearTimeout(id);
   }, [copied]);
 
+  const copy = useCallback(async () => {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+    } catch {
+      // Clipboard blocked (insecure context) — the title attribute still shows the CA.
+    }
+  }, [address]);
+
   if (!payment.consumedAt || !address) {
     return <span className="text-neutral-600">unused</span>;
   }
 
   // Falls back to a truncated address for tokens scanned before we cached a symbol.
   const label = payment.consumedTokenSymbol ?? shortenAddress(address, 4);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(address!);
-      setCopied(true);
-    } catch {
-      // Clipboard blocked (insecure context) — the title attribute still shows the CA.
-    }
-  }
 
   return (
     <button
@@ -190,43 +206,160 @@ function TokenCell({ payment }: { payment: PaymentRow }) {
       className="group inline-flex items-center gap-1.5 text-neutral-200 hover:text-white"
     >
       <span className="font-medium">{label}</span>
-      <span className={`text-[10px] ${copied ? "text-emerald-400" : "text-neutral-600 group-hover:text-neutral-400"}`}>
+      <span
+        className={`text-[10px] ${copied ? "text-emerald-400" : "text-neutral-600 group-hover:text-neutral-400"}`}
+      >
         {copied ? "copied" : "\u29C9"}
       </span>
     </button>
   );
-}
+});
+
+const PaymentsTable = memo(function PaymentsTable({
+  payments,
+  now,
+}: {
+  payments: PaymentRow[];
+  now: number;
+}) {
+  if (payments.length === 0) {
+    return <p className="text-xs text-neutral-500">No payments yet.</p>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border border-neutral-800">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-neutral-900 text-neutral-500">
+          <tr>
+            <th className="px-3 py-2 font-medium">When</th>
+            <th className="px-3 py-2 font-medium">Amount</th>
+            <th className="px-3 py-2 font-medium">Tier</th>
+            <th className="px-3 py-2 font-medium">Method</th>
+            <th className="px-3 py-2 font-medium">Payer</th>
+            <th className="px-3 py-2 font-medium">Used on</th>
+            <th className="px-3 py-2 font-medium">Tx</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-800/70">
+          {payments.map((p) => (
+            <tr key={p.paymentId} className="text-neutral-300">
+              <td className="whitespace-nowrap px-3 py-2" title={localTime(p.createdAt)}>
+                {timeAgo(p.createdAt, now)}
+              </td>
+              <td className="px-3 py-2 font-medium text-emerald-400">{usd(p.amountUsd)}</td>
+              <td className="px-3 py-2">Top {p.tier}</td>
+              <td className="px-3 py-2 uppercase text-neutral-400">{p.method ?? "—"}</td>
+              <td className="px-3 py-2 font-mono text-[11px] text-neutral-400">
+                {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
+              </td>
+              <td className="px-3 py-2">
+                <TokenCell payment={p} />
+              </td>
+              <td className="px-3 py-2">
+                <a
+                  href={`https://solscan.io/tx/${p.paymentId}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="font-mono text-[11px] text-sky-400 hover:underline"
+                >
+                  {shortenAddress(p.paymentId, 4)}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+});
 
 export default function AdminDashboard({ initial }: { initial: AdminStats }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
   const [hourly, setHourly] = useState(false);
+  // Single clock for every relative timestamp, so "3m ago" updating doesn't
+  // depend on an unrelated re-render happening to occur.
+  const [now, setNow] = useState(() => Date.now());
+
+  // Guards against overlapping polls: a slow response used to let the next
+  // interval tick fire another fetch, and they accumulate.
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setRefreshing(true);
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
-      if (res.ok) setStats(await res.json());
+      if (!res.ok) return;
+      const next = await res.json();
+      if (!mounted.current) return;
+      setStats(next);
+      setNow(Date.now());
     } catch {
       // Keep showing the last good snapshot rather than blanking the page.
     } finally {
-      setRefreshing(false);
+      inFlight.current = false;
+      if (mounted.current) setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    const id = setInterval(refresh, REFRESH_MS);
-    return () => clearInterval(id);
+    // Polling while the tab is hidden is what makes the page feel dead on
+    // return: the browser throttles the timer, then fires every queued tick at
+    // once. Only poll a visible tab, and refresh immediately when it comes back.
+    let id: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (id === null) id = setInterval(refresh, REFRESH_MS);
+    };
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        void refresh();
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [refresh]);
 
-  async function signOut() {
+  // Ticks the relative labels without refetching. 30s is enough for "Xm ago".
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const signOut = useCallback(async () => {
     await fetch("/api/admin/login", { method: "DELETE" });
     window.location.reload();
-  }
+  }, []);
 
   const { revenue, visitors, funnel, content } = stats;
   const conversion =
     visitors.visitorsAll > 0 ? (revenue.payments / visitors.visitorsAll) * 100 : 0;
+  const points = hourly ? stats.hourly : stats.daily;
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
@@ -234,7 +367,7 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
         <div>
           <h1 className="text-lg font-semibold text-neutral-100">Admin</h1>
           <p className="text-xs text-neutral-500">
-            Updated {timeAgo(stats.generatedAt)}
+            Updated {timeAgo(stats.generatedAt, now)}
             {refreshing ? " · refreshing…" : ""}
           </p>
         </div>
@@ -283,10 +416,12 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
             {hourly ? "Last 48 hours" : "Last 30 days"}
           </h2>
           <div className="flex rounded-lg border border-neutral-800 p-0.5 text-xs">
-            {([
-              ["Hourly", true],
-              ["Daily", false],
-            ] as const).map(([label, value]) => (
+            {(
+              [
+                ["Hourly", true],
+                ["Daily", false],
+              ] as const
+            ).map(([label, value]) => (
               <button
                 key={label}
                 onClick={() => setHourly(value)}
@@ -301,57 +436,13 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
             ))}
           </div>
         </div>
-        <TrafficBars points={hourly ? stats.hourly : stats.daily} hourly={hourly} />
+        <TrafficBars points={points} hourly={hourly} />
       </section>
 
-      <Section title={`Payments to treasury${stats.treasury ? ` · ${shortenAddress(stats.treasury, 6)}` : ""}`}>
-        {stats.payments.length === 0 ? (
-          <p className="text-xs text-neutral-500">No payments yet.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-neutral-800">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-900 text-neutral-500">
-                <tr>
-                  <th className="px-3 py-2 font-medium">When</th>
-                  <th className="px-3 py-2 font-medium">Amount</th>
-                  <th className="px-3 py-2 font-medium">Tier</th>
-                  <th className="px-3 py-2 font-medium">Method</th>
-                  <th className="px-3 py-2 font-medium">Payer</th>
-                  <th className="px-3 py-2 font-medium">Used on</th>
-                  <th className="px-3 py-2 font-medium">Tx</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800/70">
-                {stats.payments.map((p) => (
-                  <tr key={p.paymentId} className="text-neutral-300">
-                    <td className="whitespace-nowrap px-3 py-2" title={localTime(p.createdAt)}>
-                      {timeAgo(p.createdAt)}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-emerald-400">{usd(p.amountUsd)}</td>
-                    <td className="px-3 py-2">Top {p.tier}</td>
-                    <td className="px-3 py-2 uppercase text-neutral-400">{p.method ?? "—"}</td>
-                    <td className="px-3 py-2 font-mono text-[11px] text-neutral-400">
-                      {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <TokenCell payment={p} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <a
-                        href={`https://solscan.io/tx/${p.paymentId}`}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="font-mono text-[11px] text-sky-400 hover:underline"
-                      >
-                        {shortenAddress(p.paymentId, 4)}
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <Section
+        title={`Payments to treasury${stats.treasury ? ` · ${shortenAddress(stats.treasury, 6)}` : ""}`}
+      >
+        <PaymentsTable payments={stats.payments} now={now} />
       </Section>
 
       <Section title="API credits used today">
