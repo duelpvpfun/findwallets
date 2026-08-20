@@ -102,7 +102,15 @@ export default function Home() {
         const status = await res.json();
         if (cancelled) return;
         if (status.valid) setClaim({ token: parsed.token, tier: status.tier });
-        else localStorage.removeItem(CLAIM_STORAGE_KEY);
+        // Only forget a credit that is provably gone. A reservation still held by
+        // a scan that crashed is *not* spent from the buyer's point of view, and
+        // wiping the token here would strand them at the paywall holding a
+        // purchase they can no longer name.
+        else if (status.reason === "reservation_pending") {
+          setClaim({ token: parsed.token, tier: status.tier });
+        } else if (status.reason === "not_found" || status.reason === "already_used") {
+          localStorage.removeItem(CLAIM_STORAGE_KEY);
+        }
       } catch {
         // offline or transient failure — keep the stored credit for the next visit
       }

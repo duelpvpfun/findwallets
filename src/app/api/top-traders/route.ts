@@ -159,6 +159,8 @@ export async function GET(request: NextRequest) {
         error:
           access.reason === "credit_used"
             ? "This purchase has already been used for a scan."
+            : access.reason === "credit_pending"
+            ? "A scan for this purchase is still running. Your purchase has not been spent — wait a few seconds and try again."
             : access.reason === "credit_invalid"
             ? "Invalid or unknown purchase token."
             : "Payment required to scan.",

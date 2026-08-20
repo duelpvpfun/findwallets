@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits, webhookLog } from "./schema";
@@ -83,7 +83,7 @@ export async function createCredit(input: CreateCreditInput): Promise<string | n
 export interface CreditStatus {
   valid: boolean;
   tier: Tier | null;
-  reason?: "not_found" | "already_used" | "no_db";
+  reason?: "not_found" | "already_used" | "reservation_pending" | "no_db";
 }
 
 /** Read-only status for the UI. Never use this to authorize a scan: the gap
@@ -93,15 +93,34 @@ export async function checkCredit(claimToken: string): Promise<CreditStatus> {
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
   const rows = await db
-    .select({ tier: scanCredits.tier, consumedAt: scanCredits.consumedAt })
+    .select({
+      tier: scanCredits.tier,
+      consumedAt: scanCredits.consumedAt,
+      reservedAt: scanCredits.reservedAt,
+    })
     .from(scanCredits)
     .where(eq(scanCredits.claimToken, claimToken))
     .limit(1);
 
   if (rows.length === 0) return { valid: false, tier: null, reason: "not_found" };
-  if (rows[0].consumedAt) return { valid: false, tier: rows[0].tier as Tier, reason: "already_used" };
-  return { valid: true, tier: rows[0].tier as Tier };
+  const row = rows[0];
+  // Still holding a reservation means the scan it was claimed for never reported
+  // delivery. The buyer has not had their wallets, so this is not "already used"
+  // — it is a scan in flight, or one that died and is about to be handed back.
+  if (row.reservedAt) {
+    return { valid: false, tier: row.tier as Tier, reason: "reservation_pending" };
+  }
+  if (row.consumedAt) return { valid: false, tier: row.tier as Tier, reason: "already_used" };
+  return { valid: true, tier: row.tier as Tier };
 }
+
+/**
+ * How long a reservation is trusted to belong to a live request. A scan pages
+ * under SCAN_BUDGET_MS and finishes well inside this, so anything older is a
+ * request that was killed — its owner may retake it and scan again immediately.
+ * The cron sweeper is still the backstop for tokens nobody comes back for.
+ */
+const RETRY_TAKEOVER_MS = 2 * 60_000;
 
 /**
  * Claims the credit up front, in a single atomic compare-and-set, and returns
@@ -118,6 +137,7 @@ export async function reserveCredit(
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
   const now = new Date();
+  const staleCutoff = new Date(now.getTime() - RETRY_TAKEOVER_MS);
   const reserved = await db
     .update(scanCredits)
     .set({
@@ -126,7 +146,20 @@ export async function reserveCredit(
       consumedTokenAddress: tokenAddress,
       reservedAt: now,
     })
-    .where(and(eq(scanCredits.claimToken, claimToken), isNull(scanCredits.consumedAt)))
+    .where(
+      and(
+        eq(scanCredits.claimToken, claimToken),
+        or(
+          // Never spent.
+          isNull(scanCredits.consumedAt),
+          // Or spent on a scan that never reported delivery and is old enough to
+          // be dead. Waiting for the sweeper here would tell a buyer whose scan
+          // just crashed that their purchase was "already used" for the next ten
+          // minutes, which is the single worst message this app can show.
+          and(isNotNull(scanCredits.reservedAt), lt(scanCredits.reservedAt, staleCutoff))
+        )
+      )
+    )
     .returning({ tier: scanCredits.tier });
 
   if (reserved.length > 0) return { valid: true, tier: reserved[0].tier as Tier };
