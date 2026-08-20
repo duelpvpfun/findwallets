@@ -18,7 +18,11 @@ export function getDb() {
   if (!url) return null;
   if (!dbInstance) {
     // prepare:false is required for transaction-pooled (pgBouncer) connections.
-    client = postgres(url, { prepare: false, max: 5 });
+    // On serverless every warm instance holds its own pool, so `max` is
+    // multiplied by concurrency: 5 each against Supabase's 60-connection cap
+    // exhausts the database at 12 instances. One connection per instance,
+    // released after 20s idle, keeps the ceiling in instance count instead.
+    client = postgres(url, { prepare: false, max: 1, idle_timeout: 20, connect_timeout: 10 });
     dbInstance = drizzle(client, { schema });
   }
   return dbInstance;
