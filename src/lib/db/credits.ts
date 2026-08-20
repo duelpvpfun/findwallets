@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits, tokens, webhookLog } from "./schema";
@@ -330,6 +330,10 @@ export async function reserveUserCredit(
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
   const staleCutoff = new Date(Date.now() - RETRY_TAKEOVER_MS);
+  // Bound as an ISO string with an explicit cast. A Date interpolated into a
+  // hand-written `sql` fragment never reaches drizzle's type mapper, so
+  // postgres.js receives the object itself and the bind fails.
+  const staleCutoffIso = staleCutoff.toISOString();
 
   const rows = await db.execute<{ tier: number; claimToken: string }>(sql`
     update scan_credits set
@@ -343,7 +347,7 @@ export async function reserveUserCredit(
         and tier >= ${minTier}
         and (
           consumed_at is null
-          or (reserved_at is not null and reserved_at < ${staleCutoff})
+          or (reserved_at is not null and reserved_at < ${staleCutoffIso}::timestamptz)
         )
       order by tier asc, created_at asc
       limit 1
@@ -351,7 +355,7 @@ export async function reserveUserCredit(
     )
       and (
         consumed_at is null
-        or (reserved_at is not null and reserved_at < ${staleCutoff})
+        or (reserved_at is not null and reserved_at < ${staleCutoffIso}::timestamptz)
       )
     returning tier, claim_token as "claimToken"`);
 
@@ -370,8 +374,8 @@ export async function reserveUserCredit(
         eq(scanCredits.userId, userId),
         isNotNull(scanCredits.reservedAt),
         // Anything older than the cutoff would have been taken above.
-        sql`${scanCredits.reservedAt} >= ${staleCutoff}`,
-        sql`${scanCredits.tier} >= ${minTier}`
+        gte(scanCredits.reservedAt, staleCutoff),
+        gte(scanCredits.tier, minTier)
       )
     )
     .limit(1);

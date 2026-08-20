@@ -56,8 +56,8 @@ ALTER TABLE "payment_intents" ADD COLUMN IF NOT EXISTS "quantity" integer DEFAUL
 ALTER TABLE "payment_intents" ADD COLUMN IF NOT EXISTS "user_id" integer;
 --> statement-breakpoint
 
--- The 7-day receipt. Its own table, not a column on scan_credits: a ~150KB
--- payload on the credits row would be dragged into every balance query.
+-- The 7-day receipt. Its own table, not a column on scan_credits: a payload of
+-- a few hundred KB on the credits row would be dragged into every balance query.
 CREATE TABLE IF NOT EXISTS "scan_results" (
   "id" serial PRIMARY KEY NOT NULL,
   "user_id" integer,

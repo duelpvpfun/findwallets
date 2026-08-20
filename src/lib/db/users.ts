@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { authNonces, scanCredits, scanResults, users } from "./schema";
@@ -65,7 +65,10 @@ export async function consumeAuthNonce(
         // address must not be redeemable by a signature from another.
         eq(authNonces.wallet, wallet),
         isNull(authNonces.usedAt),
-        sql`${authNonces.createdAt} > ${cutoff}`
+        // `gt(column, date)` and not a raw sql fragment: interpolating a Date
+        // into `sql` skips drizzle's type mapper, so postgres.js is handed a
+        // bare Date object and the query fails at bind time.
+        gt(authNonces.createdAt, cutoff)
       )
     )
     .returning({ nonce: authNonces.nonce });

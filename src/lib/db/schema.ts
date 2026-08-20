@@ -397,10 +397,9 @@ export const authNonces = pgTable(
  * A paid scan's full result, kept for 7 days so a buyer can re-download it
  * without re-running (and re-paying for) the scan.
  *
- * Its own table rather than a column on `scanCredits`: a ~150KB payload sitting
- * on the credits row would be pulled into every balance query. Postgres
- * TOAST-compresses large JSONB out of line, so the stored cost is roughly a
- * quarter of the wire size.
+ * Its own table rather than a column on `scanCredits`: a payload of a few hundred
+ * KB sitting on the credits row would be pulled into every balance query.
+ * Measured cost is ~930 bytes per trader — see `src/lib/db/scanResults.ts`.
  */
 export const scanResults = pgTable(
   "scan_results",

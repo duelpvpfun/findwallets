@@ -7,11 +7,16 @@ import type { ScanResult } from "../types";
 /**
  * The 7-day receipt for a paid scan.
  *
- * Retention is a promise to the user, not a capacity limit. A 500-trader payload
- * is ~150KB of JSON and Postgres TOAST-compresses large JSONB out of line, so
- * call it ~40KB stored; a thousand scans a month is ~40MB against 8GB. Nobody
- * should believe the database couldn't hold more — seven days is the commitment
- * that was made, and the purge honours it rather than being forced by it.
+ * Retention is a promise to the user, not a capacity limit — but the numbers are
+ * worth stating accurately rather than optimistically. Measured against the live
+ * database: a stored payload is ~930 bytes of JSON per trader, so a 500-trader
+ * result is ~450KB, and TOAST compression recovers very little of it because the
+ * bulk is base58 addresses and floats. Call it ~450KB per Top 500.
+ *
+ * At a thousand scans a month that is ~450MB written monthly, but only about a
+ * week of it is ever resident — roughly 100MB against 8GB available. Comfortable,
+ * and comfortably short of the point where the retention window would have to be
+ * a capacity decision rather than a product one.
  */
 export const RETENTION_DAYS = 7;
 
