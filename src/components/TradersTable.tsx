@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
@@ -20,6 +20,17 @@ import ShareCardModal from "./ShareCardModal";
 
 /** Below this a plain list is cheaper than the virtualizer's bookkeeping. */
 const VIRTUALIZE_THRESHOLD = 100;
+
+/** Shortcuts must never fire while the user is filling in a field. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
 
 interface TradersTableProps {
   token: TokenMeta;
@@ -73,6 +84,7 @@ interface Sort {
 }
 
 interface Filters {
+  query: string;
   minX: string;
   maxX: string;
   minPnlPercent: string;
@@ -84,6 +96,7 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = {
+  query: "",
   minX: "",
   maxX: "",
   minPnlPercent: "",
@@ -158,7 +171,15 @@ export default function TradersTable({
     const maxPnlPercent = parseFloat(filters.maxPnlPercent);
     const minPnlUsd = parseFloat(filters.minPnlUsd);
     const maxPnlUsd = parseFloat(filters.maxPnlUsd);
+    const query = filters.query.trim().toLowerCase();
     return rows.filter((t) => {
+      if (
+        query &&
+        !t.address.toLowerCase().includes(query) &&
+        !(t.nickname ?? "").toLowerCase().includes(query)
+      ) {
+        return false;
+      }
       if (!Number.isNaN(minX) && (t.multipleX === null || t.multipleX < minX)) return false;
       if (!Number.isNaN(maxX) && (t.multipleX === null || t.multipleX > maxX)) return false;
       if (!Number.isNaN(minPnlPercent) && t.pnlPercent < minPnlPercent) return false;
@@ -249,6 +270,27 @@ export default function TradersTable({
 
   const handleShare = useCallback((trader: WalletTrader) => setShareTarget(trader), []);
 
+  const searchRef = useRef<HTMLInputElement>(null);
+  const copyRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "a") {
+        e.preventDefault();
+        toggleAll();
+      } else if (e.key === "c") {
+        e.preventDefault();
+        copyRef.current?.click();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleAll]);
+
   // Export only what the user can see; exporting filtered-out rows is a surprise.
   const selectedTraders = useMemo(
     () => filteredTraders.filter((t) => selected.has(t.address)),
@@ -265,6 +307,7 @@ export default function TradersTable({
   }
 
   const activeFilterCount =
+    (filters.query !== "" ? 1 : 0) +
     (filters.minX !== "" ? 1 : 0) +
     (filters.maxX !== "" ? 1 : 0) +
     (filters.minPnlPercent !== "" ? 1 : 0) +
@@ -325,6 +368,7 @@ export default function TradersTable({
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <CopyJsonButton
+            ref={copyRef}
             tokenSymbol={token.symbol}
             targets={copyTargets}
             selectedCount={selected.size}
@@ -374,6 +418,15 @@ export default function TradersTable({
       {/* Filter bar */}
       <div className="border-b border-neutral-800/80 px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={searchRef}
+            value={filters.query}
+            onChange={(e) => updateFilter("query", e.target.value)}
+            placeholder="Filter wallets…  /"
+            spellCheck={false}
+            aria-label="Filter wallets by address or name"
+            className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 font-mono text-xs text-neutral-100 outline-none transition-colors placeholder:font-sans placeholder:text-neutral-600 focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:w-56"
+          />
           <button
             onClick={() => setFiltersOpen((v) => !v)}
             className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-300 hover:border-neutral-700"
@@ -597,10 +650,12 @@ export default function TradersTable({
  * actually paints first.
  */
 function CopyJsonButton({
+  ref,
   tokenSymbol,
   targets,
   selectedCount,
 }: {
+  ref?: React.Ref<HTMLButtonElement>;
   tokenSymbol: string;
   targets: WalletTrader[];
   selectedCount: number;
@@ -619,9 +674,10 @@ function CopyJsonButton({
 
   return (
     <button
+      ref={ref}
       onClick={handleCopy}
       disabled={state === "working"}
-      title="Copy the export JSON to your clipboard — no download needed"
+      title="Copy the export JSON to your clipboard (c) — no download needed"
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
         state === "copied"
           ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"

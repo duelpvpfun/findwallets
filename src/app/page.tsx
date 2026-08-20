@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
+import TableSkeleton from "@/components/TableSkeleton";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
 import ProductPreview from "@/components/ProductPreview";
 import { detectAddressFamily } from "@/lib/chains";
 import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
+import { consumeScanStream } from "@/lib/scanStream";
 import {
   CLAIM_STORAGE_KEY,
   OWNER_STORAGE_KEY,
@@ -44,6 +46,7 @@ export default function Home() {
   const [address, setAddress] = useState("");
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<{ found: number; requested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CachedScan | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
@@ -115,12 +118,14 @@ export default function Home() {
     async (ca: string, searchChain: Chain, searchLimit: number, claimToken?: string | null) => {
       if (!ca.trim()) return;
       setLoading(true);
+      setProgress(null);
       setError(null);
       try {
         const qs = new URLSearchParams({
           address: ca.trim(),
           limit: String(searchLimit),
           chain: searchChain,
+          stream: "1",
         });
         // Credentials go in headers, never the query string, so they can't leak
         // through access logs, proxies or Referer headers.
@@ -128,8 +133,10 @@ export default function Home() {
         if (claimToken) headers["x-claim-token"] = claimToken;
         if (ownerKey) headers["x-owner-key"] = ownerKey;
         const res = await fetch(`/api/top-traders?${qs}`, { headers });
-        const data = await res.json();
+
+        // Errors (rate limit, paywall, bad address) are still plain JSON.
         if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
           if (res.status === 402) {
             localStorage.removeItem(CLAIM_STORAGE_KEY);
             setClaim(null);
@@ -139,8 +146,17 @@ export default function Home() {
           setResult(null);
           return;
         }
+
+        const data = await consumeScanStream(res, (found, requested) =>
+          setProgress({ found, requested })
+        );
+        if ("error" in data) {
+          setError(data.error);
+          setResult(null);
+          return;
+        }
         // The credit is spent once the scan returns wallets.
-        if (claimToken && data.traders?.length > 0) {
+        if (claimToken && data.traders.length > 0) {
           localStorage.removeItem(CLAIM_STORAGE_KEY);
           setClaim(null);
         }
@@ -149,11 +165,12 @@ export default function Home() {
         if (data.note) setError(data.note);
         setResult(data);
         // A refresh or a discarded tab must not destroy a paid result.
-        if (data.traders?.length > 0) saveScan(data);
+        if (data.traders.length > 0) saveScan(data);
       } catch {
         setError("Failed to reach the server.");
       } finally {
         setLoading(false);
+        setProgress(null);
       }
     },
     [ownerKey]
@@ -515,16 +532,15 @@ export default function Home() {
             </div>
           ) : (
             loading ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-neutral-800/60 bg-neutral-900/30 px-4 py-24 text-center">
-                <Spinner className="h-6 w-6 text-blue-400" />
-                <p className="text-sm text-neutral-500">Fetching top traders…</p>
-                {chain !== "solana" && limit > 100 && (
-                  <p className="text-xs text-neutral-600">
-                    Large {CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at
-                    a time and can take up to ~30s.
-                  </p>
-                )}
-              </div>
+              <TableSkeleton
+                note={
+                  progress
+                    ? `Found ${progress.found} of ${progress.requested} wallets…`
+                    : chain !== "solana" && limit > 100
+                    ? `Large ${CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at a time and can take up to ~30s.`
+                    : "Fetching top traders…"
+                }
+              />
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">

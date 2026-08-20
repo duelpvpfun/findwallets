@@ -86,6 +86,79 @@ export function buildExportJson(
   return JSON.stringify(buildExportEntries(tokenSymbol, traders, options), null, 2);
 }
 
+export type ExportFormat = "json" | "csv" | "addresses";
+
+const CSV_COLUMNS = [
+  "rank",
+  "address",
+  "name",
+  "realizedPnlUsd",
+  "realizedPnlPercent",
+  "avgMultipleX",
+  "avgBuyPriceUsd",
+  "avgSellPriceUsd",
+  "avgBuyMcapUsd",
+  "avgSellMcapUsd",
+  "boughtUsd",
+  "soldUsd",
+  "remainingPercent",
+  "remainingValueUsd",
+  "unrealizedPnlUsd",
+] as const;
+
+/** Leading =, +, - or @ makes a spreadsheet treat the cell as a formula. */
+function csvCell(value: string | number | null): string {
+  if (value === null) return "";
+  const text = String(value);
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+export function buildExportCsv(
+  tokenSymbol: string,
+  traders: WalletTrader[],
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+): string {
+  const rows = traders.map((t) =>
+    [
+      t.rank,
+      t.address,
+      buildName(t, tokenSymbol, options),
+      t.realizedPnlUsd,
+      t.realizedPnlPercent,
+      t.avgMultipleX,
+      t.avgBuyPriceUsd,
+      t.avgSellPriceUsd,
+      t.avgBuyMcapUsd,
+      t.avgSellMcapUsd,
+      t.boughtUsd,
+      t.soldUsd,
+      t.remainingPercent,
+      t.remainingValueUsd,
+      t.unrealizedPnlUsd,
+    ]
+      .map(csvCell)
+      .join(",")
+  );
+  return [CSV_COLUMNS.join(","), ...rows].join("\n");
+}
+
+/** Newline-delimited addresses — what most trackers accept as a bulk paste. */
+export function buildAddressList(traders: WalletTrader[]): string {
+  return traders.map((t) => t.address).join("\n");
+}
+
+export function buildExport(
+  format: ExportFormat,
+  tokenSymbol: string,
+  traders: WalletTrader[],
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+): string {
+  if (format === "csv") return buildExportCsv(tokenSymbol, traders, options);
+  if (format === "addresses") return buildAddressList(traders);
+  return buildExportJson(tokenSymbol, traders, options);
+}
+
 /** Falls back to a hidden textarea because clipboard.writeText needs a secure
  * context, which excludes plain-http and some in-app browsers. */
 export async function copyText(text: string): Promise<boolean> {
@@ -127,13 +200,34 @@ export function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
+const FORMAT_META: Record<ExportFormat, { ext: string; mime: string }> = {
+  json: { ext: "json", mime: "application/json" },
+  csv: { ext: "csv", mime: "text/csv" },
+  addresses: { ext: "txt", mime: "text/plain" },
+};
+
+function downloadText(filename: string, text: string, mime: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function exportTraders(
   tokenName: string,
   tokenSymbol: string,
   traders: WalletTrader[],
-  options: ExportOptions = DEFAULT_EXPORT_OPTIONS
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
+  format: ExportFormat = "json"
 ) {
-  const entries = buildExportEntries(tokenSymbol, traders, options);
-  const filename = options.filename.trim() || tokenNameForExport(tokenName);
-  downloadJson(filename, entries);
+  const { ext, mime } = FORMAT_META[format];
+  const base = (options.filename.trim() || tokenNameForExport(tokenName)).replace(
+    /\.(json|csv|txt)$/i,
+    ""
+  );
+  downloadText(`${base}.${ext}`, buildExport(format, tokenSymbol, traders, options), mime);
 }

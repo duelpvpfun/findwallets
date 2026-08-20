@@ -3,17 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import type { WalletTrader } from "@/lib/types";
 import {
+  buildExport,
   buildExportEntries,
-  buildExportJson,
   copyText,
   DEFAULT_EXPORT_OPTIONS,
   exportTraders,
+  type ExportFormat,
   type ExportOptions,
   type NameStyle,
 } from "@/lib/export";
 import { tokenNameForExport } from "@/lib/format";
 
 const EMOJI_CHOICES = ["", "🧓", "👻", "🐍", "🦅", "🧙", "🐉", "🥷", "🦈", "🐺", "🦊", "🐯", "🦁", "💎", "🚀", "🐳"];
+
+const FORMATS: Array<{ value: ExportFormat; label: string; hint: string }> = [
+  { value: "json", label: "JSON", hint: "Tracking bots" },
+  { value: "csv", label: "CSV", hint: "Spreadsheets" },
+  { value: "addresses", label: "Addresses", hint: "One per line" },
+];
 
 const NAME_STYLES: Array<{ value: NameStyle; label: string; example: string }> = [
   { value: "multiple", label: "Multiple", example: "25.00x - MOONCAT" },
@@ -35,6 +42,7 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
     filename: tokenNameForExport(tokenName),
   });
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [format, setFormat] = useState<ExportFormat>("json");
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -48,18 +56,20 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
 
-  const preview = useMemo(
-    () => buildExportEntries(tokenSymbol, traders.slice(0, 2), opts),
-    [tokenSymbol, traders, opts]
-  );
+  const preview = useMemo(() => {
+    const sample = traders.slice(0, 2);
+    return format === "json"
+      ? JSON.stringify(buildExportEntries(tokenSymbol, sample, opts), null, 2)
+      : buildExport(format, tokenSymbol, sample, opts);
+  }, [format, tokenSymbol, traders, opts]);
 
   function handleExport() {
-    exportTraders(tokenName, tokenSymbol, traders, opts);
+    exportTraders(tokenName, tokenSymbol, traders, opts, format);
     onClose();
   }
 
   async function handleCopy() {
-    const ok = await copyText(buildExportJson(tokenSymbol, traders, opts));
+    const ok = await copyText(buildExport(format, tokenSymbol, traders, opts));
     setCopyState(ok ? "copied" : "failed");
     setTimeout(() => setCopyState("idle"), 2000);
   }
@@ -90,6 +100,26 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
         </div>
 
         <div className="space-y-5 overflow-y-auto px-5 py-5">
+          <section>
+            <SectionTitle>Format</SectionTitle>
+            <div className="grid grid-cols-3 gap-2">
+              {FORMATS.map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setFormat(f.value)}
+                  className={`rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                    format === f.value
+                      ? "border-blue-500/60 bg-blue-500/10"
+                      : "border-neutral-800 bg-neutral-900 hover:border-neutral-700"
+                  }`}
+                >
+                  <div className="text-xs font-medium text-neutral-200">{f.label}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-neutral-500">{f.hint}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
           {/* Naming */}
           <section>
             <SectionTitle>Wallet name</SectionTitle>
@@ -198,7 +228,7 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
           <section>
             <SectionTitle>Preview</SectionTitle>
             <pre className="max-h-48 overflow-auto rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 font-mono text-[10px] leading-relaxed text-neutral-400">
-              {JSON.stringify(preview, null, 2)}
+              {preview}
             </pre>
           </section>
         </div>
@@ -225,7 +255,7 @@ export default function ExportDialog({ tokenName, tokenSymbol, traders, onClose 
                 ? "Copied!"
                 : copyState === "failed"
                 ? "Copy failed"
-                : "Copy JSON"}
+                : `Copy ${format === "addresses" ? "list" : format.toUpperCase()}`}
             </button>
             <button
               onClick={handleExport}

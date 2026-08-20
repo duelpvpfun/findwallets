@@ -302,7 +302,8 @@ export async function fetchTopTraders(
   address: string,
   limit: number,
   estimatedSupply: number,
-  deadlineAt?: number
+  deadlineAt?: number,
+  onPage?: (traders: WalletTrader[]) => void
 ): Promise<WalletTrader[]> {
   const traders: WalletTrader[] = [];
   let cursor: string | undefined;
@@ -310,6 +311,7 @@ export async function fetchTopTraders(
 
   for (let page = 0; page < MAX_PAGES && traders.length < limit; page++) {
     if (deadlineAt !== undefined && Date.now() >= deadlineAt) break;
+    const before = traders.length;
 
     // A full page every time, not `limit - traders.length`: dropping artifacts
     // would otherwise leave the result short of what the buyer paid for.
@@ -331,6 +333,8 @@ export async function fetchTopTraders(
       if (traders.length >= limit) break;
       traders.push(mapHolder(h, traders.length + 1, estimatedSupply));
     }
+
+    if (onPage && traders.length > before) onPage(traders.slice(before));
 
     if (!res.pagination.hasMore || !res.pagination.nextCursor) break;
     cursor = res.pagination.nextCursor;

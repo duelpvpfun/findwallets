@@ -77,6 +77,27 @@ export interface WalletHistory {
   winBadges: string[];
 }
 
+/** The full payload of a completed scan. */
+export interface ScanResult {
+  token: TokenMeta;
+  traders: WalletTrader[];
+  histories?: Record<string, WalletHistory>;
+  isDemoData: boolean;
+  note?: string;
+  /** The time budget ran out before the paid tier could be filled. */
+  partial?: boolean;
+  deliveredCount?: number;
+  requestedCount?: number;
+  scanSession?: string;
+}
+
+/** NDJSON lines emitted by `/api/top-traders?stream=1`, one per line. */
+export type ScanEvent =
+  | { type: "token"; token: TokenMeta }
+  | { type: "progress"; found: number; requested: number }
+  | { type: "result"; result: ScanResult }
+  | { type: "error"; error: string };
+
 export interface WalletDistributionBucket {
   label: string;
   count: number;

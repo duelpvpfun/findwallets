@@ -33,7 +33,7 @@ import {
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { issueScanSession } from "@/lib/scanSession";
 import { meetsQualityBar } from "@/lib/quality";
-import type { TokenMeta, WalletTrader } from "@/lib/types";
+import type { ScanEvent, ScanResult, TokenMeta, WalletTrader } from "@/lib/types";
 
 // Vercel Pro allows up to 800s; 300 is well inside every plan above Hobby. On
 // Hobby the platform caps at 60s regardless of what is declared here, which is
@@ -179,12 +179,52 @@ export async function GET(request: NextRequest) {
 
   const deadlineAt = Date.now() + SCAN_BUDGET_MS;
 
+  // Opt-in NDJSON: progress lines while paging, then one final result line.
+  // Turns a 30s blank spinner into a live count without changing the payload.
+  const wantsStream = searchParams.get("stream") === "1";
+  let emit: ((event: ScanEvent) => void) | undefined;
+  let closeStream: (() => void) | undefined;
+  let body: ReadableStream<Uint8Array> | undefined;
+
+  if (wantsStream) {
+    const encoder = new TextEncoder();
+    body = new ReadableStream({
+      start(controller) {
+        emit = (event) => {
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          } catch {
+            // Client disconnected; the scan itself still completes and persists.
+          }
+        };
+        closeStream = () => {
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        };
+      },
+    });
+  }
+
+  const run = async () => {
   try {
     const token = isSolana
       ? await fetchTokenMeta(address)
       : await fetchEvmTokenMeta(chain as EvmChain, address);
+    emit?.({ type: "token", token });
+
+    let found = 0;
+    const onProgress = emit
+      ? (page: WalletTrader[]) => {
+          found += page.length;
+          emit?.({ type: "progress", found, requested: limit });
+        }
+      : undefined;
+
     const traders = isSolana
-      ? await fetchTopTraders(address, limit, token.estimatedSupply, deadlineAt)
+      ? await fetchTopTraders(address, limit, token.estimatedSupply, deadlineAt, onProgress)
       : await fetchEvmTopTraders(
           chain as EvmChain,
           address,
@@ -192,7 +232,8 @@ export async function GET(request: NextRequest) {
           token.estimatedSupply,
           "90d",
           token.priceUsd,
-          deadlineAt
+          deadlineAt,
+          onProgress
         );
 
     if (traders.length === 0) {
@@ -237,7 +278,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const payload: ScanResult = {
       token,
       traders,
       histories,
@@ -247,13 +288,38 @@ export async function GET(request: NextRequest) {
       deliveredCount: traders.length,
       requestedCount: limit,
       scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
-    });
+    };
+
+    if (emit) {
+      emit({ type: "result", result: payload });
+      return null;
+    }
+    return NextResponse.json(payload);
   } catch (err) {
     await refundCredit(access, chain, address);
     console.error("[top-traders] upstream failed:", err);
     Sentry.captureException(err, {
       tags: { chain, tier: limit, deliveredCount: 0, paid: Boolean(access.claimToken) },
     });
+    if (emit) {
+      emit({ type: "error", error: upstreamMessage(err) });
+      return null;
+    }
     return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }
+  };
+
+  if (!body) return (await run()) as NextResponse;
+
+  // The stream is the response; the scan continues writing into it after this
+  // function returns.
+  void run().finally(() => closeStream?.());
+  return new NextResponse(body, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      // Proxies that buffer would defeat the point of streaming.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

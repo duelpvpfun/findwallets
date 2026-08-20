@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import VisitBeacon from "@/components/VisitBeacon";
+import { SITE_URL } from "@/lib/siteUrl";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,9 +14,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const TITLE = "Alpha Wallet Finder — top memecoin traders by realized PNL";
+const DESCRIPTION =
+  "Paste any Solana, BNB Chain or Base memecoin contract address to surface its top 500 trading wallets, their entry/exit prices, and realized PNL — exportable straight to your tracking bot.";
+
 export const metadata: Metadata = {
-  title: "Alpha Wallet Finder",
-  description: "Paste a Solana memecoin contract address to surface its top trading wallets, entry/exit prices, and PNL.",
+  metadataBase: SITE_URL,
+  title: { default: TITLE, template: "%s · Alpha Wallet Finder" },
+  description: DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Alpha Wallet Finder",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    creator: "@crypce0",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
