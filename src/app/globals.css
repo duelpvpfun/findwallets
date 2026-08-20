@@ -45,6 +45,24 @@ body {
   background: rgba(59, 130, 246, 0.35);
 }
 
+/* One visible focus ring for every interactive element, rather than per-component
+   `focus:` classes that were only ever added to the inputs. `:focus-visible`
+   means a mouse click never draws it — only keyboard navigation does, which is
+   the only place it was missing. */
+:focus-visible {
+  outline: 2px solid rgb(96 165 250 / 0.85);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inputs already carry their own ring; a second outline on top of it reads as a
+   rendering bug. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

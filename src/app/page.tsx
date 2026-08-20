@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
-import TableSkeleton from "@/components/TableSkeleton";
+import ScanProgress from "@/components/ScanProgress";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
+import RadarSweep from "@/components/RadarSweep";
 import OnboardingCarousel, {
   shouldShowOnboarding,
   markOnboardingSeen,
@@ -361,8 +362,12 @@ export default function Home() {
               α
             </span>
             <div>
-              <h1 className="text-sm font-semibold leading-tight text-neutral-50">Alpha Wallet Finder</h1>
-              <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
+              <h1 className="text-sm font-semibold leading-tight text-neutral-50">
+                Alpha Wallet Finder
+              </h1>
+              <p className="hidden text-[11px] leading-tight text-neutral-500 sm:block">
+                Multichain top-trader lookup
+              </p>
             </div>
           </button>
           <div className="flex items-center gap-2">
@@ -394,15 +399,23 @@ export default function Home() {
 
       <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {!result && (
-          <div className="mx-auto mb-6 max-w-2xl text-center sm:mb-8">
-            <h2 className="text-xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
+          <div className="relative mx-auto mb-6 max-w-2xl text-center sm:mb-8">
+            {/* The only decorative sweep on the page, behind text at very low
+                opacity — and hidden while a scan runs, so the sweep on the
+                progress panel is never competing with a second one. */}
+            {!loading && (
+              <div className="pointer-events-none absolute inset-0 hidden items-center justify-center opacity-[0.18] sm:flex">
+                <RadarSweep size={340} />
+              </div>
+            )}
+            <h2 className="relative text-xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
               Find the wallets behind every winning trade
             </h2>
-            <p className="mt-2 text-sm text-neutral-400 sm:text-base">
+            <p className="relative mt-2 text-sm text-neutral-400 sm:text-base">
               Paste any memecoin contract address and instantly rank its top 100 to 500 traders by
               realized PNL.
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <div className="relative mt-4 flex flex-wrap items-center justify-center gap-2">
               <span className="text-xs text-neutral-500">Supported chains:</span>
               {CHAINS.map((c) => (
                 <span
@@ -568,9 +581,28 @@ export default function Home() {
         )}
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-900/60 bg-rose-950/30 px-4 py-3 text-sm text-rose-300 animate-fade-in">
-            <AlertIcon className="h-4 w-4 shrink-0" />
-            {error}
+          <div
+            role="alert"
+            className="animate-fade-in mt-4 flex items-start gap-3 rounded-xl border border-rose-900/60 bg-rose-950/25 px-4 py-3.5"
+          >
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm leading-relaxed text-rose-200">{error}</p>
+              {/* A failed scan never spends the credit, and saying so is the
+                  difference between an annoyance and a support message. */}
+              <p className="mt-1 text-[11px] text-rose-300/60">
+                Nothing was charged for a scan that returned nothing.
+              </p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              aria-label="Dismiss"
+              className="-mr-1 -mt-1 shrink-0 rounded-md p-1.5 text-rose-400/60 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -607,15 +639,7 @@ export default function Home() {
             </div>
           ) : (
             loading ? (
-              <TableSkeleton
-                note={
-                  progress
-                    ? `Found ${progress.found} of ${progress.requested} wallets…`
-                    : chain !== "solana" && limit > 100
-                    ? `Large ${CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at a time. This usually takes a few seconds, longer if the provider is slow.`
-                    : "Fetching top traders…"
-                }
-              />
+              <ScanProgress progress={progress} chain={chain} limit={limit} />
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">

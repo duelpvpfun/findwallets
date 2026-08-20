@@ -362,7 +362,7 @@ export default function TradersTable({
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <span className="hidden text-xs text-neutral-500 sm:inline">
+          <span className="tnum hidden text-xs text-neutral-500 sm:inline">
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <CopyJsonButton
@@ -398,12 +398,14 @@ export default function TradersTable({
         </div>
       )}
 
-      {/* Quick stats strip */}
+      {/* Quick stats strip. The combined PNL is the headline figure and is sized
+          for it; three identically-weighted numbers made the reader pick. */}
       <div className="grid grid-cols-3 divide-x divide-neutral-800/80 border-b border-neutral-800/80 bg-neutral-950/40">
         <StatCell
           label={basis === "total" ? "Combined Total PNL" : "Combined Realized PNL"}
           value={formatUsd(summary.totalPnl)}
           positive={summary.totalPnl >= 0}
+          primary
         />
         <StatCell label="Winning Wallets" value={`${summary.winners} / ${traders.length}`} />
         <StatCell label="Avg Multiple" value={formatMultiple(summary.avgX)} />
@@ -433,7 +435,7 @@ export default function TradersTable({
               </span>
             )}
           </button>
-          <span className="text-xs text-neutral-600">
+          <span className="tnum text-xs text-neutral-500">
             {filteredTraders.length} / {traders.length} shown
           </span>
 
@@ -583,8 +585,25 @@ export default function TradersTable({
       </details>
 
       {filteredTraders.length === 0 && (
-        <div className="py-12 text-center text-sm text-neutral-500">
-          No traders match the current filters.
+        <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-600">
+            <FilterIcon />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-neutral-300">No wallets match these filters</p>
+            <p className="tnum mt-1 text-xs text-neutral-500">
+              All {traders.length} wallets from this scan are still here — the filters are just
+              hiding them.
+            </p>
+          </div>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => setFilters(EMPTY_FILTERS)}
+              className="mt-1 rounded-lg border border-neutral-700 px-3.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-600 hover:bg-neutral-800"
+            >
+              Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+            </button>
+          )}
         </div>
       )}
 
@@ -892,13 +911,31 @@ const TableRow = memo(function TableRow({
   ref?: (node: HTMLTableRowElement | null) => void;
   dataIndex?: number;
 }) {
+  // Weight and colour before badges: the top three should read as obviously
+  // best at a glance, and the accent bar does that without adding chrome to
+  // every row below them.
+  const isTop = t.rank <= 3;
   return (
     <tr
       ref={ref}
       data-index={dataIndex}
-      className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20"
+      className={`border-b border-neutral-900/70 transition-colors duration-150 ${
+        selected ? "bg-blue-500/[0.07]" : "hover:bg-neutral-800/25"
+      }`}
     >
-      <td className="py-3 pl-4 align-top xl:pl-5">
+      <td className="relative py-3 pl-4 align-top xl:pl-5">
+        {isTop && (
+          <span
+            aria-hidden
+            className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full ${
+              t.rank === 1
+                ? "bg-amber-400/70"
+                : t.rank === 2
+                ? "bg-neutral-400/50"
+                : "bg-orange-500/50"
+            }`}
+          />
+        )}
         <input
           type="checkbox"
           checked={selected}
@@ -925,7 +962,11 @@ const TableRow = memo(function TableRow({
         </span>
       </td>
       <td className="py-3 align-top tabular-nums">
-        <div className={`font-semibold ${t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+        <div
+          className={`${isTop ? "text-[15px] font-bold" : "font-semibold"} ${
+            t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
           {formatUsd(t.pnlUsd)}
         </div>
         <div
@@ -1030,12 +1071,23 @@ function CardList({
   );
 }
 
-function StatCell({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+function StatCell({
+  label,
+  value,
+  positive,
+  primary,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+  /** The one figure worth reading first. */
+  primary?: boolean;
+}) {
   return (
     <div className="px-3 py-3 sm:px-5">
       <div className="text-[10px] leading-tight text-neutral-500 sm:text-[11px]">{label}</div>
       <div
-        className={`mt-0.5 text-sm font-semibold tabular-nums ${
+        className={`tnum mt-0.5 font-semibold ${primary ? "text-base sm:text-lg" : "text-sm"} ${
           positive === undefined ? "text-neutral-100" : positive ? "text-emerald-400" : "text-rose-400"
         }`}
       >
@@ -1313,10 +1365,10 @@ function SortableHeader({
 }
 
 function RankBadge({ rank }: { rank: number }) {
-  if (rank > 3) return <span className="text-sm">{rank}</span>;
+  if (rank > 3) return <span className="tnum text-sm">{rank}</span>;
   return (
     <span
-      className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
+      className={`tnum inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
         rank === 1
           ? "bg-amber-400/20 text-amber-300"
           : rank === 2
@@ -1334,7 +1386,7 @@ function RankBadge({ rank }: { rank: number }) {
 function PnlSplit({ row, basis }: { row: Row; basis: PnlBasis }) {
   if (basis !== "total" || row.unsoldPnlUsd === 0) return null;
   return (
-    <div className="mt-0.5 text-[10px] leading-tight text-neutral-500">
+    <div className="tnum mt-0.5 text-[10px] leading-tight text-neutral-400">
       {formatUsd(row.realizedPnlUsd)} sold
       <span className="text-neutral-600"> + </span>
       {formatUsd(row.unsoldPnlUsd)} held
@@ -1359,13 +1411,13 @@ function TokenAmounts({
       : 0;
   const movedOut = trader.transferredOutPercent ?? 0;
   return (
-    <div className={`text-neutral-500 ${className}`}>
+    <div className={`text-neutral-400 ${className}`}>
       {formatCompactNumber(trader.boughtTokenAmount)} → {formatCompactNumber(trader.soldTokenAmount)}{" "}
       {symbol}
       {/* Without this a wallet that sold 4% of its bag and moved the rest out
           looks like it dumped everything for a fraction of what it paid. */}
       {trader.boughtTokenAmount > 0 && soldShare < 99 && (
-        <div className="text-neutral-600">
+        <div className="text-neutral-500">
           sold {soldShare.toFixed(soldShare < 10 ? 1 : 0)}% of bag
           {movedOut >= 1 && (
             <span title="Left the wallet without being sold — common for wallets that split a position across addresses">
@@ -1442,8 +1494,25 @@ const TraderCard = memo(function TraderCard({
   onShare: (trader: WalletTrader) => void;
 }) {
   const positive = trader.pnlUsd >= 0;
+  const isTop = trader.rank <= 3;
   return (
-    <div className={`px-4 py-3.5 transition-colors ${selected ? "bg-blue-500/5" : ""}`}>
+    <div
+      className={`relative px-4 py-3.5 transition-colors duration-150 ${
+        selected ? "bg-blue-500/[0.07]" : ""
+      }`}
+    >
+      {isTop && (
+        <span
+          aria-hidden
+          className={`absolute left-0 top-2.5 bottom-2.5 w-[2px] rounded-full ${
+            trader.rank === 1
+              ? "bg-amber-400/70"
+              : trader.rank === 2
+              ? "bg-neutral-400/50"
+              : "bg-orange-500/50"
+          }`}
+        />
+      )}
       <div className="flex items-start gap-2.5">
         <input
           type="checkbox"
@@ -1458,7 +1527,11 @@ const TraderCard = memo(function TraderCard({
           <WalletCell trader={trader} history={history} onShare={onShare} />
         </div>
         <div className="shrink-0 text-right tabular-nums">
-          <div className={`text-base font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+          <div
+            className={`${isTop ? "text-lg" : "text-base"} font-bold ${
+              positive ? "text-emerald-400" : "text-rose-400"
+            }`}
+          >
             {formatUsd(trader.pnlUsd)}
           </div>
           <div className="flex items-center justify-end gap-1.5 text-[11px]">
@@ -1514,7 +1587,7 @@ const TraderCard = memo(function TraderCard({
 function CardField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
       <div className="mt-0.5 tabular-nums">{value}</div>
     </div>
   );
