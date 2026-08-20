@@ -18,11 +18,17 @@ export function getDb() {
   if (!url) return null;
   if (!dbInstance) {
     // prepare:false is required for transaction-pooled (pgBouncer) connections.
-    // On serverless every warm instance holds its own pool, so `max` is
-    // multiplied by concurrency: 5 each against Supabase's 60-connection cap
-    // exhausts the database at 12 instances. One connection per instance,
-    // released after 20s idle, keeps the ceiling in instance count instead.
-    client = postgres(url, { prepare: false, max: 1, idle_timeout: 20, connect_timeout: 10 });
+    // On serverless every warm instance holds its own pool, so `max` multiplies
+    // by concurrency and a large pool can exhaust the database's connection cap.
+    //
+    // `max: 1` is nevertheless wrong: postgres.js pipelines queries onto a
+    // connection, and when a fan-out outruns the pool, Supabase's transaction
+    // pooler stops responding — the queries hang forever rather than queueing,
+    // taking the whole request with them. Measured live: 4 concurrent queries on
+    // max:1 never returned; the same 4 on max:2 finished in 162ms. Three is
+    // enough for every fan-out this app actually issues, and small enough that
+    // Supabase's pooler is not the scarce resource.
+    client = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10 });
     dbInstance = drizzle(client, { schema });
   }
   return dbInstance;
