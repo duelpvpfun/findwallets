@@ -1,21 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import TableSkeleton from "@/components/TableSkeleton";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
-import ProductPreview from "@/components/ProductPreview";
+import OnboardingCarousel, {
+  shouldShowOnboarding,
+  markOnboardingSeen,
+} from "@/components/OnboardingCarousel";
 import { detectAddressFamily } from "@/lib/chains";
 import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
 import { consumeScanStream } from "@/lib/scanStream";
-import {
-  CLAIM_STORAGE_KEY,
-  OWNER_STORAGE_KEY,
-  PREVIEW_DISMISSED_KEY,
-  TIER_OPTIONS,
-} from "@/lib/tiers";
+import { CLAIM_STORAGE_KEY, OWNER_STORAGE_KEY, TIER_OPTIONS } from "@/lib/tiers";
 
 const LIMIT_OPTIONS = [100, 250, 500] as const;
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
@@ -54,18 +52,13 @@ export default function Home() {
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [autoChain, setAutoChain] = useState<Chain | null>(null);
   const [samples, setSamples] = useState<ShowcaseToken[]>([]);
-  // Greet first-time visitors with the export preview unless they opted out.
+  // Greet first-time visitors with the walkthrough unless they opted out.
   // Closed during SSR and the first client render so hydration matches; the
   // localStorage read happens in a frame callback, after paint.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const addressRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      try {
-        setWelcomeOpen(!localStorage.getItem(PREVIEW_DISMISSED_KEY));
-      } catch {
-        // localStorage unavailable (private mode) — skip the greeting rather than throw.
-      }
-    });
+    const id = requestAnimationFrame(() => setWelcomeOpen(shouldShowOnboarding()));
     return () => cancelAnimationFrame(id);
   }, []);
 
@@ -321,14 +314,29 @@ export default function Home() {
               <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
             </div>
           </button>
-          <a
-            href="https://x.com/crypce0"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden items-center gap-1.5 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 sm:flex"
-          >
-            Built by @crypce0
-          </a>
+          <div className="flex items-center gap-2">
+            {/* Persistent way back into the walkthrough — the modal only ever
+                greets someone once, so this is how anyone re-opens it. */}
+            <button
+              onClick={() => setWelcomeOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9.5" />
+                <path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.4" strokeLinecap="round" />
+                <path d="M12 17h.01" strokeLinecap="round" />
+              </svg>
+              <span className="hidden sm:inline">How it works</span>
+            </button>
+            <a
+              href="https://x.com/crypce0"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-1.5 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 sm:flex"
+            >
+              Built by @crypce0
+            </a>
+          </div>
         </div>
       </header>
 
@@ -385,6 +393,7 @@ export default function Home() {
           <div className="relative flex-1">
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
             <input
+              ref={addressRef}
               value={address}
               onChange={(e) => handleAddressChange(e.target.value)}
               placeholder={PLACEHOLDERS[chain]}
@@ -591,7 +600,25 @@ export default function Home() {
         </div>
       </footer>
 
-      {welcomeOpen && <ProductPreview onClose={() => setWelcomeOpen(false)} />}
+      {welcomeOpen && (
+        <OnboardingCarousel
+          samples={samples}
+          onClose={() => setWelcomeOpen(false)}
+          onRunSample={(sample) => {
+            setWelcomeOpen(false);
+            void runPreview(sample);
+          }}
+          onUseAddress={(value) => {
+            setWelcomeOpen(false);
+            markOnboardingSeen();
+            handleAddressChange(value);
+            // Deliberately not auto-submitted: on a token of their own the next
+            // step is the paywall, and springing that on someone who just asked
+            // to "load it in" is not the same thing they asked for.
+            requestAnimationFrame(() => addressRef.current?.focus());
+          }}
+        />
+      )}
 
       {paywallOpen && (
         <PaywallDialog

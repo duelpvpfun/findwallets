@@ -19,5 +19,12 @@ export const CLAIM_STORAGE_KEY = "findwallets.claim";
  * scan is free. It is only ever validated server-side. */
 export const OWNER_STORAGE_KEY = "findwallets.owner";
 
-/** Set when a visitor ticks "don't show again" on the welcome export preview. */
+/**
+ * Legacy: set when a visitor ticked "don't show again" on the old export-preview
+ * dialog. Still read — someone who already opted out of being greeted should not
+ * be handed a new modal just because the greeting was rewritten.
+ */
 export const PREVIEW_DISMISSED_KEY = "findwallets.previewDismissed";
+
+/** Set once the onboarding walkthrough has been closed, however it was closed. */
+export const ONBOARDING_DISMISSED_KEY = "findwallets.onboardingSeen";
