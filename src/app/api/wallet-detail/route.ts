@@ -8,6 +8,7 @@ import { isOwnerKey } from "@/lib/access";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { verifyScanSession } from "@/lib/scanSession";
 import { getCachedWalletDetail, setCachedWalletDetail } from "@/lib/db/detailCache";
+import { getStoredSupply } from "@/lib/db/tokenMeta";
 
 // See src/app/api/top-traders/route.ts — Hobby caps at 60s regardless.
 export const maxDuration = 300;
@@ -37,11 +38,11 @@ export async function GET(request: NextRequest) {
   }
   const chain: Chain = chainParam;
 
-  // Passed by the client (already has it from the top-traders load) to avoid
-  // burning an extra token-info API call on every wallet click. Clamped because
-  // it is attacker-controlled and feeds downstream supply math.
+  // Fallback only. The authoritative value is read from `tokens` below; the
+  // client's copy is attacker-controlled and feeds market-cap math, so it is
+  // used solely when this token has never been scanned.
   const supplyParam = Number(searchParams.get("estimatedSupply") ?? "0");
-  const estimatedSupply =
+  const clientSupply =
     Number.isFinite(supplyParam) && supplyParam > 0 ? Math.min(supplyParam, Number.MAX_SAFE_INTEGER) : 0;
 
   if (!isValidAddressForChain(chain, tokenAddress) || !isValidAddressForChain(chain, walletAddress)) {
@@ -72,6 +73,8 @@ export async function GET(request: NextRequest) {
   if (cached) {
     return NextResponse.json({ ...cached, isDemoData: false });
   }
+
+  const estimatedSupply = (await getStoredSupply(chain, tokenAddress)) ?? clientSupply;
 
   try {
     const detail = isSolana

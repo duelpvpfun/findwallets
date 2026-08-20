@@ -29,6 +29,9 @@ export const tokens = pgTable(
     priceUsd: doublePrecision("price_usd"),
     marketCapUsd: doublePrecision("market_cap_usd"),
     nativePriceUsd: doublePrecision("native_price_usd"),
+    /** Authoritative supply for market-cap math, so wallet-detail never has to
+     * trust an attacker-controlled query parameter. */
+    estimatedSupply: doublePrecision("estimated_supply"),
     /** Hand-picked tokens offered as a free sample scan. */
     showcase: boolean("showcase").notNull().default(false),
     firstScannedAt: timestamp("first_scanned_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
+import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
 import ProductPreview from "@/components/ProductPreview";
 import { detectAddressFamily } from "@/lib/chains";
+import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
 import {
   CLAIM_STORAGE_KEY,
   OWNER_STORAGE_KEY,
@@ -44,18 +45,7 @@ export default function Home() {
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    token: TokenMeta;
-    traders: WalletTrader[];
-    isDemoData: boolean;
-    histories?: Record<string, WalletHistory>;
-    note?: string;
-    scanSession?: string;
-    isPreview?: boolean;
-    previewLimit?: number;
-    partial?: boolean;
-    requestedCount?: number;
-  } | null>(null);
+  const [result, setResult] = useState<CachedScan | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -158,6 +148,8 @@ export default function Home() {
         // untouched, so tell the user rather than leaving them guessing.
         if (data.note) setError(data.note);
         setResult(data);
+        // A refresh or a discarded tab must not destroy a paid result.
+        if (data.traders?.length > 0) saveScan(data);
       } catch {
         setError("Failed to reach the server.");
       } finally {
@@ -166,6 +158,19 @@ export default function Home() {
     },
     [ownerKey]
   );
+
+  // A buyer who reloads, or whose tab the browser discarded, gets their scan
+  // back rather than losing a purchase that is already marked consumed.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const cached = loadScan();
+      if (!cached) return;
+      setResult(cached);
+      setChain(cached.token.chain);
+      setAddress(cached.token.address);
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // Tokens we've already scanned, offered as free samples.
   useEffect(() => {
@@ -265,6 +270,7 @@ export default function Home() {
     setResult(null);
     setAddress("");
     setError(null);
+    clearScan();
   }
 
   return (
