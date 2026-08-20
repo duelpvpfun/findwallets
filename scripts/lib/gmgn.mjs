@@ -192,6 +192,45 @@ export function createClient() {
     walletStats(chain, wallets, period = "30d") {
       return request("/v1/user/wallet_stats", { chain, wallet_address: wallets, period });
     },
+
+    /**
+     * Trending tokens. Omitting `filter` is NOT "no filter" — the server applies
+     * chain defaults (`renounced frozen` on SOL, `not_honeypot verified renounced`
+     * on EVM), so it is always passed explicitly.
+     */
+    rank(chain, { interval = "24h", limit = 100, orderBy = "marketcap", filter = [], ...rest } = {}) {
+      return request("/v1/market/rank", {
+        chain,
+        interval,
+        limit,
+        order_by: orderBy,
+        direction: "desc",
+        filter,
+        ...rest,
+      });
+    },
+
+    /** Supply, holders, launchpad state, insider/bundler rates. Weight 1. */
+    tokenInfo(chain, address) {
+      return request("/v1/token/info", { chain, address });
+    },
+
+    /** Honeypot/tax/rug_ratio/sniper/insider block. Weight 1. */
+    tokenSecurity(chain, address) {
+      return request("/v1/token/security", { chain, address });
+    },
+
+    /** Candles, for measuring how far a token actually ran and whether it held. */
+    kline(chain, address, { resolution = "1h", from, to } = {}) {
+      return request("/v1/market/token_kline", { chain, address, resolution, from, to });
+    },
+
+    /** Top traders on one token. Weight 5, max 100, no cursor. */
+    tokenTopTraders(chain, address, { limit = 100, orderBy = "profit", tag } = {}) {
+      const query = { chain, address, limit, order_by: orderBy, direction: "desc" };
+      if (tag) query.tag = tag;
+      return request("/v1/market/token_top_traders", query);
+    },
   };
 }
 

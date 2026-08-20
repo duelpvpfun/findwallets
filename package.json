@@ -11,7 +11,9 @@
     "db:studio": "drizzle-kit studio",
     "webhook:log": "env -u DATABASE_URL bash -c 'set -a; source .env.local; set +a; node scripts/webhook-log.mjs'",
     "enrich": "env -u DATABASE_URL node --env-file=.env.local scripts/enrich-wallets.mjs",
-    "enrich:stats": "env -u DATABASE_URL node --env-file=.env.local scripts/enrich-stats.mjs"
+    "enrich:stats": "env -u DATABASE_URL node --env-file=.env.local scripts/enrich-stats.mjs",
+    "db:health": "env -u DATABASE_URL node --env-file=.env.local scripts/db-health.mjs",
+    "db:prune": "env -u DATABASE_URL node --env-file=.env.local scripts/db-prune.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
