@@ -358,7 +358,7 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
 
   const { revenue, visitors, funnel, content } = stats;
   const conversion =
-    visitors.visitorsAll > 0 ? (revenue.payments / visitors.visitorsAll) * 100 : 0;
+    visitors.visitors30d > 0 ? (revenue.payments / visitors.visitors30d) * 100 : 0;
   const points = hourly ? stats.hourly : stats.daily;
 
   return (
@@ -406,7 +406,7 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
         <Card
           label="Visitor → buyer"
           value={`${conversion.toFixed(2)}%`}
-          sub={`${formatCompactNumber(visitors.visitorsAll)} visitors all time`}
+          sub={`${formatCompactNumber(visitors.visitors30d)} visitors in 30d`}
         />
       </div>
 
@@ -489,18 +489,25 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
       <Section title="Checkout funnel & database">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Card
-            label="Quotes started"
+            label="Quotes started (30d)"
             value={formatCompactNumber(funnel.intents)}
             sub={`${funnel.intentsPaid} paid · ${funnel.intentsOpen} abandoned`}
           />
-          <Card label="Tokens scanned" value={formatCompactNumber(content.tokens)} />
+          <Card label="Tokens scanned" value={`~${formatCompactNumber(content.tokens)}`} />
           <Card
             label="Wallets stored"
-            value={formatCompactNumber(content.wallets)}
-            sub={`${formatCompactNumber(content.walletTokens)} wallet/token rows`}
+            value={`~${formatCompactNumber(content.wallets)}`}
+            sub={`~${formatCompactNumber(content.walletTokens)} wallet/token rows`}
           />
-          <Card label="Cached detail lookups" value={formatCompactNumber(content.cachedDetails)} />
+          <Card
+            label="Cached detail lookups"
+            value={`~${formatCompactNumber(content.cachedDetails)}`}
+          />
         </div>
+        <p className="mt-2 text-[11px] text-neutral-600">
+          Row counts are planner estimates, not exact — an exact count is a full scan of every
+          table.
+        </p>
       </Section>
     </main>
   );

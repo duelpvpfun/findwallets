@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -5,6 +6,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   serial,
@@ -142,6 +144,8 @@ export const walletTokens = pgTable(
   (t) => [
     primaryKey({ columns: [t.walletId, t.tokenId] }),
     index("wallet_tokens_pnl_idx").on(t.realizedPnlUsd),
+    // Covers the per-wallet top-wins lateral join in fetchWalletHistories.
+    index("wallet_tokens_wallet_pnl_idx").on(t.walletId, sql`${t.realizedPnlUsd} desc`),
   ]
 );
 
@@ -296,3 +300,15 @@ export const apiUsage = pgTable(
   },
   (t) => [uniqueIndex("api_usage_day_endpoint_idx").on(t.day, t.provider, t.endpoint)]
 );
+
+/**
+ * The admin dashboard's precomputed figures, refreshed by cron. A module-level
+ * cache was per-lambda-instance, so every cold instance re-ran the whole
+ * aggregate set; a single row means the dashboard costs one indexed read.
+ */
+export const statsSnapshot = pgTable("stats_snapshot", {
+  /** Always 1 — this table holds exactly one row. */
+  id: integer("id").primaryKey(),
+  payload: jsonb("payload").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+});

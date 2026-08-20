@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/release-stale-credits",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-stats",
+      "schedule": "* * * * *"
     }
   ]
 }

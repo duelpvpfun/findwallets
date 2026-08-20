@@ -31,8 +31,10 @@ export type VisitorTotals = {
   visitors24h: number;
   views7d: number;
   visitors7d: number;
-  viewsAll: number;
-  visitorsAll: number;
+  /** 30-day window. An unfiltered count(*) over site_visits was a full scan on
+   * every dashboard load and got slower every day the site stayed up. */
+  views30d: number;
+  visitors30d: number;
 };
 
 /** One point of the traffic/revenue chart. `bucket` is a day or an hour label
@@ -61,6 +63,8 @@ export type FunnelRow = {
 
 export type NameCount = { name: string; views: number };
 
+/** Planner row estimates from pg_class, not exact counts: wallet_tokens is
+ * headed for millions of rows and an exact count is a sequential scan. */
 export type ContentTotals = {
   tokens: number;
   wallets: number;
@@ -99,19 +103,10 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
   const db = getDb();
   if (!db) return null;
 
-  const [
-    revenue,
-    payments,
-    visitors,
-    daily,
-    hourly,
-    usageToday,
-    usage7d,
-    funnel,
-    referrers,
-    countries,
-    content,
-  ] = await Promise.all([
+  // Three sequential batches rather than 11 concurrent queries: the serverless
+  // pool holds a single connection, so firing them all at once just queues them
+  // behind each other while holding the dashboard request open.
+  const [revenue, payments, visitors, funnel] = await Promise.all([
     db.execute<RevenueTotals>(sql`
       select
         count(*)::int as "payments",
@@ -151,10 +146,21 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
         count(distinct visitor_hash) filter (where created_at > now() - interval '24 hours')::int as "visitors24h",
         count(*) filter (where created_at > now() - interval '7 days')::int as "views7d",
         count(distinct visitor_hash) filter (where created_at > now() - interval '7 days')::int as "visitors7d",
-        count(*)::int as "viewsAll",
-        count(distinct visitor_hash)::int as "visitorsAll"
-      from site_visits`),
+        count(*)::int as "views30d",
+        count(distinct visitor_hash)::int as "visitors30d"
+      from site_visits
+      where created_at > now() - interval '30 days'`),
 
+    db.execute<FunnelRow>(sql`
+      select
+        count(*)::int as intents,
+        count(*) filter (where status = 'consumed')::int as "intentsPaid",
+        count(*) filter (where status <> 'consumed')::int as "intentsOpen"
+      from payment_intents
+      where created_at > now() - interval '30 days'`),
+  ]);
+
+  const [daily, hourly] = await Promise.all([
     // generate_series supplies the full 30-day axis, so quiet days render as
     // zeroes instead of silently compressing the chart.
     db.execute<TimePoint>(sql`
@@ -226,7 +232,9 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
       left join v on v.hour = hours.hour
       left join p on p.hour = hours.hour
       order by hours.hour`),
+  ]);
 
+  const [usageToday, usage7d, referrers, countries, content] = await Promise.all([
     db.execute<UsageRow>(sql`
       select provider, endpoint,
              sum(calls)::int as calls,
@@ -247,13 +255,6 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
       group by 1, 2
       order by credits desc`),
 
-    db.execute<FunnelRow>(sql`
-      select
-        count(*)::int as intents,
-        count(*) filter (where status = 'consumed')::int as "intentsPaid",
-        count(*) filter (where status <> 'consumed')::int as "intentsOpen"
-      from payment_intents`),
-
     db.execute<NameCount>(sql`
       select coalesce(referrer, 'direct') as name, count(*)::int as views
       from site_visits
@@ -266,12 +267,18 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
       where created_at > now() - interval '30 days'
       group by 1 order by views desc limit 10`),
 
+    // reltuples is the planner's estimate, maintained by autovacuum. Approximate
+    // by design — an exact count here means four sequential scans, one of them
+    // over the largest table in the schema.
     db.execute<ContentTotals>(sql`
       select
-        (select count(*) from tokens)::int as tokens,
-        (select count(*) from wallets)::int as wallets,
-        (select count(*) from wallet_tokens)::int as "walletTokens",
-        (select count(*) from wallet_detail_cache)::int as "cachedDetails"`),
+        coalesce(max(reltuples) filter (where relname = 'tokens'), 0)::int as tokens,
+        coalesce(max(reltuples) filter (where relname = 'wallets'), 0)::int as wallets,
+        coalesce(max(reltuples) filter (where relname = 'wallet_tokens'), 0)::int as "walletTokens",
+        coalesce(max(reltuples) filter (where relname = 'wallet_detail_cache'), 0)::int as "cachedDetails"
+      from pg_class
+      where relname in ('tokens', 'wallets', 'wallet_tokens', 'wallet_detail_cache')
+        and relkind = 'r'`),
   ]);
 
   return {
@@ -289,4 +296,37 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
     treasury: process.env.SOLANA_TREASURY_WALLET ?? null,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Recomputes the snapshot the dashboard reads. Called from a cron, so the
+ * dashboard itself never pays for the aggregates no matter how many tabs poll.
+ */
+export async function refreshAdminStatsSnapshot(): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+
+  const stats = await fetchAdminStats();
+  if (!stats) return false;
+
+  await db.execute(sql`
+    insert into stats_snapshot (id, payload, generated_at)
+    values (1, ${JSON.stringify(stats)}::jsonb, now())
+    on conflict (id) do update
+      set payload = excluded.payload, generated_at = excluded.generated_at`);
+  return true;
+}
+
+export type StatsSnapshot = { stats: AdminStats; generatedAt: string };
+
+/** One indexed single-row read, regardless of how much data the site has. */
+export async function readAdminStatsSnapshot(): Promise<StatsSnapshot | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const rows = await db.execute<{ payload: AdminStats; generatedAt: string }>(sql`
+    select payload, generated_at as "generatedAt" from stats_snapshot where id = 1`);
+  const row = rows[0];
+  if (!row) return null;
+  return { stats: row.payload, generatedAt: row.generatedAt };
 }

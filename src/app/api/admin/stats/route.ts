@@ -1,28 +1,39 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/adminAuth";
-import { fetchAdminStats } from "@/lib/db/adminStats";
+import {
+  fetchAdminStats,
+  readAdminStatsSnapshot,
+  refreshAdminStatsSnapshot,
+} from "@/lib/db/adminStats";
 
 export const dynamic = "force-dynamic";
 
-/** Each poll costs 11 queries, and a couple of open tabs plus a stray refresh
- * multiplies that. Snapshots are reused briefly so extra pollers are free. */
-const CACHE_MS = 15_000;
-let snapshot: { at: number; data: Awaited<ReturnType<typeof fetchAdminStats>> } | null = null;
+/** Beyond this the cron has clearly stopped running, so recompute inline rather
+ * than serve figures nobody would trust. */
+const STALE_AFTER_MS = 10 * 60_000;
 
-/** Refresh feed for the dashboard. Gated on the same signed cookie as the page. */
+/** Refresh feed for the dashboard. Gated on the same signed cookie as the page.
+ * Reads the cron-maintained snapshot row, so polling costs one indexed query
+ * regardless of how many tabs are open or how large the tables have grown. */
 export async function GET() {
   if (!(await isAdminRequest())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (snapshot && Date.now() - snapshot.at < CACHE_MS && snapshot.data) {
-    return NextResponse.json(snapshot.data, { headers: { "Cache-Control": "no-store" } });
+  const headers = { "Cache-Control": "no-store" };
+
+  const snapshot = await readAdminStatsSnapshot();
+  if (snapshot && Date.now() - new Date(snapshot.generatedAt).getTime() < STALE_AFTER_MS) {
+    return NextResponse.json(snapshot.stats, { headers });
   }
 
+  // No snapshot yet (first deploy), or the cron has stopped running.
   const stats = await fetchAdminStats();
-  if (stats) snapshot = { at: Date.now(), data: stats };
   if (!stats) {
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
   }
-  return NextResponse.json(stats, { headers: { "Cache-Control": "no-store" } });
+  void refreshAdminStatsSnapshot().catch(() => {
+    // Best effort: the caller already has fresh figures.
+  });
+  return NextResponse.json(stats, { headers });
 }
