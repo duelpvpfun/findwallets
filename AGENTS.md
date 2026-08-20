@@ -154,14 +154,13 @@ anonymous claim-token flow is unchanged. Do not let that slip.
 - `src/lib/rateLimit.ts` is backed by Upstash Redis when `UPSTASH_REDIS_REST_URL` is set, and falls
   back to per-instance memory when it isn't. `rateLimit()` is **async** — every call site must await
   it. It's a cost guard, not an authorization boundary.
-- **The quality bar is a column, not a write gate.** `wallet_tokens.qualified` (+
-  `disqualified_reason`) records whether a trade cleared 2x and $1k; every trader row from a scan is
-  stored either way. Filtering on write is what made win rate uncomputable — a wallet with five rows
-  had five wins and an unknown number of losses. `meetsQualityBar` still gates **enrichment API
-  calls** and **win badges**, which is where the money and the claims are. Anything counting rows has
-  to say which population it means: `fetchWalletHistories` returns both `priorTokenCount` (wins) and
-  `priorTradeCount` (all recorded trades), and the showcase/ticker queries filter on `qualified` so
-  their headline counts still mean "winners".
+- **`wallet_tokens` is a curated alpha-wallet database, not a scan log.** `meetsQualityBar`
+  (2x AND $1,000) is a **write gate**: a wallet only earns a row by clearing it. That is deliberate —
+  the table exists to accumulate wallets worth tracking, so a wallet appearing in it repeatedly is
+  the signal. **The gate has never touched what a buyer sees**: the scan response carries every
+  trader the upstream provider returned, ranked by realized PNL, and neither `solanaTracker.ts` nor
+  `birdeye.ts` filters on the bar. Keep that separation — filtering the payload would be selling
+  people less than they paid for, and storing everything would turn the archive into noise.
 - **`drizzle-kit generate` is not safe here.** `drizzle/meta` only tracks as far as `0001`, so it
   would try to recreate the whole schema. Hand-write the numbered `.sql` file and apply it with
   `npm run db:migrate -- 0018_user_accounts` (which now takes named files, in order — it used to

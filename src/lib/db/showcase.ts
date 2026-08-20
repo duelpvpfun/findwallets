@@ -69,10 +69,7 @@ export async function fetchShowcaseTokens(limit = 6): Promise<ShowcaseToken[]> {
     })
     .from(tokens)
     .innerJoin(walletTokens, eq(walletTokens.tokenId, tokens.id))
-    // Qualified only: losing trades are stored now, and a sample token is
-    // advertised by how many *winners* it has. Without this the count silently
-    // changed meaning the day losses started being written.
-    .where(and(eq(tokens.showcase, true), eq(walletTokens.qualified, true)))
+    .where(eq(tokens.showcase, true))
     .groupBy(tokens.id)
     .having(sql`count(${walletTokens.walletId}) >= 20`)
     .orderBy(desc(sql`count(${walletTokens.walletId})`))
@@ -162,10 +159,7 @@ export async function fetchCachedScan(
     })
     .from(walletTokens)
     .innerJoin(wallets, eq(wallets.id, walletTokens.walletId))
-    // A free sample shows what the paid product finds: winners. The top N by
-    // PNL would mostly be winners anyway, but on a thinly-scanned token it
-    // would pad the list out with losses.
-    .where(and(eq(walletTokens.tokenId, tokenRow.id), eq(walletTokens.qualified, true)))
+    .where(eq(walletTokens.tokenId, tokenRow.id))
     .orderBy(desc(walletTokens.realizedPnlUsd))
     .limit(limit);
 
@@ -275,7 +269,6 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
     .where(
       and(
         eq(wallets.isBot, false),
-        eq(walletTokens.qualified, true),
         gt(walletTokens.realizedPnlUsd, 0),
         // Below a real cost basis the multiple stops meaning anything: airdropped
         // and transferred-in supply produced a "184838x" Pnut row off $16 spent.
@@ -308,7 +301,6 @@ export async function fetchTickerWallets(limit = 40): Promise<TickerWallet[]> {
     .where(
       and(
         inArray(walletTokens.walletId, ids),
-        eq(walletTokens.qualified, true),
         gt(walletTokens.realizedPnlUsd, 0),
         // Same cost-basis floor as the headline row above; without it a dust-basis
         // multiple that is too absurd to headline still renders as a chip.
@@ -374,11 +366,7 @@ function capPerSymbol(rows: TickerWallet[], maxPerSymbol: number, limit: number)
   return capped;
 }
 
-/**
- * Totals for the ticker header. Counted over qualified rows only, so the
- * headline still means "winning wallets we've found" now that losing trades are
- * stored alongside them.
- */
+/** Totals for the ticker header. */
 export async function fetchShowcaseStats(): Promise<{
   wallets: number;
   tokens: number;
@@ -393,8 +381,7 @@ export async function fetchShowcaseStats(): Promise<{
       tokens: sql<number>`count(distinct ${walletTokens.tokenId})::int`,
       totalPnlUsd: sql<number>`coalesce(sum(greatest(${walletTokens.realizedPnlUsd}, 0)), 0)::float8`,
     })
-    .from(walletTokens)
-    .where(eq(walletTokens.qualified, true));
+    .from(walletTokens);
 
   return {
     wallets: Number(row?.wallets ?? 0),

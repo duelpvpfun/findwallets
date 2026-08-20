@@ -67,11 +67,15 @@ const MAX_SCANS_PER_MINUTE = 12;
 async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   if (!isDbConfigured()) return;
   try {
-    // The quality bar gates ENRICHMENT, not storage. Every trader row is stored
-    // (recordScan flags each one), because dropping the losses is what made win
-    // rate uncomputable. Enrichment is where the money goes — Solana Tracker
-    // credits and 35 Birdeye CU per wallet — so it stays behind the bar.
+    // `wallet_tokens` is the alpha-wallet database: a curated record of wallets
+    // that actually cleared 2x AND $1k on a trade, not a log of every wallet a
+    // scan happened to return. The bar is applied here as well as in recordScan
+    // so the enrichment calls below are only spent on wallets that will be kept.
+    //
+    // The buyer still SEES every trader upstream returned — this filter has
+    // never touched the response payload, only what we archive.
     const qualifying = traders.filter((t) => meetsQualityBar(t.avgMultipleX, t.realizedPnlUsd));
+    if (qualifying.length === 0) return;
 
     // Wallets enriched recently keep their stored lifetime stats, so repeat
     // scans of overlapping wallet sets cost nothing extra.
@@ -79,18 +83,16 @@ async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
       token.chain === "solana"
         ? qualifying.map((t) => t.address)
         : qualifying.slice(0, EVM_ENRICH_LIMIT).map((t) => t.address);
+    const needsEnrichment = await filterNeedsEnrichment(token.chain, candidates);
 
     let lifetime: LifetimeStats[] = [];
-    if (candidates.length > 0) {
-      const needsEnrichment = await filterNeedsEnrichment(token.chain, candidates);
-      if (needsEnrichment.length > 0) {
-        lifetime =
-          token.chain === "solana"
-            ? await fetchWalletLifetimeBatch(needsEnrichment)
-            : await fetchEvmWalletLifetime(token.chain as EvmChain, needsEnrichment);
-      }
+    if (needsEnrichment.length > 0) {
+      lifetime =
+        token.chain === "solana"
+          ? await fetchWalletLifetimeBatch(needsEnrichment)
+          : await fetchEvmWalletLifetime(token.chain as EvmChain, needsEnrichment);
     }
-    await recordScan(token, traders, lifetime);
+    await recordScan(token, qualifying, lifetime);
   } catch (err) {
     console.error("[persistScan] failed:", err);
   }

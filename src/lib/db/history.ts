@@ -5,26 +5,12 @@ import { wallets } from "./schema";
 import type { Chain, WalletHistory } from "../types";
 
 function emptyHistory(): WalletHistory {
-  return {
-    priorTokenCount: 0,
-    priorTradeCount: 0,
-    lifetimePnlUsd: null,
-    isBot: false,
-    wins: [],
-    winBadges: [],
-  };
+  return { priorTokenCount: 0, lifetimePnlUsd: null, isBot: false, wins: [], winBadges: [] };
 }
 
 /**
- * Looks up prior trades for wallets in the current scan, excluding the token
- * being scanned. Returns {} when no database is configured so callers can
- * ignore it.
- *
- * Two counts, not one. `priorTokenCount` is wins — rows clearing the quality
- * bar — and is what the badge claims. `priorTradeCount` is every trade we hold,
- * wins and losses, which is the only honest denominator for a win rate. Before
- * losing trades were stored the two were identical by construction and the
- * ratio was always 100%.
+ * Looks up prior wins for wallets in the current scan, excluding the token being
+ * scanned. Returns {} when no database is configured so callers can ignore it.
  */
 export async function fetchWalletHistories(
   chain: Chain,
@@ -50,7 +36,6 @@ export async function fetchWalletHistories(
     const rows = await db.execute<{
       address: string;
       priorTokenCount: number;
-      priorTradeCount: number;
       lifetimePnlUsd: number | null;
       isBot: boolean;
       wins: Array<{ symbol: string | null; tokenAddress: string; realizedPnlUsd: number; multipleX: number | null }>;
@@ -63,25 +48,22 @@ export async function fetchWalletHistories(
         from ${wallets}
         where ${and(eq(wallets.chain, chain), inArray(wallets.address, addresses))}
       ),
-      tallied as (
-        select s.wallet_id,
-               count(*) filter (where wt.qualified)::int as prior_token_count,
-               count(*)::int as prior_trade_count
+      qualifying as (
+        select s.wallet_id, count(*)::int as prior_token_count
         from scanned s
         join wallet_tokens wt on wt.wallet_id = s.wallet_id
         join tokens t on t.id = wt.token_id
-        where ${excludeCurrent}
+        where wt.realized_pnl_usd > 0 and ${excludeCurrent}
         group by s.wallet_id
       )
       select
         s.address,
         coalesce(q.prior_token_count, 0) as "priorTokenCount",
-        coalesce(q.prior_trade_count, 0) as "priorTradeCount",
         s.lifetime_pnl_usd as "lifetimePnlUsd",
         s.is_bot as "isBot",
         coalesce(w.wins, '[]'::json) as wins
       from scanned s
-      left join tallied q on q.wallet_id = s.wallet_id
+      left join qualifying q on q.wallet_id = s.wallet_id
       left join lateral (
         select json_agg(
                  json_build_object(
@@ -96,10 +78,7 @@ export async function fetchWalletHistories(
           from wallet_tokens wt
           join tokens t on t.id = wt.token_id
           where wt.wallet_id = s.wallet_id
-            -- Only wins get a badge. A positive PNL used to be enough, because
-            -- nothing below the bar was ever stored; now a $500 / 1.4x trade is
-            -- in the table and would otherwise be badged as a win.
-            and wt.qualified
+            and wt.realized_pnl_usd > 0
             and ${excludeCurrent}
           order by wt.realized_pnl_usd desc
           limit 5
@@ -113,7 +92,6 @@ export async function fetchWalletHistories(
       entry.lifetimePnlUsd = r.lifetimePnlUsd ?? entry.lifetimePnlUsd;
       entry.isBot = r.isBot;
       entry.priorTokenCount = r.priorTokenCount;
-      entry.priorTradeCount = r.priorTradeCount;
       entry.wins = (r.wins ?? []).map((w) => ({
         symbol: w.symbol ?? w.tokenAddress.slice(0, 4),
         realizedPnlUsd: w.realizedPnlUsd,

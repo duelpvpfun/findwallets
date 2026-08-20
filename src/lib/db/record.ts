@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import { tokens, walletTokens, wallets } from "./schema";
-import { qualityVerdict } from "../quality";
+import { meetsQualityBar } from "../quality";
 import type { TokenMeta, WalletTrader } from "../types";
 
 const BOT_TAGS = ["arbitrage-bot", "sniper-bot", "bot", "arbitrage"];
@@ -26,8 +26,7 @@ export interface LifetimeStats {
 }
 
 /**
- * Persist one scan, every trader row, win or loss. Safe to call
- * fire-and-forget — never throws into the request path.
+ * Persist one scan. Safe to call fire-and-forget — never throws into the request path.
  *
  * Overwrite rule: for `all_time` sources (Solana) a rescan is always the newer truth,
  * so we overwrite even when PNL dropped (the wallet round-tripped its unrealized gains).
@@ -48,19 +47,13 @@ export async function recordScan(
   const seenAddress = new Set<string>();
   const uniqueTraders = traders.filter((t) => {
     if (seenAddress.has(t.address)) return false;
+    // The bar is re-checked here rather than trusted from the caller, so no
+    // future write path can slip a sub-2x wallet into the table.
+    if (!meetsQualityBar(t.avgMultipleX, t.realizedPnlUsd)) return false;
     seenAddress.add(t.address);
     return true;
   });
   if (uniqueTraders.length === 0) return;
-
-  // EVERY trader in the scan is stored, losers included, with the quality bar
-  // recorded as a column. Filtering here is what made win rate uncomputable:
-  // the losses were never written, so a wallet with five stored rows had five
-  // wins and an unknown number of losses. This is not recoverable after the
-  // fact — backfilling would mean re-paying for every scan already run.
-  const verdicts = new Map(
-    uniqueTraders.map((t) => [t.address, qualityVerdict(t.avgMultipleX, t.realizedPnlUsd)])
-  );
 
   const isAllTime = token.rankingWindow === "all_time";
 
@@ -157,7 +150,6 @@ export async function recordScan(
     .map((t) => {
       const walletId = idByAddress.get(t.address);
       if (!walletId) return null;
-      const verdict = verdicts.get(t.address) ?? { qualified: false, reason: "no_multiple" as const };
       return {
         walletId,
         tokenId: tokenRow.id,
@@ -176,8 +168,6 @@ export async function recordScan(
         unrealizedPnlUsd: t.unrealizedPnlUsd,
         lastTradeMs: t.lastTradeMs,
         rankingWindow: token.rankingWindow,
-        qualified: verdict.qualified,
-        disqualifiedReason: verdict.reason,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -215,12 +205,6 @@ export async function recordScan(
         remainingValueUsd: sql`excluded.remaining_value_usd`,
         unrealizedPnlUsd: sql`excluded.unrealized_pnl_usd`,
         rankingWindow: sql`excluded.ranking_window`,
-        // Tied to the same keep-newer rule as the figures it was derived from.
-        // Otherwise a windowed rescan whose win fell out of the 90-day window
-        // would leave the row's PNL at the old (higher) figure while flipping
-        // `qualified` to false — a row describing a win, labelled a loss.
-        qualified: sql`case when ${keepNewer} then excluded.qualified else ${walletTokens.qualified} end`,
-        disqualifiedReason: sql`case when ${keepNewer} then excluded.disqualified_reason else ${walletTokens.disqualifiedReason} end`,
         timesObserved: sql`${walletTokens.timesObserved} + 1`,
         lastObservedAt: new Date(),
       },

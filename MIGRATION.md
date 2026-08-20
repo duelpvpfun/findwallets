@@ -70,34 +70,37 @@ psql "$POSTGRES_URL_NON_POOLING" -f drizzle/0016_token_supply.sql
 as far as `0001`, so it would try to recreate the whole schema. Hand-write
 migrations and apply them directly, which is what the existing files do.
 
-### The profiles-and-polish branch added two more
+### The profiles-and-polish branch added three
 
-Both are **already applied to the live Supabase database** (applied and verified
-2026-08-20). Every statement is `IF NOT EXISTS` or an idempotent `UPDATE`, so
-re-running them is safe, and nothing is dropped or renamed — code on `main` does
-not reference any of it, so `main` keeps working whether or not the branch merges.
+All three are **applied to the live Supabase database** (2026-08-20). `main`
+references none of it, so `main` keeps working whether or not the branch merges.
 
 | File | Change | Why |
 |---|---|---|
-| `drizzle/0017_qualified_flag.sql` | `wallet_tokens.qualified` + `disqualified_reason` + `(wallet_id, qualified)` index; same three on `wallet_positions`; backfill of existing rows to `qualified = true` | The quality bar was a **write gate**, so the table held only trades that made 2x AND $1k. Win rate was uncomputable and every wallet looked like a genius. Not recoverable later — backfilling would mean re-paying for every scan already run. |
 | `drizzle/0018_user_accounts.sql` | `users`, `auth_nonces`, `scan_results`; `scan_credits.user_id` + two indexes; `payment_intents.quantity` and `.user_id` | Entitlement lived only in a localStorage claim token, so clearing a browser lost a paid credit permanently. |
+| `drizzle/0017_qualified_flag.sql` | Added `qualified` + `disqualified_reason` to `wallet_tokens` and `wallet_positions` | **Superseded — do not apply to a fresh database.** Turned the quality bar from a write gate into a column so a per-wallet win rate could be computed. |
+| `drizzle/0019_revert_qualified_flag.sql` | Deletes sub-bar rows, then drops both columns and their indexes | Reverts `0017` at the owner's direction. `wallet_tokens` is a curated alpha-wallet database, not a log of every wallet a scan returned. |
 
-The backfill in `0017` is the part that matters: `qualified` defaults to `false`,
-which is the *wrong* answer for rows that predate the migration — every one of
-them passed the old gate. The `UPDATE` sets them true. Verified against
-production: 3,319 `wallet_tokens` and 9,115 `wallet_positions` rows flipped, and
-below-bar rows have since been stored with `disqualified_reason = 'below_multiple'`
-that the old gate would have discarded.
-
-Apply them with:
+`0017` and `0019` cancel out, so **a fresh database should skip both** and apply
+only `0018`:
 
 ```bash
-npm run db:migrate -- 0017_qualified_flag 0018_user_accounts
+npm run db:migrate -- 0018_user_accounts
 ```
+
+They are kept in the tree rather than deleted because `0017` ran against
+production and `0019` is what undid it; a fresh database that applied `0019`
+without `0017` would fail on the `DELETE ... WHERE qualified = false`.
 
 `scripts/apply-migration.mjs` now takes named files in order. It previously
 applied only the newest `.sql` and silently skipped everything else, which is
 wrong on any branch adding more than one.
+
+### The 2x / $1,000 rule is a write gate
+
+`meetsQualityBar` in `src/lib/quality.ts` decides what earns a row in
+`wallet_tokens`. It has never applied to the scan response — buyers see every
+trader the upstream provider returned. Do not conflate the two.
 
 `stats_snapshot` starts empty. That is fine: `/api/admin/stats` computes the
 figures inline whenever the snapshot is missing or older than ten minutes, and

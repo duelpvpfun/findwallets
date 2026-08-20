@@ -67,16 +67,9 @@ export interface TokenMeta {
   rankingWindow: string;
 }
 
-/** A wallet's previously recorded trades on other tokens, from the local database. */
+/** A wallet's previously recorded wins on other tokens, from the local database. */
 export interface WalletHistory {
-  /** Prior tokens where this wallet cleared the quality bar — i.e. wins. */
   priorTokenCount: number;
-  /**
-   * Prior tokens we hold ANY trade for, wins and losses. The denominator for a
-   * win rate, and only ever counts tokens somebody paid to scan here — so it is
-   * a floor on the wallet's real trade count, never the whole picture.
-   */
-  priorTradeCount: number;
   lifetimePnlUsd: number | null;
   isBot: boolean;
   wins: Array<{ symbol: string; realizedPnlUsd: number; multipleX: number | null }>;

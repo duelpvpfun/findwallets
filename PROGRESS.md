@@ -156,24 +156,26 @@ See `MIGRATION.md` for the full env var list with consequences.
 Branch `feat/profiles-and-polish`. Four workstreams, one commit each. Gate is
 `npm run check`: **TSC=0 LINT=0**, same two known `useVirtualizer` warnings.
 
-## 1. Losing trades are stored — shipped
+## 1. Quality bar — reverted, no net change
 
-The quality bar was a **write gate**: `wallet_tokens` only ever received trades
-that made 2x AND $1k. A wallet with five rows had five wins and an *unknown*
-number of losses, so win rate was uncomputable, the "proven" filter measured
-nothing, and every wallet in the database looked like a genius. Not recoverable
-later — backfilling would mean re-paying for every scan already run.
+I initially turned the 2x/$1,000 bar from a **write gate** into a column, so that
+near-misses were stored (flagged) and a real per-wallet win rate could be
+computed. The owner corrected the intent: **`wallet_tokens` is a curated
+alpha-wallet database**, not a log of every wallet a scan returned. A wallet
+earns a row by clearing 2x AND $1,000, full stop.
 
-The bar is now a column (`qualified` + `disqualified_reason`), enforced on
-enrichment calls and win badges only. Verified against production after applying
-`0017`: 3,319 existing rows backfilled to `qualified = true`, and 17 below-bar
-rows have since been written with `disqualified_reason = 'below_multiple'` that
-would previously have been silently dropped. Two wallets already show a genuine
-mixed record (1/2) — arithmetically impossible before this change.
+Reverted in full — `quality.ts`, `record.ts`, `history.ts`, `showcase.ts`,
+`enrich-wallets.mjs` are byte-identical to `main`, the `N/M hit` chip is gone,
+and `drizzle/0019_revert_qualified_flag.sql` dropped the columns and deleted the
+17 sub-bar rows that were written while `0017` was live.
 
-`fetchWalletHistories` returns wins **and** total recorded trades, and the table
-shows an `N/M hit` chip from three recorded trades up. The tooltip says the
-denominator only covers tokens scanned on this site, because it does.
+Worth recording, because it was the source of the confusion: **the bar never
+applied to what a buyer sees.** Neither `solanaTracker.ts` nor `birdeye.ts`
+filters on it, and the scan route puts the upstream `traders` array straight into
+the response. It only ever gated (a) rows written to `wallet_tokens` and (b)
+which wallets got a paid enrichment call. Both are unchanged. This distinction is
+now written down in `AGENTS.md`, which is the actual durable outcome of the
+detour.
 
 ## 2. Onboarding carousel — shipped
 
@@ -235,12 +237,18 @@ scroll and spend the render budget the hardening pass bought back.
 2. **`scripts/apply-migration.mjs` only ever applied the newest `.sql`** —
    `.sort().pop()`. Any branch adding two migrations would have silently skipped
    the first. Now takes named files in order.
-3. **The storage estimate in the brief was ~10x optimistic.** Measured: ~930
+3. **`wallet_tokens` already contains 96 rows that fail the 2x/$1k rule** — 2.9%
+   of the table, all first stored 2026-08-17/18, i.e. predating this branch. 94
+   cleared 2x but made $22–$999; 2 have huge PNL ($124k, $127k) but a *null*
+   multiple, which is what happens when a later backfill nulls a dust-basis
+   multiple on a row that was already stored. Nothing here wrote them and nothing
+   here deletes them — flagged for the owner, see "Still open".
+4. **The storage estimate in the brief was ~10x optimistic.** Measured: ~930
    bytes of JSON per trader, so a Top 500 receipt is ~450KB, not ~40KB. TOAST
    compresses it poorly because the bulk is base58 and floats. Still only ~100MB
    resident at a thousand scans a month, so the conclusion holds — but the
    figure in the docs is now the measured one.
-4. **Multi-credit purchases need an account.** `/recover` maps a signature back
+5. **Multi-credit purchases need an account.** `/recover` maps a signature back
    to one credit, and a browser holds one claim token, so extra credits bought
    anonymously would be unreachable the moment the tab closed. Quantity > 1 is
    therefore gated on a session, server-side.
@@ -266,6 +274,13 @@ scroll and spend the render budget the hardening pass bought back.
    concurrent queries against a pool of three is right on the edge; it has not
    hung in practice, but it is one added query away from the failure that made
    `/admin` unreachable. Out of scope here, worth a one-line fix.
-5. **Migrations `0017` and `0018` are applied to the live database.** They are
-   additive and `main` does not reference any of it, so `main` is unaffected if
-   this branch is not merged.
+5. **Migrations `0018` and `0019` are applied to the live database** (`0017` was
+   applied and then undone by `0019`). `main` references none of it, so `main` is
+   unaffected if this branch is not merged. A **fresh** database should apply
+   `0018` only — see `MIGRATION.md`.
+6. **96 pre-existing rows in `wallet_tokens` fail the 2x/$1k rule.** Not touched:
+   deleting production rows was not asked for. If the goal is a table where the
+   invariant holds absolutely, it is one statement:
+   `delete from wallet_tokens where multiple_x is null or multiple_x < 2 or realized_pnl_usd < 1000;`
+   Worth a look first — the two null-multiple rows are wallets with >$124k
+   realized profit, which may be worth keeping on PNL alone.
