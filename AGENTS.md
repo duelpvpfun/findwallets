@@ -33,6 +33,8 @@ npm run db:push          # apply Drizzle schema changes
 npm run db:studio        # browse the database
 npm run enrich           # wallet enrichment worker (manual, long-running)
 npm run enrich:stats     # enrichment progress
+# paid-credit lifecycle (needs a running dev server; creates its own test credit):
+#   env -u DATABASE_URL node --env-file=.env.local scripts/credit-lifecycle.mjs
 ```
 
 Typecheck and lint are slow on small machines. Run them at the end of a work session, not after
@@ -45,6 +47,10 @@ pooler** string (port 6543, `pooler.supabase.com`) — the app runs on serverles
 exhaust connections. `POSTGRES_URL_NON_POOLING` is the direct connection and is only for migrations.
 Never swap them. `src/lib/db/index.ts` sets `prepare: false` because the pooler doesn't support
 prepared statements.
+
+**If `next dev` returns 404 for every route, delete `.next`.** A production build left in the same
+directory does this — the server starts, reports "Ready", compiles the route on request, and then
+404s the whole app. `rm -rf .next` and restart.
 
 **Never fan out concurrent database queries.** `postgres.js` pipelines queries onto its pooled
 connections, and when a fan-out outruns the pool, Supabase's transaction pooler stops answering
