@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 const MAX_DETAILS_PER_MINUTE = 40;
 
 export async function GET(request: NextRequest) {
-  const limited = rateLimit(`detail:${clientIp(request)}`, MAX_DETAILS_PER_MINUTE, 60_000);
+  const limited = await rateLimit(`detail:${clientIp(request)}`, MAX_DETAILS_PER_MINUTE, 60_000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many requests. Slow down." },

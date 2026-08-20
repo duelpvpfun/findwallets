@@ -109,7 +109,7 @@ async function settleCredit(access: AccessResult) {
 }
 
 export async function GET(request: NextRequest) {
-  const limited = rateLimit(`scan:${clientIp(request)}`, MAX_SCANS_PER_MINUTE, 60_000);
+  const limited = await rateLimit(`scan:${clientIp(request)}`, MAX_SCANS_PER_MINUTE, 60_000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many scans from this connection. Wait a moment and try again." },

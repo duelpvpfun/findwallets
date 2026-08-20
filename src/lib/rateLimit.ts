@@ -1,11 +1,17 @@
 import "server-only";
 import type { NextRequest } from "next/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
 /**
- * Fixed-window limiter kept in module memory. Serverless instances are reused
- * heavily enough that this blunts scripted abuse, but it is per-instance and is
- * therefore a cost guard, not an authorization boundary — every expensive route
- * is independently gated by a credit or a signed session.
+ * Distributed fixed-window limiter. The previous in-memory implementation was
+ * per-instance, so the effective limit on serverless was
+ * `configured_limit x instance_count`. Redis makes it one shared budget across
+ * every instance.
+ *
+ * The in-memory buckets below remain as the fallback when Upstash is not
+ * configured, so local development and unconfigured deploys keep some
+ * protection.
  */
 interface Bucket {
   count: number;
@@ -36,7 +42,7 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
-export function rateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
+function memoryRateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
   const now = Date.now();
   if (buckets.size > MAX_TRACKED_KEYS / 2) prune(now);
 
@@ -55,6 +61,55 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
     };
   }
   return { ok: true, remaining: limit - existing.count, retryAfterSeconds: 0 };
+}
+
+let redis: Redis | null | undefined;
+
+function getRedis(): Redis | null {
+  if (redis !== undefined) return redis;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  redis = url && token ? new Redis({ url, token }) : null;
+  return redis;
+}
+
+// One limiter per (limit, window) pair; the app only uses a handful.
+const limiters = new Map<string, Ratelimit>();
+
+function getLimiter(client: Redis, limit: number, windowMs: number): Ratelimit {
+  const cacheKey = `${limit}:${windowMs}`;
+  let limiter = limiters.get(cacheKey);
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis: client,
+      limiter: Ratelimit.fixedWindow(limit, `${windowMs} ms`),
+      prefix: "aw_rl",
+    });
+    limiters.set(cacheKey, limiter);
+  }
+  return limiter;
+}
+
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  const client = getRedis();
+  if (!client) return memoryRateLimit(key, limit, windowMs);
+
+  try {
+    const res = await getLimiter(client, limit, windowMs).limit(key);
+    return {
+      ok: res.success,
+      remaining: res.remaining,
+      retryAfterSeconds: res.success ? 0 : Math.max(1, Math.ceil((res.reset - Date.now()) / 1000)),
+    };
+  } catch (err) {
+    // Redis being down must not take the whole site with it.
+    console.error("[rateLimit] Upstash unavailable, falling back to memory:", err);
+    return memoryRateLimit(key, limit, windowMs);
+  }
 }
 
 /**
