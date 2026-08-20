@@ -148,3 +148,124 @@ See `MIGRATION.md` for the full env var list with consequences.
 - `perf2.mjs` in the repo root is untracked and was deliberately left alone.
 - **Careless `>>` into `.env.local` corrupted two lines in an earlier session**
   (the file has no trailing newline). Edit it with a real editor.
+
+---
+
+# Profiles & polish pass — 2026-08-20
+
+Branch `feat/profiles-and-polish`. Four workstreams, one commit each. Gate is
+`npm run check`: **TSC=0 LINT=0**, same two known `useVirtualizer` warnings.
+
+## 1. Losing trades are stored — shipped
+
+The quality bar was a **write gate**: `wallet_tokens` only ever received trades
+that made 2x AND $1k. A wallet with five rows had five wins and an *unknown*
+number of losses, so win rate was uncomputable, the "proven" filter measured
+nothing, and every wallet in the database looked like a genius. Not recoverable
+later — backfilling would mean re-paying for every scan already run.
+
+The bar is now a column (`qualified` + `disqualified_reason`), enforced on
+enrichment calls and win badges only. Verified against production after applying
+`0017`: 3,319 existing rows backfilled to `qualified = true`, and 17 below-bar
+rows have since been written with `disqualified_reason = 'below_multiple'` that
+would previously have been silently dropped. Two wallets already show a genuine
+mixed record (1/2) — arithmetically impossible before this change.
+
+`fetchWalletHistories` returns wins **and** total recorded trades, and the table
+shows an `N/M hit` chip from three recorded trades up. The tooltip says the
+denominator only covers tokens scanned on this site, because it does.
+
+## 2. Onboarding carousel — shipped
+
+Five panels, real data throughout, replacing `ProductPreview.tsx`.
+
+**The brief was wrong about one thing and it changed the design.** It said the
+final panel should stream a live scan "through the existing `/api/preview` route
+and the NDJSON pipeline in `src/lib/scanStream.ts`". `/api/preview` is not a
+streaming endpoint — it is a plain-JSON replay out of `fetchCachedScan`, with no
+NDJSON path and no involvement from `scanStream.ts` at all. Wiring the *paid*
+streaming route into an unpaid walkthrough would mean either spending upstream
+credits per visitor or faking a stream. So the scan panel reveals the real cached
+rows in eight staged "pages" and the caption states outright that the figures are
+real and only the pacing is a replay.
+
+The old dialog carried four hand-written wallet addresses with invented PNL,
+plausible enough to be taken for real. That is now gone; when the preview is
+unavailable the panels render their chrome with no figures rather than
+placeholders.
+
+## 3. Wallet accounts — shipped
+
+Sign-In With Solana, credit balances, 7-day scan receipts, `/profile`. This is
+the money-path work; `AGENTS.md` has the rules that came out of it.
+
+Verified live with `npm run test:accounts` — **30/30 checks pass**, including the
+four that can only be proven against a real database:
+
+| Check | Result |
+|---|---|
+| A purchase made before the wallet ever signed in attaches on sign-in | PASS |
+| A replayed `verify` with a used nonce | 401 |
+| A signature from a different wallet over the right nonce | 401 |
+| A tampered session cookie | not a session |
+| Two concurrent scans against ONE account credit | exactly one succeeded |
+| Re-download reads storage, no upstream call | PASS, `fromStoredResult: true` |
+| Purge deletes an expired result, keeps a pinned one | PASS |
+| An unattached claim token still redeems for a signed-in user | PASS, `creditSource: claim_token` |
+
+And `npm run test:credits` — the pre-existing anonymous flow — still **17/17**.
+
+## 4. UI pass — shipped
+
+`ScanProgress` replaces `TableSkeleton`; one `RadarSweep` used in exactly two
+places; rank accents and PNL weight for the top three; `.tnum` on every live
+figure; a global `:focus-visible` ring; contrast lifted off `neutral-600`.
+
+**Nothing inside `TradersTable` is animated**, deliberately — the virtualized
+lists remount rows on scroll, so a per-row entrance would flash rows as you
+scroll and spend the render budget the hardening pass bought back.
+
+## Surprises worth writing down
+
+1. **A `Date` interpolated into a raw `sql` fragment silently breaks.** It skips
+   drizzle's type mapper, so `postgres.js` gets a bare `Date` and the query dies
+   at bind time. Every sign-in returned a 500 until this was found — by the
+   lifecycle script, which is the entire reason it exists. Three call sites.
+   Now a rule in `AGENTS.md`.
+2. **`scripts/apply-migration.mjs` only ever applied the newest `.sql`** —
+   `.sort().pop()`. Any branch adding two migrations would have silently skipped
+   the first. Now takes named files in order.
+3. **The storage estimate in the brief was ~10x optimistic.** Measured: ~930
+   bytes of JSON per trader, so a Top 500 receipt is ~450KB, not ~40KB. TOAST
+   compresses it poorly because the bulk is base58 and floats. Still only ~100MB
+   resident at a thousand scans a month, so the conclusion holds — but the
+   figure in the docs is now the measured one.
+4. **Multi-credit purchases need an account.** `/recover` maps a signature back
+   to one credit, and a browser holds one claim token, so extra credits bought
+   anonymously would be unreachable the moment the tab closed. Quantity > 1 is
+   therefore gated on a session, server-side.
+
+## Still open
+
+1. **Render performance is reasoned about, not profiled.** No browser automation
+   is available in this container (same limitation as the hardening pass). What
+   *is* established: no animation was added inside `TradersTable`; the new row
+   styling derives from `rank` and `selected`, both already props, so no new
+   object or closure is passed per row; and `virtualizer.measureElement` is
+   instance-bound in `@tanstack/virtual-core` (assigned once, not per render),
+   so it does not defeat the row memo. **Still needs a human with a profiler:**
+   Top 500 on a 4x-throttled CPU, one checkbox toggle re-rendering one row, and
+   no long task over 200ms.
+2. **`AUTH_SESSION_SECRET` is not set in Vercel.** Not a blocker — it derives a
+   key from `OWNER_ACCESS_KEY` — but until it is set, rotating the owner key
+   signs every user out. See `MIGRATION.md`.
+3. **The new cron is production-only**, like the others. `/profile` will list
+   expired results on a preview deployment until the first production run.
+4. **`/api/showcase` fans out three database calls with `Promise.all`** — the
+   exact pattern `AGENTS.md` forbids, and it predates this branch. Three
+   concurrent queries against a pool of three is right on the edge; it has not
+   hung in practice, but it is one added query away from the failure that made
+   `/admin` unreachable. Out of scope here, worth a one-line fix.
+5. **Migrations `0017` and `0018` are applied to the live database.** They are
+   additive and `main` does not reference any of it, so `main` is unaffected if
+   this branch is not merged.
