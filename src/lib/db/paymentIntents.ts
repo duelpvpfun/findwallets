@@ -17,6 +17,10 @@ export interface CreateIntentInput {
   payer: string;
   amount: number;
   mint: string | null;
+  /** Credits this payment buys. `amount` is already multiplied by it. */
+  quantity?: number;
+  /** Account to attach the resulting credits to, if the buyer is signed in. */
+  userId?: number | null;
 }
 
 export interface IntentRow {
@@ -27,6 +31,8 @@ export interface IntentRow {
   payer: string;
   amount: number;
   mint: string | null;
+  quantity: number;
+  userId: number | null;
   status: string;
   signature: string | null;
   claimToken: string | null;
@@ -49,6 +55,8 @@ export async function createPaymentIntent(input: CreateIntentInput): Promise<Int
       payer: input.payer,
       amount: input.amount,
       mint: input.mint,
+      quantity: input.quantity ?? 1,
+      userId: input.userId ?? null,
       expiresAt,
     })
     .returning();

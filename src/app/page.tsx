@@ -10,6 +10,8 @@ import OnboardingCarousel, {
   shouldShowOnboarding,
   markOnboardingSeen,
 } from "@/components/OnboardingCarousel";
+import WalletConnectButton from "@/components/WalletConnectButton";
+import { useAccount } from "@/components/AccountProvider";
 import { detectAddressFamily } from "@/lib/chains";
 import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
 import { consumeScanStream } from "@/lib/scanStream";
@@ -40,6 +42,7 @@ const PLACEHOLDERS: Record<Chain, string> = {
 };
 
 export default function Home() {
+  const { user, balance, refresh: refreshAccount } = useAccount();
   const [chain, setChain] = useState<Chain>("solana");
   const [address, setAddress] = useState("");
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
@@ -115,6 +118,39 @@ export default function Home() {
     };
   }, []);
 
+  /**
+   * Folds a browser-held claim token into the signed-in account.
+   *
+   * localStorage is cleared only AFTER the server confirms, so a failed request
+   * can never leave a buyer with neither a local token nor an account credit.
+   * `safeToForget` also covers a token that turns out to be spent or unknown —
+   * in both cases the browser copy is worthless and keeping it just strands the
+   * user at a paywall holding a purchase they can't name.
+   */
+  useEffect(() => {
+    if (!user || !claim) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/absorb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claimToken: claim.token }),
+        });
+        const data = await res.json().catch(() => null);
+        if (cancelled || !res.ok || !data?.safeToForget) return;
+        localStorage.removeItem(CLAIM_STORAGE_KEY);
+        setClaim(null);
+        await refreshAccount();
+      } catch {
+        // Keep the local token for the next visit rather than risk losing it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, claim, refreshAccount]);
+
   const runSearch = useCallback(
     async (ca: string, searchChain: Chain, searchLimit: number, claimToken?: string | null) => {
       if (!ca.trim()) return;
@@ -156,11 +192,14 @@ export default function Home() {
           setResult(null);
           return;
         }
-        // The credit is spent once the scan returns wallets.
-        if (claimToken && data.traders.length > 0) {
+        // Only the purchase the SERVER says it spent. A signed-in buyer's
+        // account balance is tried first, so a claim token still in the browser
+        // may be completely untouched — forgetting it here would destroy it.
+        if (data.creditSource === "claim_token" && claimToken) {
           localStorage.removeItem(CLAIM_STORAGE_KEY);
           setClaim(null);
         }
+        if (data.creditSource === "account") void refreshAccount();
         // A valid address on the wrong chain returns nothing; the credit is
         // untouched, so tell the user rather than leaving them guessing.
         if (data.note) setError(data.note);
@@ -174,7 +213,7 @@ export default function Home() {
         setProgress(null);
       }
     },
-    [ownerKey]
+    [ownerKey, refreshAccount]
   );
 
   // A buyer who reloads, or whose tab the browser discarded, gets their scan
@@ -232,15 +271,25 @@ export default function Home() {
     }
   }, []);
 
-  /** Owners scan free; everyone else needs an unspent credit covering the size. */
+  /** True when the signed-in account already holds a credit for this size. */
+  const accountCovers = (size: number) => (balance?.bestTier ?? 0) >= size;
+
+  /**
+   * Owners scan free; everyone else needs an unspent credit covering the size,
+   * from their account or from a claim token. Entitlement is still decided
+   * server-side — this only decides whether to show the paywall first.
+   */
   function startSearch(ca: string, searchChain: Chain) {
     if (!ca.trim()) return;
     if (!PAYMENTS_ENABLED || ownerKey) {
       void runSearch(ca, searchChain, limit);
       return;
     }
-    if (claim && claim.tier >= limit) {
-      void runSearch(ca, searchChain, limit, claim.token);
+    // The account balance is passed nothing: resolveAccess reserves from it.
+    // The claim token is still sent when one exists, as the fallback the server
+    // uses if the balance has nothing big enough.
+    if (accountCovers(limit) || (claim && claim.tier >= limit)) {
+      void runSearch(ca, searchChain, limit, claim?.token ?? null);
       return;
     }
     setPaywallOpen(true);
@@ -250,6 +299,8 @@ export default function Home() {
     localStorage.setItem(CLAIM_STORAGE_KEY, JSON.stringify({ token: claimToken, tier }));
     setClaim({ token: claimToken, tier });
     setPaywallOpen(false);
+    // A multi-scan purchase puts the spares straight onto the account.
+    void refreshAccount();
     const paidLimit = (LIMIT_OPTIONS.find((o) => o === tier) ?? limit) as (typeof LIMIT_OPTIONS)[number];
     setLimit(paidLimit);
     void runSearch(address, chain, paidLimit, claimToken);
@@ -315,6 +366,7 @@ export default function Home() {
             </div>
           </button>
           <div className="flex items-center gap-2">
+            <WalletConnectButton />
             {/* Persistent way back into the walkthrough — the modal only ever
                 greets someone once, so this is how anyone re-opens it. */}
             <button
@@ -429,7 +481,10 @@ export default function Home() {
                   <Spinner />
                   Scanning…
                 </>
-              ) : PAYMENTS_ENABLED && !ownerKey && !(claim && claim.tier >= limit) ? (
+              ) : PAYMENTS_ENABLED &&
+                !ownerKey &&
+                !accountCovers(limit) &&
+                !(claim && claim.tier >= limit) ? (
                 `Unlock Top ${limit}`
               ) : (
                 "Find Wallets"
@@ -458,10 +513,14 @@ export default function Home() {
           </div>
         )}
 
-        {(ownerKey || claim) && (
-          <div className="mt-3 flex items-center gap-2 text-xs">
+        {(ownerKey || claim || (balance?.total ?? 0) > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-emerald-900/60 bg-emerald-950/30 px-3 py-1 font-medium text-emerald-300">
-              {ownerKey ? "Owner access · unlimited free scans" : `Credit ready · Top ${claim!.tier}`}
+              {ownerKey
+                ? "Owner access · unlimited free scans"
+                : balance && balance.total > 0
+                ? `${balance.total} scan${balance.total === 1 ? "" : "s"} on your account · up to Top ${balance.bestTier}`
+                : `Credit ready · Top ${claim!.tier}`}
             </span>
             {ownerKey && (
               <button
@@ -623,6 +682,7 @@ export default function Home() {
       {paywallOpen && (
         <PaywallDialog
           initialLimit={limit}
+          signedIn={Boolean(user)}
           onClose={() => setPaywallOpen(false)}
           onPaid={handlePaid}
         />

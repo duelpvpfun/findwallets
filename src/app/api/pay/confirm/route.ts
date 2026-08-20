@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getIntentForNonce, consumePaymentIntent, isIntentExpired } from "@/lib/db/paymentIntents";
-import { createCredit, logWebhook } from "@/lib/db/credits";
+import { createCredits, logWebhook } from "@/lib/db/credits";
 import { verifyPaymentTransaction } from "@/lib/solanaPay";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 
@@ -77,18 +77,33 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const claimToken = await createCredit({
+  // `intent.quantity` credits, all keyed off this one verified signature. The
+  // unique index on payment_id still makes a replayed confirm a no-op: the same
+  // ids are computed, all conflict, and the existing tokens come back.
+  //
+  // The account comes from the INTENT, not the current cookie: the credits must
+  // land on whoever quoted the purchase even if the session changed since.
+  const claimTokens = await createCredits({
     paymentId: signature,
     method: intent.method,
     tier: intent.tier,
+    quantity: intent.quantity,
     nonceHash: intent.nonceHash,
     payerWallet: intent.payer,
+    userId: intent.userId,
   });
-  if (!claimToken) {
+  if (!claimTokens || claimTokens.length === 0) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // The first token is the one handed to the browser to use immediately; any
+  // others are already sitting on the account balance.
+  const claimToken = claimTokens[0];
   await consumePaymentIntent(intentId, signature, claimToken);
 
-  return NextResponse.json({ claimToken, tier: intent.tier });
+  return NextResponse.json({
+    claimToken,
+    tier: intent.tier,
+    quantity: claimTokens.length,
+  });
 }

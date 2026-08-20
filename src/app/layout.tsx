@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import AccountProvider from "@/components/AccountProvider";
 import VisitBeacon from "@/components/VisitBeacon";
 import { SITE_URL } from "@/lib/siteUrl";
 
@@ -45,7 +46,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-neutral-950">
-        {children}
+        {/* Wallet session, shared by the header, the paywall and /profile. One
+            /api/auth/me call per page load rather than one per component. */}
+        <AccountProvider>{children}</AccountProvider>
         <VisitBeacon />
       </body>
     </html>

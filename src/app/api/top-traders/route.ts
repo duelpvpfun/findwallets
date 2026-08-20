@@ -21,7 +21,13 @@ import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
 import { fetchWalletHistories } from "@/lib/db/history";
 import { filterNeedsEnrichment } from "@/lib/db/enriched";
-import { confirmCreditDelivered, releaseCredit } from "@/lib/db/credits";
+import {
+  confirmCreditDelivered,
+  findCreditIdByClaimToken,
+  releaseCredit,
+} from "@/lib/db/credits";
+import { saveScanResult } from "@/lib/db/scanResults";
+import { getSessionUser } from "@/lib/auth/session";
 import { resolveAccess, type AccessResult } from "@/lib/access";
 import {
   addressMismatchMessage,
@@ -115,6 +121,31 @@ async function settleCredit(access: AccessResult) {
   }
 }
 
+/**
+ * Files the delivered payload as a 7-day receipt, so a buyer whose export fails
+ * or whose browser dies can get it back without paying for a second scan.
+ *
+ * Best-effort and off the critical path, like every other persistence here: the
+ * buyer already has their wallets by the time this runs, and a failed receipt
+ * must never turn a delivered scan into an error. Unfiltered on purpose — see
+ * `src/lib/db/scanResults.ts`.
+ */
+async function archiveResult(access: AccessResult, payload: ScanResult) {
+  if (!isDbConfigured()) return;
+  // Nothing paid, nothing to attach it to, nothing to give back later.
+  if (!access.claimToken) return;
+  try {
+    const creditId = await findCreditIdByClaimToken(access.claimToken);
+    await saveScanResult({
+      userId: access.userId ?? null,
+      creditId,
+      result: payload,
+    });
+  } catch (err) {
+    console.error("[archiveResult] failed to store the scan payload:", err);
+  }
+}
+
 export async function GET(request: NextRequest) {
   const limited = await rateLimit(`scan:${clientIp(request)}`, MAX_SCANS_PER_MINUTE, 60_000);
   if (!limited.ok) {
@@ -150,15 +181,22 @@ export async function GET(request: NextRequest) {
 
   const requestedLimit = ALLOWED_LIMITS.includes(limitParam) ? limitParam : 100;
 
+  // Signature-checked only — no database read — so an anonymous request pays
+  // nothing for the existence of accounts.
+  const session = await getSessionUser();
+
   // Entitlement is resolved server-side; the client can ask for 500 but only
-  // receives what its credit (or owner key) allows. The claim token travels in a
-  // header so it stays out of access logs, proxies and Referer headers.
-  const access = await resolveAccess(
-    request.headers.get("x-owner-key"),
-    request.headers.get("x-claim-token"),
+  // receives what its credit (or owner key, or account balance) allows. The
+  // claim token travels in a header so it stays out of access logs, proxies and
+  // Referer headers.
+  const access = await resolveAccess({
+    ownerKey: request.headers.get("x-owner-key"),
+    claimToken: request.headers.get("x-claim-token"),
+    userId: session?.id ?? null,
     chain,
-    address
-  );
+    tokenAddress: address,
+    requestedLimit,
+  });
   if (!access.allowed) {
     return NextResponse.json(
       {
@@ -169,7 +207,9 @@ export async function GET(request: NextRequest) {
             ? "A scan for this purchase is still running. Your purchase has not been spent — wait a few seconds and try again."
             : access.reason === "credit_invalid"
             ? "Invalid or unknown purchase token."
-            : "Payment required to scan.",
+            : session
+              ? "You have no unused credits for this size. Top up to scan again."
+              : "Payment required to scan.",
         reason: access.reason,
       },
       { status: 402 }
@@ -296,7 +336,17 @@ export async function GET(request: NextRequest) {
       deliveredCount: traders.length,
       requestedCount: limit,
       scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
+      // Only reported when a purchase was actually spent, so the browser knows
+      // whether the claim token it still holds is spent or untouched.
+      creditSource:
+        traders.length > 0 && (access.source === "account" || access.source === "claim_token")
+          ? access.source
+          : undefined,
     };
+
+    // Both the receipt and the enrichment run after the buyer has their
+    // wallets, never before.
+    if (traders.length > 0) waitUntil(archiveResult(access, payload));
 
     if (emit) {
       emit({ type: "result", result: payload });

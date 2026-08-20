@@ -96,6 +96,18 @@ export interface ScanResult {
   deliveredCount?: number;
   requestedCount?: number;
   scanSession?: string;
+  /**
+   * Which purchase actually paid for this scan.
+   *
+   * The client must not assume its localStorage claim token was the one spent:
+   * a signed-in buyer's account balance is tried first, and clearing the browser
+   * copy on that assumption would throw away an unspent purchase.
+   */
+  creditSource?: "account" | "claim_token";
+  /** Set when this payload came back out of storage rather than from a scan. */
+  fromStoredResult?: boolean;
+  /** ISO date a stored result is purged on. Only present on a re-download. */
+  expiresAt?: string;
 }
 
 /** NDJSON lines emitted by `/api/top-traders?stream=1`, one per line. */
