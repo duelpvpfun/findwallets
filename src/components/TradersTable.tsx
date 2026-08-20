@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Chain, TokenMeta, WalletHistory, WalletTrader } from "@/lib/types";
 import {
   NATIVE_UNIT,
@@ -13,8 +14,12 @@ import {
   shortenAddress,
 } from "@/lib/format";
 import { buildExportJson, copyText } from "@/lib/export";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import ExportDialog from "./ExportDialog";
 import ShareCardModal from "./ShareCardModal";
+
+/** Below this a plain list is cheaper than the virtualizer's bookkeeping. */
+const VIRTUALIZE_THRESHOLD = 100;
 
 interface TradersTableProps {
   token: TokenMeta;
@@ -101,6 +106,7 @@ export default function TradersTable({
 }: TradersTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [shareTarget, setShareTarget] = useState<WalletTrader | null>(null);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const [showMcap, setShowMcap] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -185,13 +191,13 @@ export default function TradersTable({
     });
   }, [matchingTraders, sort, basis]);
 
-  function toggleSort(key: SortKey) {
+  const toggleSort = useCallback((key: SortKey) => {
     setSort((prev) => {
       if (prev?.key !== key) return { key, dir: "desc" };
       if (prev.dir === "desc") return { key, dir: "asc" };
       return null;
     });
-  }
+  }, []);
 
   // Only Solana reports live balances; elsewhere the column would be all dashes.
   const hasHoldingData = traders.some((t) => t.isHolding !== null);
@@ -222,22 +228,26 @@ export default function TradersTable({
     return { totalPnl, winners, avgX };
   }, [filteredTraders]);
 
-  function toggleAll() {
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filteredTraders.map((t) => t.address)));
-    }
-  }
+  const toggleAll = useCallback(() => {
+    setSelected((prev) => {
+      const everySelected =
+        filteredTraders.length > 0 && filteredTraders.every((t) => prev.has(t.address));
+      return everySelected ? new Set<string>() : new Set(filteredTraders.map((t) => t.address));
+    });
+  }, [filteredTraders]);
 
-  function toggleOne(address: string) {
+  // Stable across renders and takes the address as an argument, so the memoized
+  // rows below aren't invalidated by a fresh closure on every parent render.
+  const toggleOne = useCallback((address: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(address)) next.delete(address);
       else next.add(address);
       return next;
     });
-  }
+  }, []);
+
+  const handleShare = useCallback((trader: WalletTrader) => setShareTarget(trader), []);
 
   // Export only what the user can see; exporting filtered-out rows is a surprise.
   const selectedTraders = useMemo(
@@ -246,16 +256,9 @@ export default function TradersTable({
   );
 
   const [exportTargets, setExportTargets] = useState<WalletTrader[] | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   // Selecting rows narrows both buttons; otherwise they act on everything shown.
   const copyTargets = selectedTraders.length > 0 ? selectedTraders : filteredTraders;
-
-  async function handleCopy() {
-    const ok = await copyText(buildExportJson(token.symbol, copyTargets));
-    setCopyState(ok ? "copied" : "failed");
-    setTimeout(() => setCopyState("idle"), 2000);
-  }
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -321,24 +324,11 @@ export default function TradersTable({
           <span className="hidden text-xs text-neutral-500 sm:inline">
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
-          <button
-            onClick={handleCopy}
-            title="Copy the export JSON to your clipboard — no download needed"
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
-              copyState === "copied"
-                ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
-                : copyState === "failed"
-                ? "border-rose-800/60 bg-rose-950/40 text-rose-300"
-                : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:border-neutral-700 hover:bg-neutral-800"
-            }`}
-          >
-            {copyState === "copied" ? <CheckIcon /> : <CopyIcon />}
-            {copyState === "copied"
-              ? "Copied!"
-              : copyState === "failed"
-              ? "Copy failed"
-              : `Copy JSON${selected.size > 0 ? ` (${selected.size})` : ""}`}
-          </button>
+          <CopyJsonButton
+            tokenSymbol={token.symbol}
+            targets={copyTargets}
+            selectedCount={selected.size}
+          />
           <button
             onClick={() => setExportTargets(copyTargets)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500 sm:flex-none"
@@ -551,168 +541,39 @@ export default function TradersTable({
         </div>
       )}
 
-      {/* Desktop: merged columns keep every number on screen without sideways scrolling. */}
-      <div className="hidden lg:block">
-        <table className="w-full table-fixed text-left text-sm">
-          <thead>
-            <tr className="border-b border-neutral-800/80 text-[11px] uppercase tracking-wide text-neutral-500">
-              <th className="w-9 py-2.5 pl-4 xl:pl-5">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  className="h-3.5 w-3.5 accent-blue-500"
-                />
-              </th>
-              <th className="w-11 py-2.5 font-medium">#</th>
-              <th className="w-[26%] py-2.5 font-medium">Wallet</th>
-              <SortableHeader
-                label="Avg X"
-                sortKey="multipleX"
-                sort={sort}
-                onToggle={toggleSort}
-                title={avgXBasis(basis)}
-                className="w-[9%]"
-              />
-              <th className="w-[15%] py-2.5 font-medium">
-                <div className="flex items-center gap-2">
-                  <SortButton
-                    label={basis === "total" ? "Total PNL" : "$ PNL"}
-                    sortKey="pnlUsd"
-                    sort={sort}
-                    onToggle={toggleSort}
-                    title={
-                      basis === "total"
-                        ? "Realized profit plus the paper value of tokens still held"
-                        : "Realized profit in USD"
-                    }
-                  />
-                  <SortButton
-                    label="%"
-                    sortKey="pnlPercent"
-                    sort={sort}
-                    onToggle={toggleSort}
-                    title="PNL as a share of USD spent buying"
-                  />
-                </div>
-              </th>
-              <th
-                className="w-[17%] py-2.5 font-medium"
-                title="Avg entry averages every token bought; avg exit covers only the tokens actually sold."
-              >
-                Entry → Exit
-              </th>
-              <th
-                className="w-[16%] py-2.5 font-medium"
-                title="Total USD spent buying, then total USD received selling. These cover different quantities of tokens whenever a wallet didn't sell everything it bought, so the two figures are not a round trip and their difference is not the PNL."
-              >
-                Bought → Sold
-              </th>
-              {hasHoldingData && (
-                <th
-                  className="w-[14%] py-2.5 pr-4 font-medium xl:pr-5"
-                  title="Tokens still held, not yet sold"
-                >
-                  Remaining
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTraders.map((t) => (
-              <tr
-                key={t.address}
-                className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20"
-              >
-                <td className="py-3 pl-4 align-top xl:pl-5">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(t.address)}
-                    onChange={() => toggleOne(t.address)}
-                    className="mt-0.5 h-3.5 w-3.5 accent-blue-500"
-                  />
-                </td>
-                <td className="py-3 align-top text-neutral-500">
-                  <RankBadge rank={t.rank} />
-                </td>
-                <td className="py-3 align-top">
-                  <WalletCell
-                    trader={t}
-                    history={histories[t.address]}
-                    onShare={() => setShareTarget(t)}
-                  />
-                </td>
-                <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
-                  <span
-                    title={t.multipleX === null ? NO_MULTIPLE_REASON : avgXBasis(basis)}
-                    className="cursor-help border-b border-dotted border-neutral-700"
-                  >
-                    {t.multipleX === null ? (
-                      <span className="text-neutral-500">n/a</span>
-                    ) : (
-                      formatMultiple(t.multipleX)
-                    )}
-                  </span>
-                </td>
-                <td className="py-3 align-top tabular-nums">
-                  <div
-                    className={`font-semibold ${
-                      t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
-                    }`}
-                  >
-                    {formatUsd(t.pnlUsd)}
-                  </div>
-                  <div
-                    className={`text-[11px] ${
-                      t.pnlPercent >= 0 ? "text-emerald-400/70" : "text-rose-400/70"
-                    }`}
-                  >
-                    {formatPercent(t.pnlPercent)}
-                  </div>
-                  <PnlSplit row={t} basis={basis} />
-                </td>
-                <td className="py-3 align-top tabular-nums text-neutral-300">
-                  <ArrowPair
-                    from={showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
-                    to={showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
-                  />
-                </td>
-                <td className="py-3 align-top tabular-nums">
-                  <ArrowPair from={formatUsd(t.boughtUsd)} to={formatUsd(t.soldUsd)} />
-                  <TokenAmounts trader={t} symbol={token.symbol} className="mt-0.5 text-[11px]" />
-                </td>
-                {hasHoldingData && (
-                  <td className="py-3 pr-4 align-top xl:pr-5">
-                    <RemainingCell
-                      trader={t}
-                      nativePriceUsd={token.nativePriceUsd}
-                      chain={token.chain}
-                    />
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile / tablet: one card per wallet, PNL first so nothing is buried off-screen. */}
-      <div className="divide-y divide-neutral-900/70 lg:hidden">
-        {filteredTraders.map((t) => (
-          <TraderCard
-            key={t.address}
-            trader={t}
+      {/* Exactly one list is mounted. Rendering both and hiding one with CSS
+          meant ~1000 live row subtrees at Top 500, so any state change in this
+          component re-rendered all of them. */}
+      {filteredTraders.length > 0 &&
+        (isDesktop ? (
+          <DesktopTable
+            rows={filteredTraders}
             token={token}
-            history={histories[t.address]}
+            histories={histories}
+            selected={selected}
+            allSelected={allSelected}
+            onToggleAll={toggleAll}
+            onToggle={toggleOne}
+            onShare={handleShare}
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
-            selected={selected.has(t.address)}
-            onToggle={() => toggleOne(t.address)}
-            onShare={() => setShareTarget(t)}
+            sort={sort}
+            onSort={toggleSort}
+          />
+        ) : (
+          <CardList
+            rows={filteredTraders}
+            token={token}
+            histories={histories}
+            selected={selected}
+            onToggle={toggleOne}
+            onShare={handleShare}
+            showMcap={showMcap}
+            basis={basis}
+            hasHoldingData={hasHoldingData}
           />
         ))}
-      </div>
 
       {exportTargets && (
         <ExportDialog
@@ -726,6 +587,395 @@ export default function TradersTable({
       {shareTarget && (
         <ShareCardModal token={token} trader={shareTarget} onClose={() => setShareTarget(null)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Owns its own `copyState` so the 2s "Copied!" flash can't re-render 500 rows,
+ * and yields a frame before the synchronous JSON build so the pending state
+ * actually paints first.
+ */
+function CopyJsonButton({
+  tokenSymbol,
+  targets,
+  selectedCount,
+}: {
+  tokenSymbol: string;
+  targets: WalletTrader[];
+  selectedCount: number;
+}) {
+  const [state, setState] = useState<"idle" | "working" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function handleCopy() {
+    setState("working");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const ok = await copyText(buildExportJson(tokenSymbol, targets));
+    setState(ok ? "copied" : "failed");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={state === "working"}
+      title="Copy the export JSON to your clipboard — no download needed"
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
+        state === "copied"
+          ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
+          : state === "failed"
+          ? "border-rose-800/60 bg-rose-950/40 text-rose-300"
+          : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:border-neutral-700 hover:bg-neutral-800"
+      }`}
+    >
+      {state === "copied" ? <CheckIcon /> : <CopyIcon />}
+      {state === "copied"
+        ? "Copied!"
+        : state === "failed"
+        ? "Copy failed"
+        : state === "working"
+        ? "Copying…"
+        : `Copy JSON${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+    </button>
+  );
+}
+
+interface ListProps {
+  rows: Row[];
+  token: TokenMeta;
+  histories: Record<string, WalletHistory>;
+  selected: Set<string>;
+  onToggle: (address: string) => void;
+  onShare: (trader: WalletTrader) => void;
+  showMcap: boolean;
+  basis: PnlBasis;
+  hasHoldingData: boolean;
+}
+
+const ROW_ESTIMATE_PX = 84;
+const CARD_ESTIMATE_PX = 150;
+
+function DesktopTable({
+  rows,
+  token,
+  histories,
+  selected,
+  allSelected,
+  onToggleAll,
+  onToggle,
+  onShare,
+  showMcap,
+  basis,
+  hasHoldingData,
+  sort,
+  onSort,
+}: ListProps & {
+  allSelected: boolean;
+  onToggleAll: () => void;
+  sort: Sort | null;
+  onSort: (key: SortKey) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualize = rows.length > VIRTUALIZE_THRESHOLD;
+  const virtualizer = useVirtualizer({
+    count: virtualize ? rows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_ESTIMATE_PX,
+    overscan: 12,
+  });
+  const items = virtualizer.getVirtualItems();
+
+  return (
+    <div
+      ref={scrollRef}
+      className={virtualize ? "max-h-[75vh] overflow-y-auto" : undefined}
+    >
+      <table className="w-full table-fixed text-left text-sm">
+        <thead className={virtualize ? "sticky top-0 z-10 bg-neutral-900" : undefined}>
+          <tr className="border-b border-neutral-800/80 text-[11px] uppercase tracking-wide text-neutral-500">
+            <th className="w-9 py-2.5 pl-4 xl:pl-5">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleAll}
+                className="h-3.5 w-3.5 accent-blue-500"
+              />
+            </th>
+            <th className="w-11 py-2.5 font-medium">#</th>
+            <th className="w-[26%] py-2.5 font-medium">Wallet</th>
+            <SortableHeader
+              label="Avg X"
+              sortKey="multipleX"
+              sort={sort}
+              onToggle={onSort}
+              title={avgXBasis(basis)}
+              className="w-[9%]"
+            />
+            <th className="w-[15%] py-2.5 font-medium">
+              <div className="flex items-center gap-2">
+                <SortButton
+                  label={basis === "total" ? "Total PNL" : "$ PNL"}
+                  sortKey="pnlUsd"
+                  sort={sort}
+                  onToggle={onSort}
+                  title={
+                    basis === "total"
+                      ? "Realized profit plus the paper value of tokens still held"
+                      : "Realized profit in USD"
+                  }
+                />
+                <SortButton
+                  label="%"
+                  sortKey="pnlPercent"
+                  sort={sort}
+                  onToggle={onSort}
+                  title="PNL as a share of USD spent buying"
+                />
+              </div>
+            </th>
+            <th
+              className="w-[17%] py-2.5 font-medium"
+              title="Avg entry averages every token bought; avg exit covers only the tokens actually sold."
+            >
+              Entry → Exit
+            </th>
+            <th
+              className="w-[16%] py-2.5 font-medium"
+              title="Total USD spent buying, then total USD received selling. These cover different quantities of tokens whenever a wallet didn't sell everything it bought, so the two figures are not a round trip and their difference is not the PNL."
+            >
+              Bought → Sold
+            </th>
+            {hasHoldingData && (
+              <th
+                className="w-[14%] py-2.5 pr-4 font-medium xl:pr-5"
+                title="Tokens still held, not yet sold"
+              >
+                Remaining
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {virtualize ? (
+            <>
+              {/* Spacer rows keep the scrollbar honest without a transform,
+                  which a <tbody> can't carry reliably. */}
+              <tr style={{ height: items[0]?.start ?? 0 }} aria-hidden />
+              {items.map((item) => {
+                const t = rows[item.index];
+                return (
+                  <TableRow
+                    key={t.address}
+                    ref={virtualizer.measureElement}
+                    dataIndex={item.index}
+                    row={t}
+                    token={token}
+                    history={histories[t.address]}
+                    selected={selected.has(t.address)}
+                    onToggle={onToggle}
+                    onShare={onShare}
+                    showMcap={showMcap}
+                    basis={basis}
+                    hasHoldingData={hasHoldingData}
+                  />
+                );
+              })}
+              <tr
+                style={{
+                  height: Math.max(
+                    0,
+                    virtualizer.getTotalSize() - (items[items.length - 1]?.end ?? 0)
+                  ),
+                }}
+                aria-hidden
+              />
+            </>
+          ) : (
+            rows.map((t) => (
+              <TableRow
+                key={t.address}
+                row={t}
+                token={token}
+                history={histories[t.address]}
+                selected={selected.has(t.address)}
+                onToggle={onToggle}
+                onShare={onShare}
+                showMcap={showMcap}
+                basis={basis}
+                hasHoldingData={hasHoldingData}
+              />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface RowProps {
+  row: Row;
+  token: TokenMeta;
+  history?: WalletHistory;
+  selected: boolean;
+  onToggle: (address: string) => void;
+  onShare: (trader: WalletTrader) => void;
+  showMcap: boolean;
+  basis: PnlBasis;
+  hasHoldingData: boolean;
+}
+
+const TableRow = memo(function TableRow({
+  ref,
+  dataIndex,
+  row: t,
+  token,
+  history,
+  selected,
+  onToggle,
+  onShare,
+  showMcap,
+  basis,
+  hasHoldingData,
+}: RowProps & {
+  ref?: (node: HTMLTableRowElement | null) => void;
+  dataIndex?: number;
+}) {
+  return (
+    <tr
+      ref={ref}
+      data-index={dataIndex}
+      className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20"
+    >
+      <td className="py-3 pl-4 align-top xl:pl-5">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(t.address)}
+          className="mt-0.5 h-3.5 w-3.5 accent-blue-500"
+        />
+      </td>
+      <td className="py-3 align-top text-neutral-500">
+        <RankBadge rank={t.rank} />
+      </td>
+      <td className="py-3 align-top">
+        <WalletCell trader={t} history={history} onShare={onShare} />
+      </td>
+      <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
+        <span
+          title={t.multipleX === null ? NO_MULTIPLE_REASON : avgXBasis(basis)}
+          className="cursor-help border-b border-dotted border-neutral-700"
+        >
+          {t.multipleX === null ? (
+            <span className="text-neutral-500">n/a</span>
+          ) : (
+            formatMultiple(t.multipleX)
+          )}
+        </span>
+      </td>
+      <td className="py-3 align-top tabular-nums">
+        <div className={`font-semibold ${t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+          {formatUsd(t.pnlUsd)}
+        </div>
+        <div
+          className={`text-[11px] ${
+            t.pnlPercent >= 0 ? "text-emerald-400/70" : "text-rose-400/70"
+          }`}
+        >
+          {formatPercent(t.pnlPercent)}
+        </div>
+        <PnlSplit row={t} basis={basis} />
+      </td>
+      <td className="py-3 align-top tabular-nums text-neutral-300">
+        <ArrowPair
+          from={showMcap ? formatUsd(t.avgBuyMcapUsd) : `$${t.avgBuyPriceUsd.toPrecision(3)}`}
+          to={showMcap ? formatUsd(t.avgSellMcapUsd) : `$${t.avgSellPriceUsd.toPrecision(3)}`}
+        />
+      </td>
+      <td className="py-3 align-top tabular-nums">
+        <ArrowPair from={formatUsd(t.boughtUsd)} to={formatUsd(t.soldUsd)} />
+        <TokenAmounts trader={t} symbol={token.symbol} className="mt-0.5 text-[11px]" />
+      </td>
+      {hasHoldingData && (
+        <td className="py-3 pr-4 align-top xl:pr-5">
+          <RemainingCell trader={t} nativePriceUsd={token.nativePriceUsd} chain={token.chain} />
+        </td>
+      )}
+    </tr>
+  );
+});
+
+/** Mobile / tablet: one card per wallet, PNL first so nothing is buried off-screen. */
+function CardList({
+  rows,
+  token,
+  histories,
+  selected,
+  onToggle,
+  onShare,
+  showMcap,
+  basis,
+  hasHoldingData,
+}: ListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualize = rows.length > VIRTUALIZE_THRESHOLD;
+  const virtualizer = useVirtualizer({
+    count: virtualize ? rows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CARD_ESTIMATE_PX,
+    overscan: 8,
+  });
+
+  if (!virtualize) {
+    return (
+      <div className="divide-y divide-neutral-900/70">
+        {rows.map((t) => (
+          <TraderCard
+            key={t.address}
+            trader={t}
+            token={token}
+            history={histories[t.address]}
+            showMcap={showMcap}
+            basis={basis}
+            hasHoldingData={hasHoldingData}
+            selected={selected.has(t.address)}
+            onToggle={onToggle}
+            onShare={onShare}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={scrollRef} className="max-h-[75vh] overflow-y-auto">
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualizer.getVirtualItems().map((item) => {
+          const t = rows[item.index];
+          return (
+            <div
+              key={t.address}
+              ref={virtualizer.measureElement}
+              data-index={item.index}
+              className="absolute left-0 w-full border-b border-neutral-900/70"
+              style={{ transform: `translateY(${item.start}px)` }}
+            >
+              <TraderCard
+                trader={t}
+                token={token}
+                history={histories[t.address]}
+                showMcap={showMcap}
+                basis={basis}
+                hasHoldingData={hasHoldingData}
+                selected={selected.has(t.address)}
+                onToggle={onToggle}
+                onShare={onShare}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1059,7 +1309,7 @@ function WalletCell({
 }: {
   trader: WalletTrader;
   history?: WalletHistory;
-  onShare: () => void;
+  onShare: (trader: WalletTrader) => void;
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -1071,7 +1321,7 @@ function WalletCell({
       )}
       <HistoryBadge history={history} />
       <button
-        onClick={onShare}
+        onClick={() => onShare(trader)}
         title="Share PNL card"
         aria-label="Share PNL card"
         className="rounded-md p-1 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
@@ -1082,7 +1332,7 @@ function WalletCell({
   );
 }
 
-function TraderCard({
+const TraderCard = memo(function TraderCard({
   trader,
   token,
   history,
@@ -1100,8 +1350,8 @@ function TraderCard({
   basis: PnlBasis;
   hasHoldingData: boolean;
   selected: boolean;
-  onToggle: () => void;
-  onShare: () => void;
+  onToggle: (address: string) => void;
+  onShare: (trader: WalletTrader) => void;
 }) {
   const positive = trader.pnlUsd >= 0;
   return (
@@ -1110,7 +1360,7 @@ function TraderCard({
         <input
           type="checkbox"
           checked={selected}
-          onChange={onToggle}
+          onChange={() => onToggle(trader.address)}
           className="mt-1 h-4 w-4 shrink-0 accent-blue-500"
         />
         <div className="w-6 shrink-0 pt-0.5 text-xs text-neutral-500">
@@ -1171,7 +1421,7 @@ function TraderCard({
       </div>
     </div>
   );
-}
+});
 
 function CardField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
