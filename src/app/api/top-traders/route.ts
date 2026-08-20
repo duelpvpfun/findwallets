@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import type { Chain } from "@/lib/types";
 import { buildTopTraders } from "@/lib/mockData";
 import {
@@ -19,7 +20,7 @@ import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
 import { fetchWalletHistories } from "@/lib/db/history";
 import { filterNeedsEnrichment } from "@/lib/db/enriched";
-import { releaseCredit } from "@/lib/db/credits";
+import { confirmCreditDelivered, releaseCredit } from "@/lib/db/credits";
 import { resolveAccess, type AccessResult } from "@/lib/access";
 import {
   addressMismatchMessage,
@@ -32,6 +33,17 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { issueScanSession } from "@/lib/scanSession";
 import { meetsQualityBar } from "@/lib/quality";
 import type { TokenMeta, WalletTrader } from "@/lib/types";
+
+// Vercel Pro allows up to 800s; 300 is well inside every plan above Hobby. On
+// Hobby the platform caps at 60s regardless of what is declared here, which is
+// exactly why SCAN_BUDGET_MS below exists as the real guard.
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
+// Wall-clock budget for paging upstream. Comfortably under the Hobby ceiling so
+// a scan degrades to a partial result instead of being killed with the buyer's
+// credit already consumed.
+const SCAN_BUDGET_MS = 45_000;
 
 // 50 is retired from the pricing table but still accepted, so anyone holding an
 // unspent 50-credit from before it was pulled can still redeem it.
@@ -74,12 +86,25 @@ async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
 /** The credit was already claimed before the scan ran, so settling means giving
  * it back when no wallets were delivered — an empty result or a failed upstream
  * call must never cost the buyer their purchase. */
-async function refundCredit(access: AccessResult) {
+async function refundCredit(access: AccessResult, chain: Chain, tokenAddress: string) {
   if (!access.claimToken) return;
   try {
-    await releaseCredit(access.claimToken);
+    const released = await releaseCredit(access.claimToken, chain, tokenAddress);
+    if (!released) {
+      console.warn("[refundCredit] no matching reservation to release", { chain, tokenAddress });
+    }
   } catch (err) {
     console.error("[refundCredit] failed to release credit:", err);
+  }
+}
+
+/** Clears the sweeper's claim once the buyer actually has their wallets. */
+async function settleCredit(access: AccessResult) {
+  if (!access.claimToken) return;
+  try {
+    await confirmCreditDelivered(access.claimToken);
+  } catch (err) {
+    console.error("[settleCredit] failed to confirm delivery:", err);
   }
 }
 
@@ -151,26 +176,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ...buildTopTraders(address, limit, chain), isDemoData: true });
   }
 
+  const deadlineAt = Date.now() + SCAN_BUDGET_MS;
+
   try {
     const token = isSolana
       ? await fetchTokenMeta(address)
       : await fetchEvmTokenMeta(chain as EvmChain, address);
     const traders = isSolana
-      ? await fetchTopTraders(address, limit, token.estimatedSupply)
+      ? await fetchTopTraders(address, limit, token.estimatedSupply, deadlineAt)
       : await fetchEvmTopTraders(
           chain as EvmChain,
           address,
           limit,
           token.estimatedSupply,
           "90d",
-          token.priceUsd
+          token.priceUsd,
+          deadlineAt
         );
 
-    if (traders.length === 0) await refundCredit(access);
+    if (traders.length === 0) {
+      await refundCredit(access, chain, address);
+    } else {
+      await settleCredit(access);
+    }
 
     // Read prior wins before persisting, so this scan doesn't show up as its own history.
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
-    await persistScan(token, traders);
+    // Enrichment is a side effect the buyer is not waiting for. Keeping it on
+    // the critical path let upstream latency delay — or kill — the response
+    // they already paid for.
+    waitUntil(persistScan(token, traders));
 
     // An EVM address is valid on every EVM chain, so a token pasted under the
     // wrong one looks like an empty result. Say so instead of leaving the buyer
@@ -181,16 +216,23 @@ export async function GET(request: NextRequest) {
         ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${CHAIN_LABELS[sibling]}, switch chains and search again — you have not been charged for this scan.`
         : undefined;
 
+    // Upstream simply may not have `limit` qualifying traders, so a short result
+    // is only "partial" when the clock is what stopped us.
+    const partial = traders.length < limit && Date.now() >= deadlineAt;
+
     return NextResponse.json({
       token,
       traders,
       histories,
       isDemoData: false,
       note,
+      partial,
+      deliveredCount: traders.length,
+      requestedCount: limit,
       scanSession: traders.length > 0 ? issueScanSession(chain, address) : undefined,
     });
   } catch (err) {
-    await refundCredit(access);
+    await refundCredit(access, chain, address);
     console.error("[top-traders] upstream failed:", err);
     return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }

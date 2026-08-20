@@ -9,6 +9,10 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { verifyScanSession } from "@/lib/scanSession";
 import { getCachedWalletDetail, setCachedWalletDetail } from "@/lib/db/detailCache";
 
+// See src/app/api/top-traders/route.ts — Hobby caps at 60s regardless.
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 // Each call costs upstream credits, so it is gated on a scan session and capped
 // per IP. Wallet clicks are bursty (a buyer opening rows quickly) hence the
 // higher allowance than scanning.

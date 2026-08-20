@@ -53,6 +53,8 @@ export default function Home() {
     scanSession?: string;
     isPreview?: boolean;
     previewLimit?: number;
+    partial?: boolean;
+    requestedCount?: number;
   } | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [claim, setClaim] = useState<{ token: string; tier: number } | null>(null);
@@ -499,6 +501,9 @@ export default function Home() {
                 isDemoData={result.isDemoData}
                 histories={result.histories}
                 scanSession={result.scanSession}
+                partial={result.partial}
+                requestedCount={result.requestedCount}
+                onRescan={() => startSearch(result.token.address, result.token.chain)}
                 onBack={resetToHome}
               />
             </div>

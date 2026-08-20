@@ -173,12 +173,17 @@ export const scanCredits = pgTable(
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     consumedChain: text("consumed_chain"),
     consumedTokenAddress: text("consumed_token_address"),
+    /** Set alongside consumedAt and cleared once the scan is confirmed
+     * delivered. A row still carrying this after the grace window means the
+     * function died mid-scan, so the cron sweeper can hand the credit back. */
+    reservedAt: timestamp("reserved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("scan_credits_payment_id_idx").on(t.paymentId),
     uniqueIndex("scan_credits_claim_token_idx").on(t.claimToken),
     index("scan_credits_claim_nonce_hash_idx").on(t.claimNonceHash),
+    index("scan_credits_reserved_at_idx").on(t.reservedAt),
   ]
 );
 

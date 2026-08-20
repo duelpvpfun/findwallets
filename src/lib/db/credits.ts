@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits, webhookLog } from "./schema";
@@ -117,9 +117,15 @@ export async function reserveCredit(
   const db = getDb();
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
+  const now = new Date();
   const reserved = await db
     .update(scanCredits)
-    .set({ consumedAt: new Date(), consumedChain: chain, consumedTokenAddress: tokenAddress })
+    .set({
+      consumedAt: now,
+      consumedChain: chain,
+      consumedTokenAddress: tokenAddress,
+      reservedAt: now,
+    })
     .where(and(eq(scanCredits.claimToken, claimToken), isNull(scanCredits.consumedAt)))
     .returning({ tier: scanCredits.tier });
 
@@ -132,15 +138,66 @@ export async function reserveCredit(
 }
 
 /**
- * Hands a reserved credit back when the scan it was reserved for delivered
- * nothing, so an empty result or upstream failure never costs the buyer.
+ * Marks a reservation as safely delivered. Until this runs the credit is still
+ * sweepable, so a function killed mid-scan gets refunded automatically.
  */
-export async function releaseCredit(claimToken: string): Promise<void> {
+export async function confirmCreditDelivered(claimToken: string): Promise<void> {
   const db = getDb();
   if (!db) return;
 
   await db
     .update(scanCredits)
-    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null })
+    .set({ reservedAt: null })
     .where(eq(scanCredits.claimToken, claimToken));
+}
+
+/**
+ * Hands a reserved credit back when the scan it was reserved for delivered
+ * nothing, so an empty result or upstream failure never costs the buyer.
+ *
+ * Scoped to the exact reservation: without the chain/token predicates a late or
+ * duplicate release could un-consume a credit that a *different*, successful
+ * scan had legitimately spent, handing out a free scan.
+ */
+export async function releaseCredit(
+  claimToken: string,
+  chain: string,
+  tokenAddress: string
+): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+
+  const released = await db
+    .update(scanCredits)
+    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null, reservedAt: null })
+    .where(
+      and(
+        eq(scanCredits.claimToken, claimToken),
+        isNotNull(scanCredits.consumedAt),
+        eq(scanCredits.consumedChain, chain),
+        eq(scanCredits.consumedTokenAddress, tokenAddress)
+      )
+    )
+    .returning({ id: scanCredits.id });
+
+  return released.length > 0;
+}
+
+/**
+ * Safety net for every crash, timeout or deploy that interrupts a scan after
+ * the credit was reserved. A reservation older than the grace window can no
+ * longer belong to an in-flight request, so it is given back.
+ */
+export async function releaseStaleReservations(graceMinutes = 10): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  const cutoff = new Date(Date.now() - graceMinutes * 60_000);
+  const released = await db
+    .update(scanCredits)
+    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null, reservedAt: null })
+    .where(and(isNotNull(scanCredits.reservedAt), lt(scanCredits.reservedAt, cutoff)))
+    .returning({ id: scanCredits.id });
+
+  return released.length;
 }

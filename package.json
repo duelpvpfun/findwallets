@@ -18,6 +18,8 @@
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",
+    "@tanstack/react-virtual": "^3.14.10",
+    "@vercel/functions": "^3.9.3",
     "buffer": "^6.0.3",
     "drizzle-orm": "^0.45.2",
     "framer-motion": "^13.1.0",

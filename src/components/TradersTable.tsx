@@ -24,6 +24,10 @@ interface TradersTableProps {
   /** Unused while wallet-detail lookups are disabled (too costly per-click);
    * kept so callers don't need to change and it's a one-line revert to re-wire. */
   scanSession?: string;
+  /** The scan hit its time budget before filling the tier the buyer paid for. */
+  partial?: boolean;
+  requestedCount?: number;
+  onRescan?: () => void;
   /** Returns to the search screen. Omit to hide the back control. */
   onBack?: () => void;
 }
@@ -90,6 +94,9 @@ export default function TradersTable({
   traders,
   isDemoData,
   histories = {},
+  partial = false,
+  requestedCount,
+  onRescan,
   onBack,
 }: TradersTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -341,6 +348,27 @@ export default function TradersTable({
           </button>
         </div>
       </div>
+
+      {partial && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-amber-900/50 bg-amber-950/20 px-4 py-3 sm:px-5">
+          <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+            Partial
+          </span>
+          <span className="text-sm text-neutral-300">
+            Upstream was slow, so this scan returned {traders.length}
+            {requestedCount ? ` of ${requestedCount}` : ""} wallets before the time limit. Your
+            credit has already been spent — rescan to try for the full set.
+          </span>
+          {onRescan && (
+            <button
+              onClick={onRescan}
+              className="ml-auto text-xs font-medium text-amber-400 hover:text-amber-300"
+            >
+              Rescan →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Quick stats strip */}
       <div className="grid grid-cols-3 divide-x divide-neutral-800/80 border-b border-neutral-800/80 bg-neutral-950/40">
