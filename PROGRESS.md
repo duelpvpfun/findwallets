@@ -278,9 +278,37 @@ scroll and spend the render budget the hardening pass bought back.
    applied and then undone by `0019`). `main` references none of it, so `main` is
    unaffected if this branch is not merged. A **fresh** database should apply
    `0018` only — see `MIGRATION.md`.
-6. **96 pre-existing rows in `wallet_tokens` fail the 2x/$1k rule.** Not touched:
-   deleting production rows was not asked for. If the goal is a table where the
-   invariant holds absolutely, it is one statement:
-   `delete from wallet_tokens where multiple_x is null or multiple_x < 2 or realized_pnl_usd < 1000;`
-   Worth a look first — the two null-multiple rows are wallets with >$124k
-   realized profit, which may be worth keeping on PNL alone.
+6. ~~96 pre-existing rows fail the 2x/$1k rule.~~ **Done** — see below.
+
+## Retroactive compliance sweep — 2026-08-20
+
+`scripts/purge-noncompliant.mjs` (report by default, `--apply` to delete). The
+2x/$1,000 gate only ever ran on write, so rows predating it — and rows whose
+multiple was later revised down or nulled by `purge-dust-basis.mjs` /
+`backfill-pnl-math.mjs` — were never re-checked.
+
+Applied to production:
+
+| | Before | Deleted | After |
+|---|---|---|---|
+| `wallet_tokens` | 3,319 | 96 | 3,223 |
+| `wallet_positions` | 9,115 | 0 | 9,115 |
+| `wallets` | 2,949 | 69 | 2,880 |
+
+The 96 were 94 rows that cleared 2x but realized $22–$999, plus 2 with a **null**
+multiple. Those two carried $124,464 and $126,917 of realized profit — deleted
+because the rule needs both halves and a return we cannot measure is not 2x. Worth
+knowing they were the largest rows removed by a wide margin.
+
+`wallet_positions` had zero violations, which confirms the enrichment worker's
+gate has held since it was written.
+
+The 69 wallets were those left with no compliant trade in either table. Wallets
+carrying GMGN `win_badges` are exempt — proven wins on tokens nobody paid to scan
+here still make a wallet alpha — but none of the 69 had any.
+
+Verified independently afterwards: lowest stored multiple **2.00**, lowest stored
+realized PNL **$1,000**, zero null multiples, zero orphaned wallets, zero dangling
+foreign keys, zero duplicates, and 331 wallets still carrying multi-token tags.
+
+Re-run the report any time; it is idempotent and prints without `--apply`.

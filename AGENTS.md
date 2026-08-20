@@ -161,6 +161,12 @@ anonymous claim-token flow is unchanged. Do not let that slip.
   trader the upstream provider returned, ranked by realized PNL, and neither `solanaTracker.ts` nor
   `birdeye.ts` filters on the bar. Keep that separation — filtering the payload would be selling
   people less than they paid for, and storing everything would turn the archive into noise.
+- **The gate only runs on write, so revisions can leave stale rows behind.** A backfill that
+  recomputes or nulls `multiple_x` (`purge-dust-basis.mjs`, `backfill-pnl-math.mjs`) can push an
+  already-stored row below the bar, and nothing re-checks it. After any such backfill, run
+  `node --env-file=.env.local scripts/purge-noncompliant.mjs` — it reports by default and needs
+  `--apply` to delete. It also sweeps wallets left with no compliant trade, exempting any that still
+  carry GMGN `win_badges`.
 - **`drizzle-kit generate` is not safe here.** `drizzle/meta` only tracks as far as `0001`, so it
   would try to recreate the whole schema. Hand-write the numbered `.sql` file and apply it with
   `npm run db:migrate -- 0018_user_accounts` (which now takes named files, in order — it used to
