@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
+import * as Sentry from "@sentry/nextjs";
 import type { Chain } from "@/lib/types";
 import { buildTopTraders } from "@/lib/mockData";
 import {
@@ -220,6 +221,22 @@ export async function GET(request: NextRequest) {
     // is only "partial" when the clock is what stopped us.
     const partial = traders.length < limit && Date.now() >= deadlineAt;
 
+    // A paid scan that under-delivered is the failure mode worth querying on.
+    if (partial || traders.length === 0) {
+      Sentry.captureMessage(
+        traders.length === 0 ? "scan delivered no traders" : "scan delivered a partial result",
+        {
+          level: "warning",
+          tags: {
+            chain,
+            tier: limit,
+            deliveredCount: traders.length,
+            paid: Boolean(access.claimToken),
+          },
+        }
+      );
+    }
+
     return NextResponse.json({
       token,
       traders,
@@ -234,6 +251,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     await refundCredit(access, chain, address);
     console.error("[top-traders] upstream failed:", err);
+    Sentry.captureException(err, {
+      tags: { chain, tier: limit, deliveredCount: 0, paid: Boolean(access.claimToken) },
+    });
     return NextResponse.json({ error: upstreamMessage(err) }, { status: upstreamStatus(err) });
   }
 }
