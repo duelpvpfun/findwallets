@@ -138,6 +138,31 @@ export async function reserveCredit(
 }
 
 /**
+ * Self-serve purchase recovery: maps an on-chain signature back to its credit
+ * so a buyer whose browser lost the claim token isn't stranded.
+ */
+export async function findCreditByPaymentId(
+  paymentId: string
+): Promise<{ claimToken: string; tier: Tier; consumed: boolean } | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select({
+      claimToken: scanCredits.claimToken,
+      tier: scanCredits.tier,
+      consumedAt: scanCredits.consumedAt,
+    })
+    .from(scanCredits)
+    .where(eq(scanCredits.paymentId, paymentId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return { claimToken: row.claimToken, tier: row.tier as Tier, consumed: row.consumedAt !== null };
+}
+
+/**
  * Marks a reservation as safely delivered. Until this runs the credit is still
  * sweepable, so a function killed mid-scan gets refunded automatically.
  */
