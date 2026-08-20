@@ -35,16 +35,19 @@ import { issueScanSession } from "@/lib/scanSession";
 import { meetsQualityBar } from "@/lib/quality";
 import type { ScanEvent, ScanResult, TokenMeta, WalletTrader } from "@/lib/types";
 
-// Vercel Pro allows up to 800s; 300 is well inside every plan above Hobby. On
-// Hobby the platform caps at 60s regardless of what is declared here, which is
-// exactly why SCAN_BUDGET_MS below exists as the real guard.
+// 300s is the ceiling on Vercel Pro (Hobby caps at 60s regardless of what is
+// declared here, and Fluid Compute would allow more).
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-// Wall-clock budget for paging upstream. Comfortably under the Hobby ceiling so
-// a scan degrades to a partial result instead of being killed with the buyer's
-// credit already consumed.
-const SCAN_BUDGET_MS = 45_000;
+// Wall-clock budget for paging upstream. The point is to finish the scan the
+// buyer paid for, not to return early: measured against the live providers a Top
+// 500 takes seconds, so this only ever bites when a provider is badly degraded.
+// It sits far enough below maxDuration to leave room for the work that follows
+// paging — on-chain holdings, prior-wins history, and serialising the response —
+// because being killed after the credit is spent is the one outcome worse than
+// waiting.
+const SCAN_BUDGET_MS = 180_000;
 
 // 50 is retired from the pricing table but still accepted, so anyone holding an
 // unspent 50-credit from before it was pulled can still redeem it.

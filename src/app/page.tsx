@@ -534,7 +534,6 @@ export default function Home() {
                 scanSession={result.scanSession}
                 partial={result.partial}
                 requestedCount={result.requestedCount}
-                onRescan={() => startSearch(result.token.address, result.token.chain)}
                 onBack={resetToHome}
               />
             </div>
@@ -545,7 +544,7 @@ export default function Home() {
                   progress
                     ? `Found ${progress.found} of ${progress.requested} wallets…`
                     : chain !== "solana" && limit > 100
-                    ? `Large ${CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at a time and can take up to ~30s.`
+                    ? `Large ${CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at a time. This usually takes a few seconds, longer if the provider is slow.`
                     : "Fetching top traders…"
                 }
               />

@@ -43,7 +43,6 @@ interface TradersTableProps {
   /** The scan hit its time budget before filling the tier the buyer paid for. */
   partial?: boolean;
   requestedCount?: number;
-  onRescan?: () => void;
   /** Returns to the search screen. Omit to hide the back control. */
   onBack?: () => void;
 }
@@ -114,7 +113,6 @@ export default function TradersTable({
   histories = {},
   partial = false,
   requestedCount,
-  onRescan,
   onBack,
 }: TradersTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -389,18 +387,14 @@ export default function TradersTable({
             Partial
           </span>
           <span className="text-sm text-neutral-300">
-            Upstream was slow, so this scan returned {traders.length}
-            {requestedCount ? ` of ${requestedCount}` : ""} wallets before the time limit. Your
-            credit has already been spent — rescan to try for the full set.
+            The data provider was slow, so this scan stopped at {traders.length}
+            {requestedCount ? ` of ${requestedCount}` : ""} wallets. These rows are yours to keep and
+            export. A fresh scan needs a new purchase — if you think this one under-delivered,{" "}
+            <a href="/recover" className="font-medium text-amber-400 underline hover:text-amber-300">
+              recover your purchase
+            </a>{" "}
+            or contact support with your transaction id.
           </span>
-          {onRescan && (
-            <button
-              onClick={onRescan}
-              className="ml-auto text-xs font-medium text-amber-400 hover:text-amber-300"
-            >
-              Rescan →
-            </button>
-          )}
         </div>
       )}
 
