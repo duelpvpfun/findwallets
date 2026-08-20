@@ -34,6 +34,7 @@ const ONCE = args.includes("--limit");
 const BATCH = Number(value("limit", 25));
 // Must match MIN_WALLET_* in src/lib/quality.ts — the same bar the scan route
 // applies, so a tag can never claim a win the rest of the database would reject.
+// It gates BADGES, not storage: every position is written, carrying its verdict.
 const MIN_BADGE_PNL_USD = Number(value("min-pnl", 1000));
 const MIN_BADGE_MULTIPLE = Number(value("min-x", 2));
 // How many tags render inline. The rest stay in the column and surface behind
@@ -45,7 +46,7 @@ const STALE_DAYS = Number(value("stale-days", 14));
 const MIN_COST_BASIS_USD = 100;
 // Upstream returns positions like $102B profit on a $360 buy (283,265,921x) —
 // almost certainly a price feed on an illiquid pool. No real trade looks like
-// this, so the row is dropped rather than shown.
+// this, so the row is stored as `implausible` rather than badged as a win.
 const MAX_PLAUSIBLE_MULTIPLE = 500;
 const MAX_PLAUSIBLE_PNL_USD = 100_000_000;
 
@@ -119,19 +120,42 @@ function toPosition(item, chain) {
   };
 }
 
+/**
+ * Why a position isn't a win, or null when it is. Mirrors `qualityVerdict` in
+ * src/lib/quality.ts, with the two extra plausibility bounds this worker needs
+ * because GMGN will happily report $102B profit on a $360 buy.
+ *
+ * Every position is stored either way. Dropping the losses is what made a
+ * wallet's GMGN history read as an unbroken run of wins.
+ */
+function disqualifiedReason(p) {
+  if (!p.symbol) return "no_symbol";
+  if (p.multipleX === null) return "no_multiple";
+  if (!Number.isFinite(p.multipleX) || !Number.isFinite(p.totalPnlUsd)) return "not_finite";
+  if (p.totalPnlUsd > MAX_PLAUSIBLE_PNL_USD || p.multipleX > MAX_PLAUSIBLE_MULTIPLE) {
+    return "implausible";
+  }
+  const belowMultiple = p.multipleX < MIN_BADGE_MULTIPLE;
+  const belowPnl = p.totalPnlUsd < MIN_BADGE_PNL_USD;
+  if (belowMultiple && belowPnl) return "below_both";
+  if (belowMultiple) return "below_multiple";
+  if (belowPnl) return "below_pnl";
+  return null;
+}
+
+/** Tags every position with its verdict, in place. */
+function judge(positions) {
+  for (const p of positions) {
+    const reason = disqualifiedReason(p);
+    p.qualified = reason === null;
+    p.disqualifiedReason = reason;
+  }
+  return positions;
+}
+
 /** Every win clearing the bar, biggest first. The UI decides how many to show. */
 function qualifyingWins(positions) {
-  return positions
-    .filter(
-      (p) =>
-        p.symbol &&
-        p.totalPnlUsd >= MIN_BADGE_PNL_USD &&
-        p.totalPnlUsd <= MAX_PLAUSIBLE_PNL_USD &&
-        p.multipleX !== null &&
-        p.multipleX >= MIN_BADGE_MULTIPLE &&
-        p.multipleX <= MAX_PLAUSIBLE_MULTIPLE
-    )
-    .sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
+  return positions.filter((p) => p.qualified).sort((a, b) => b.totalPnlUsd - a.totalPnlUsd);
 }
 
 async function claimQueue() {
@@ -151,12 +175,12 @@ async function claimQueue() {
     limit ${BATCH}`;
 }
 
-async function persist(wallet, keep, badges) {
+async function persist(wallet, positions, badges) {
   await sql.begin(async (tx) => {
-    if (keep.length > 0) {
+    if (positions.length > 0) {
       await tx`
         insert into wallet_positions ${tx(
-          keep.map((p) => ({
+          positions.map((p) => ({
             wallet_id: wallet.id,
             chain: p.chain,
             token_address: p.tokenAddress,
@@ -174,6 +198,8 @@ async function persist(wallet, keep, badges) {
             buy_tx_count: p.buyTxCount,
             sell_tx_count: p.sellTxCount,
             last_trade_ms: p.lastTradeMs,
+            qualified: p.qualified,
+            disqualified_reason: p.disqualifiedReason,
             fetched_at: new Date(),
           }))
         )}
@@ -192,6 +218,8 @@ async function persist(wallet, keep, badges) {
           buy_tx_count = excluded.buy_tx_count,
           sell_tx_count = excluded.sell_tx_count,
           last_trade_ms = excluded.last_trade_ms,
+          qualified = excluded.qualified,
+          disqualified_reason = excluded.disqualified_reason,
           fetched_at = excluded.fetched_at`;
     }
 
@@ -258,9 +286,9 @@ for (;;) {
       });
 
       const list = data?.holdings || data?.list || (Array.isArray(data) ? data : []);
-      const positions = list.map((i) => toPosition(i, wallet.chain)).filter(Boolean);
-      // Only wins that clear the bar are stored at all, so `wallet_positions`
-      // holds nothing the UI would have to filter out later.
+      const positions = judge(list.map((i) => toPosition(i, wallet.chain)).filter(Boolean));
+      // Every position is stored, flagged. Only the wins earn a badge — a badge
+      // is a claim about the wallet, whereas a stored loss is just the truth.
       const wins = qualifyingWins(positions);
       const badges = wins.map((p) => formatWinBadge(p.multipleX, p.totalPnlUsd, p.symbol));
 
@@ -269,12 +297,12 @@ for (;;) {
 
       const shown = badges.slice(0, MAX_BADGES).join("  ");
       const extra = badges.length > MAX_BADGES ? ` +${badges.length - MAX_BADGES}` : "";
-      const summary = `${wallet.address.slice(0, 6)}… ${positions.length} pos → ${shown || "(no qualifying win)"}${extra}`;
+      const summary = `${wallet.address.slice(0, 6)}… ${positions.length} pos (${wins.length} win) → ${shown || "(no qualifying win)"}${extra}`;
 
       if (DRY_RUN) {
         console.log(summary);
       } else {
-        await persist(wallet, wins, badges);
+        await persist(wallet, positions, badges);
         console.log(`[${processed}] ${summary}`);
       }
     } catch (err) {

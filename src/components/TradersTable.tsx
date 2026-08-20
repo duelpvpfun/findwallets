@@ -1104,6 +1104,43 @@ function hasTrackRecord(history?: WalletHistory): boolean {
   return history.priorTokenCount > 0 || (history.winBadges?.length ?? 0) > 0;
 }
 
+/** Below this the ratio is noise: 1/1 is not a track record. */
+const MIN_TRADES_FOR_WIN_RATE = 3;
+
+/**
+ * Wins over recorded trades. Until losing trades were stored this was always
+ * 100% by construction — the losses were never written — so a wallet with 5 wins
+ * from 8 trades and one with 5 from 300 looked identical.
+ *
+ * The denominator only counts tokens somebody paid to scan here, so it is a
+ * floor on the wallet's real activity. The label says so.
+ */
+function WinRateChip({ history }: { history?: WalletHistory }) {
+  const trades = history?.priorTradeCount ?? 0;
+  if (!history || trades < MIN_TRADES_FOR_WIN_RATE) return null;
+
+  const wins = history.priorTokenCount;
+  const rate = wins / trades;
+  const tone =
+    rate >= 0.5
+      ? "bg-emerald-500/10 text-emerald-300/90"
+      : rate >= 0.25
+      ? "bg-neutral-700/40 text-neutral-300"
+      : "bg-neutral-800/60 text-neutral-500";
+
+  return (
+    <span
+      title={`Won ${wins} of ${trades} trades we hold for this wallet (${Math.round(
+        rate * 100
+      )}%). Counts only tokens scanned on this site, so the real total is at least this.`}
+      className={`inline-flex shrink-0 cursor-help items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${tone}`}
+    >
+      {wins}/{trades}
+      <span className="font-normal opacity-60">hit</span>
+    </span>
+  );
+}
+
 /** How many win tags render inline before the rest collapse behind "…". */
 const INLINE_BADGE_LIMIT = 3;
 
@@ -1369,6 +1406,7 @@ function WalletCell({
       {trader.nickname && (
         <span className="truncate text-xs text-neutral-500">({trader.nickname})</span>
       )}
+      <WinRateChip history={history} />
       <HistoryBadge history={history} />
       <button
         onClick={() => onShare(trader)}

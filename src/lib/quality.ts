@@ -1,7 +1,15 @@
-// The bar a wallet-token result must clear to earn a row or a tag anywhere in
-// the database. Enforced on every write path — the scan route, the persistence
-// layer, and the GMGN enrichment worker — so nothing below it can reach the
-// table by a route we forgot about.
+// The bar a wallet-token result must clear to count as a *win* and to be worth
+// spending a paid enrichment call on.
+//
+// It is deliberately NOT a write gate. It used to be one, and the cost was that
+// `wallet_tokens` contained only trades that made 2x AND $1k: a wallet appearing
+// five times had five wins and an unknown number of losses, so win rate was
+// uncomputable and every wallet in the database looked like a genius. Every
+// trader row from a scan is now stored, carrying the verdict as a column.
+//
+// Where it still gates: enrichment API calls (Solana Tracker credits, Birdeye
+// CUs) and win badges. Those cost real money or make a claim about a wallet.
+// Storage is ~100 bytes a row and was never the constraint.
 //
 // scripts/enrich-wallets.mjs duplicates these values; it cannot import from
 // src/lib (the `server-only` boundary), so change both together.
@@ -47,11 +55,49 @@ export function displayMultiple(pnlUsd: number, basisUsd: number): number | null
   return x > MAX_PLAUSIBLE_MULTIPLE_X ? null : x;
 }
 
-/** True when a result is worth storing or tagging. */
+/** True when a result counts as a win — worth a badge, and worth enriching. */
 export function meetsQualityBar(multipleX: number | null, pnlUsd: number | null): boolean {
-  if (multipleX === null || pnlUsd === null) return false;
-  if (!Number.isFinite(multipleX) || !Number.isFinite(pnlUsd)) return false;
-  return multipleX >= MIN_WALLET_MULTIPLE_X && pnlUsd >= MIN_WALLET_PNL_USD;
+  return qualityVerdict(multipleX, pnlUsd).qualified;
+}
+
+/**
+ * Why a row failed the bar. A boolean would be enough to compute a win rate, but
+ * "didn't make $1k" and "has no measurable multiple because the tokens arrived
+ * by transfer" are completely different claims about a wallet, and the figures
+ * they were derived from get overwritten by the next rescan.
+ */
+export type DisqualifiedReason =
+  | "below_multiple"
+  | "below_pnl"
+  | "below_both"
+  | "no_multiple"
+  | "not_finite";
+
+export interface QualityVerdict {
+  qualified: boolean;
+  /** Null exactly when `qualified`. */
+  reason: DisqualifiedReason | null;
+}
+
+/** The bar, plus which test a failing row failed. */
+export function qualityVerdict(
+  multipleX: number | null,
+  pnlUsd: number | null
+): QualityVerdict {
+  // A null multiple is not a loss: the PNL can be large and real while the cost
+  // basis is dust from an untracked transfer. It is recorded as its own reason
+  // so those rows can be classified later rather than counted as losses.
+  if (multipleX === null || pnlUsd === null) return { qualified: false, reason: "no_multiple" };
+  if (!Number.isFinite(multipleX) || !Number.isFinite(pnlUsd)) {
+    return { qualified: false, reason: "not_finite" };
+  }
+
+  const belowMultiple = multipleX < MIN_WALLET_MULTIPLE_X;
+  const belowPnl = pnlUsd < MIN_WALLET_PNL_USD;
+  if (belowMultiple && belowPnl) return { qualified: false, reason: "below_both" };
+  if (belowMultiple) return { qualified: false, reason: "below_multiple" };
+  if (belowPnl) return { qualified: false, reason: "below_pnl" };
+  return { qualified: true, reason: null };
 }
 
 /**

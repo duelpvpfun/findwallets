@@ -101,11 +101,18 @@ export const walletPositions = pgTable(
     buyTxCount: integer("buy_tx_count"),
     sellTxCount: integer("sell_tx_count"),
     lastTradeMs: bigint("last_trade_ms", { mode: "number" }),
+    /** Whether this position clears the quality bar. Losing and marginal
+     * positions are stored too — without them a wallet's GMGN history is all
+     * wins and its win rate is uncomputable. */
+    qualified: boolean("qualified").notNull().default(false),
+    /** Which test it failed; null when `qualified`. */
+    disqualifiedReason: text("disqualified_reason"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     primaryKey({ columns: [t.walletId, t.tokenAddress] }),
     index("wallet_positions_total_pnl_idx").on(t.totalPnlUsd),
+    index("wallet_positions_wallet_qualified_idx").on(t.walletId, t.qualified),
   ]
 );
 
@@ -139,6 +146,16 @@ export const walletTokens = pgTable(
     remainingValueUsd: doublePrecision("remaining_value_usd"),
     unrealizedPnlUsd: doublePrecision("unrealized_pnl_usd"),
     rankingWindow: text("ranking_window").notNull(),
+    /**
+     * Whether this trade cleared `meetsQualityBar` on the last scan that saw it.
+     *
+     * This used to be a write gate: rows that failed were never inserted, so the
+     * table held only wins and a wallet's loss count was unknowable. Storing the
+     * verdict instead is what makes `qualified / total` a real win rate.
+     */
+    qualified: boolean("qualified").notNull().default(false),
+    /** Which test it failed; null when `qualified`. See `DisqualifiedReason`. */
+    disqualifiedReason: text("disqualified_reason"),
     timesObserved: integer("times_observed").notNull().default(1),
     firstObservedAt: timestamp("first_observed_at", { withTimezone: true }).notNull().defaultNow(),
     lastObservedAt: timestamp("last_observed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -149,6 +166,8 @@ export const walletTokens = pgTable(
     index("wallet_tokens_pnl_idx").on(t.realizedPnlUsd),
     // Covers the per-wallet top-wins lateral join in fetchWalletHistories.
     index("wallet_tokens_wallet_pnl_idx").on(t.walletId, sql`${t.realizedPnlUsd} desc`),
+    // Covers the per-wallet qualified/total counts behind the win-rate figure.
+    index("wallet_tokens_wallet_qualified_idx").on(t.walletId, t.qualified),
   ]
 );
 

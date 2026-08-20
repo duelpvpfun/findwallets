@@ -61,10 +61,11 @@ const MAX_SCANS_PER_MINUTE = 12;
 async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
   if (!isDbConfigured()) return;
   try {
-    // Filtered here as well as in recordScan so the enrichment calls below are
-    // only spent on wallets that will actually be stored.
+    // The quality bar gates ENRICHMENT, not storage. Every trader row is stored
+    // (recordScan flags each one), because dropping the losses is what made win
+    // rate uncomputable. Enrichment is where the money goes — Solana Tracker
+    // credits and 35 Birdeye CU per wallet — so it stays behind the bar.
     const qualifying = traders.filter((t) => meetsQualityBar(t.avgMultipleX, t.realizedPnlUsd));
-    if (qualifying.length === 0) return;
 
     // Wallets enriched recently keep their stored lifetime stats, so repeat
     // scans of overlapping wallet sets cost nothing extra.
@@ -72,16 +73,18 @@ async function persistScan(token: TokenMeta, traders: WalletTrader[]) {
       token.chain === "solana"
         ? qualifying.map((t) => t.address)
         : qualifying.slice(0, EVM_ENRICH_LIMIT).map((t) => t.address);
-    const needsEnrichment = await filterNeedsEnrichment(token.chain, candidates);
 
     let lifetime: LifetimeStats[] = [];
-    if (needsEnrichment.length > 0) {
-      lifetime =
-        token.chain === "solana"
-          ? await fetchWalletLifetimeBatch(needsEnrichment)
-          : await fetchEvmWalletLifetime(token.chain as EvmChain, needsEnrichment);
+    if (candidates.length > 0) {
+      const needsEnrichment = await filterNeedsEnrichment(token.chain, candidates);
+      if (needsEnrichment.length > 0) {
+        lifetime =
+          token.chain === "solana"
+            ? await fetchWalletLifetimeBatch(needsEnrichment)
+            : await fetchEvmWalletLifetime(token.chain as EvmChain, needsEnrichment);
+      }
     }
-    await recordScan(token, qualifying, lifetime);
+    await recordScan(token, traders, lifetime);
   } catch (err) {
     console.error("[persistScan] failed:", err);
   }
