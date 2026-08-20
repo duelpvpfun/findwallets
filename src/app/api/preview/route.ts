@@ -16,7 +16,7 @@ const PREVIEW_LIMIT = 25;
  * showcase list are allowed — an arbitrary address can't be scanned for free.
  */
 export async function GET(request: NextRequest) {
-  const limit = rateLimit(`preview:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
+  const limit = await rateLimit(`preview:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
       { error: "Too many requests. Try again shortly." },

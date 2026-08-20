@@ -10,7 +10,7 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 const MAX_REQUESTS_PER_MINUTE = 60;
 
 export async function GET(request: NextRequest) {
-  const limited = rateLimit(`claim:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
+  const limited = await rateLimit(`claim:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many requests. Slow down." },

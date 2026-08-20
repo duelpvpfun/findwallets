@@ -19,7 +19,7 @@ function isValidPubkeyShape(value: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(`pay-init:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
+  const limited = await rateLimit(`pay-init:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many requests. Slow down." },

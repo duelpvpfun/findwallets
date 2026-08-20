@@ -71,6 +71,7 @@ export async function recordScan(
       priceUsd: token.priceUsd,
       marketCapUsd: token.marketCapUsd,
       nativePriceUsd: token.nativePriceUsd,
+      estimatedSupply: token.estimatedSupply || null,
       scanCount: 1,
     })
     .onConflictDoUpdate({
@@ -82,6 +83,8 @@ export async function recordScan(
         priceUsd: token.priceUsd,
         marketCapUsd: token.marketCapUsd,
         nativePriceUsd: token.nativePriceUsd,
+        // A failed supply read must not wipe a good stored value.
+        estimatedSupply: sql`coalesce(excluded.estimated_supply, ${tokens.estimatedSupply})`,
         lastScannedAt: new Date(),
         scanCount: sql`${tokens.scanCount} + 1`,
       },

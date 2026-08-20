@@ -312,12 +312,18 @@ export async function fetchEvmTopTraders(
   limit: number,
   estimatedSupply: number,
   timeFrame: string = "90d",
-  priceUsd: number = 0
+  priceUsd: number = 0,
+  deadlineAt?: number,
+  onBatch?: (traders: WalletTrader[]) => void
 ): Promise<WalletTrader[]> {
   const pageCount = Math.ceil((limit * ARTIFACT_HEADROOM) / PAGE_SIZE);
   const traders: WalletTrader[] = [];
 
   for (let batchStart = 0; batchStart < pageCount; batchStart += MAX_CONCURRENT_PAGES) {
+    // Out of time: return what has been collected rather than letting the
+    // platform kill the function with a consumed credit and nothing delivered.
+    if (deadlineAt !== undefined && Date.now() >= deadlineAt && traders.length > 0) break;
+    const before = traders.length;
     const batch = Array.from(
       { length: Math.min(MAX_CONCURRENT_PAGES, pageCount - batchStart) },
       (_, i) => batchStart + i
@@ -349,6 +355,9 @@ export async function fetchEvmTopTraders(
         traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply));
       }
     }
+    // Progress only; on-chain holdings are applied to the final list below, so
+    // these rows carry no balance data yet.
+    if (onBatch && traders.length > before) onBatch(traders.slice(before));
     if (exhausted) break;
   }
 

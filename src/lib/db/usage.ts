@@ -73,30 +73,32 @@ export async function flushApiUsage(): Promise<void> {
 
   const today = new Date().toISOString().slice(0, 10);
   try {
-    await Promise.all(
-      batch.map(([key, entry]) => {
-        const [provider, endpoint] = key.split("\u0000");
-        return db
-          .insert(apiUsage)
-          .values({
-            day: today,
-            provider,
-            endpoint,
-            calls: entry.calls,
-            credits: entry.credits,
-            errors: entry.errors,
-          })
-          .onConflictDoUpdate({
-            target: [apiUsage.day, apiUsage.provider, apiUsage.endpoint],
-            set: {
-              calls: sql`${apiUsage.calls} + ${entry.calls}`,
-              credits: sql`${apiUsage.credits} + ${entry.credits}`,
-              errors: sql`${apiUsage.errors} + ${entry.errors}`,
-              updatedAt: new Date(),
-            },
-          });
-      })
-    );
+    // One at a time: a scan can accumulate a counter per upstream endpoint, and
+    // a wide concurrent fan-out on the pooled connection hangs instead of
+    // queueing (see the comment in db/index.ts). This is a background counter
+    // flush, so serial costs nothing anybody is waiting on.
+    for (const [key, entry] of batch) {
+      const [provider, endpoint] = key.split("\u0000");
+      await db
+        .insert(apiUsage)
+        .values({
+          day: today,
+          provider,
+          endpoint,
+          calls: entry.calls,
+          credits: entry.credits,
+          errors: entry.errors,
+        })
+        .onConflictDoUpdate({
+          target: [apiUsage.day, apiUsage.provider, apiUsage.endpoint],
+          set: {
+            calls: sql`${apiUsage.calls} + ${entry.calls}`,
+            credits: sql`${apiUsage.credits} + ${entry.credits}`,
+            errors: sql`${apiUsage.errors} + ${entry.errors}`,
+            updatedAt: new Date(),
+          },
+        });
+    }
   } catch {
     // Metrics are best-effort; a lost counter must never surface to a buyer.
   }

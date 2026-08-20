@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -5,6 +6,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   serial,
@@ -27,6 +29,9 @@ export const tokens = pgTable(
     priceUsd: doublePrecision("price_usd"),
     marketCapUsd: doublePrecision("market_cap_usd"),
     nativePriceUsd: doublePrecision("native_price_usd"),
+    /** Authoritative supply for market-cap math, so wallet-detail never has to
+     * trust an attacker-controlled query parameter. */
+    estimatedSupply: doublePrecision("estimated_supply"),
     /** Hand-picked tokens offered as a free sample scan. */
     showcase: boolean("showcase").notNull().default(false),
     firstScannedAt: timestamp("first_scanned_at", { withTimezone: true }).notNull().defaultNow(),
@@ -142,6 +147,8 @@ export const walletTokens = pgTable(
   (t) => [
     primaryKey({ columns: [t.walletId, t.tokenId] }),
     index("wallet_tokens_pnl_idx").on(t.realizedPnlUsd),
+    // Covers the per-wallet top-wins lateral join in fetchWalletHistories.
+    index("wallet_tokens_wallet_pnl_idx").on(t.walletId, sql`${t.realizedPnlUsd} desc`),
   ]
 );
 
@@ -173,12 +180,17 @@ export const scanCredits = pgTable(
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     consumedChain: text("consumed_chain"),
     consumedTokenAddress: text("consumed_token_address"),
+    /** Set alongside consumedAt and cleared once the scan is confirmed
+     * delivered. A row still carrying this after the grace window means the
+     * function died mid-scan, so the cron sweeper can hand the credit back. */
+    reservedAt: timestamp("reserved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("scan_credits_payment_id_idx").on(t.paymentId),
     uniqueIndex("scan_credits_claim_token_idx").on(t.claimToken),
     index("scan_credits_claim_nonce_hash_idx").on(t.claimNonceHash),
+    index("scan_credits_reserved_at_idx").on(t.reservedAt),
   ]
 );
 
@@ -291,3 +303,15 @@ export const apiUsage = pgTable(
   },
   (t) => [uniqueIndex("api_usage_day_endpoint_idx").on(t.day, t.provider, t.endpoint)]
 );
+
+/**
+ * The admin dashboard's precomputed figures, refreshed by cron. A module-level
+ * cache was per-lambda-instance, so every cold instance re-ran the whole
+ * aggregate set; a single row means the dashboard costs one indexed read.
+ */
+export const statsSnapshot = pgTable("stats_snapshot", {
+  /** Always 1 — this table holds exactly one row. */
+  id: integer("id").primaryKey(),
+  payload: jsonb("payload").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+});

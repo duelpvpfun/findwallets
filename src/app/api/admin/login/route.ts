@@ -8,7 +8,11 @@ export const dynamic = "force-dynamic";
 const MAX_ATTEMPTS_PER_15_MIN = 8;
 
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(`admin-login:${clientIp(request)}`, MAX_ATTEMPTS_PER_15_MIN, 15 * 60_000);
+  const limited = await rateLimit(
+    `admin-login:${clientIp(request)}`,
+    MAX_ATTEMPTS_PER_15_MIN,
+    15 * 60_000
+  );
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many attempts. Try again later." },

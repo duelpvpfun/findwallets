@@ -293,22 +293,39 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   };
 }
 
-export async function fetchTopTraders(address: string, limit: number, estimatedSupply: number): Promise<WalletTrader[]> {
+// Every trader on a page can be dropped by isVolumeArtifact, so `hasMore` alone
+// is not a termination guarantee: a bot-heavy token would page until the
+// function is killed, burning upstream credits and the buyer's credit with it.
+const MAX_PAGES = 10;
+
+export async function fetchTopTraders(
+  address: string,
+  limit: number,
+  estimatedSupply: number,
+  deadlineAt?: number,
+  onPage?: (traders: WalletTrader[]) => void
+): Promise<WalletTrader[]> {
   const traders: WalletTrader[] = [];
   let cursor: string | undefined;
   const PAGE_SIZE = 200;
 
-  while (traders.length < limit) {
+  for (let page = 0; page < MAX_PAGES && traders.length < limit; page++) {
+    if (deadlineAt !== undefined && Date.now() >= deadlineAt) break;
+    const before = traders.length;
+
     // A full page every time, not `limit - traders.length`: dropping artifacts
     // would otherwise leave the result short of what the buyer paid for.
-    const page = await stFetch<TokenTradersResponse>(`/v2/pnl/tokens/${address}/traders`, {
+    const res = await stFetch<TokenTradersResponse>(`/v2/pnl/tokens/${address}/traders`, {
       sort: "realized",
       direction: "desc",
       limit: PAGE_SIZE,
       cursor,
     });
 
-    for (const h of page.traders) {
+    // An empty page means there is nothing left regardless of what `hasMore` claims.
+    if (!res.traders || res.traders.length === 0) break;
+
+    for (const h of res.traders) {
       // Churn bots are excluded before mapping — see isVolumeArtifact.
       if (isVolumeArtifact(h.counts?.total ?? 0, h.volume.tokensBought ?? 0, estimatedSupply)) {
         continue;
@@ -317,8 +334,10 @@ export async function fetchTopTraders(address: string, limit: number, estimatedS
       traders.push(mapHolder(h, traders.length + 1, estimatedSupply));
     }
 
-    if (!page.pagination.hasMore || !page.pagination.nextCursor) break;
-    cursor = page.pagination.nextCursor;
+    if (onPage && traders.length > before) onPage(traders.slice(before));
+
+    if (!res.pagination.hasMore || !res.pagination.nextCursor) break;
+    cursor = res.pagination.nextCursor;
   }
 
   return traders;

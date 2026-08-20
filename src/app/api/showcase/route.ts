@@ -13,7 +13,7 @@ const TICKER_SIZE = 60;
  * not expose a full ranked scan — that stays behind the paywall.
  */
 export async function GET(request: NextRequest) {
-  const limit = rateLimit(`showcase:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
+  const limit = await rateLimit(`showcase:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
       { error: "Too many requests." },

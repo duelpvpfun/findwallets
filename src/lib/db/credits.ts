@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { scanCredits, webhookLog } from "./schema";
@@ -83,7 +83,7 @@ export async function createCredit(input: CreateCreditInput): Promise<string | n
 export interface CreditStatus {
   valid: boolean;
   tier: Tier | null;
-  reason?: "not_found" | "already_used" | "no_db";
+  reason?: "not_found" | "already_used" | "reservation_pending" | "no_db";
 }
 
 /** Read-only status for the UI. Never use this to authorize a scan: the gap
@@ -93,15 +93,34 @@ export async function checkCredit(claimToken: string): Promise<CreditStatus> {
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
   const rows = await db
-    .select({ tier: scanCredits.tier, consumedAt: scanCredits.consumedAt })
+    .select({
+      tier: scanCredits.tier,
+      consumedAt: scanCredits.consumedAt,
+      reservedAt: scanCredits.reservedAt,
+    })
     .from(scanCredits)
     .where(eq(scanCredits.claimToken, claimToken))
     .limit(1);
 
   if (rows.length === 0) return { valid: false, tier: null, reason: "not_found" };
-  if (rows[0].consumedAt) return { valid: false, tier: rows[0].tier as Tier, reason: "already_used" };
-  return { valid: true, tier: rows[0].tier as Tier };
+  const row = rows[0];
+  // Still holding a reservation means the scan it was claimed for never reported
+  // delivery. The buyer has not had their wallets, so this is not "already used"
+  // — it is a scan in flight, or one that died and is about to be handed back.
+  if (row.reservedAt) {
+    return { valid: false, tier: row.tier as Tier, reason: "reservation_pending" };
+  }
+  if (row.consumedAt) return { valid: false, tier: row.tier as Tier, reason: "already_used" };
+  return { valid: true, tier: row.tier as Tier };
 }
+
+/**
+ * How long a reservation is trusted to belong to a live request. A scan pages
+ * under SCAN_BUDGET_MS and finishes well inside this, so anything older is a
+ * request that was killed — its owner may retake it and scan again immediately.
+ * The cron sweeper is still the backstop for tokens nobody comes back for.
+ */
+const RETRY_TAKEOVER_MS = 2 * 60_000;
 
 /**
  * Claims the credit up front, in a single atomic compare-and-set, and returns
@@ -117,10 +136,30 @@ export async function reserveCredit(
   const db = getDb();
   if (!db) return { valid: false, tier: null, reason: "no_db" };
 
+  const now = new Date();
+  const staleCutoff = new Date(now.getTime() - RETRY_TAKEOVER_MS);
   const reserved = await db
     .update(scanCredits)
-    .set({ consumedAt: new Date(), consumedChain: chain, consumedTokenAddress: tokenAddress })
-    .where(and(eq(scanCredits.claimToken, claimToken), isNull(scanCredits.consumedAt)))
+    .set({
+      consumedAt: now,
+      consumedChain: chain,
+      consumedTokenAddress: tokenAddress,
+      reservedAt: now,
+    })
+    .where(
+      and(
+        eq(scanCredits.claimToken, claimToken),
+        or(
+          // Never spent.
+          isNull(scanCredits.consumedAt),
+          // Or spent on a scan that never reported delivery and is old enough to
+          // be dead. Waiting for the sweeper here would tell a buyer whose scan
+          // just crashed that their purchase was "already used" for the next ten
+          // minutes, which is the single worst message this app can show.
+          and(isNotNull(scanCredits.reservedAt), lt(scanCredits.reservedAt, staleCutoff))
+        )
+      )
+    )
     .returning({ tier: scanCredits.tier });
 
   if (reserved.length > 0) return { valid: true, tier: reserved[0].tier as Tier };
@@ -132,15 +171,91 @@ export async function reserveCredit(
 }
 
 /**
- * Hands a reserved credit back when the scan it was reserved for delivered
- * nothing, so an empty result or upstream failure never costs the buyer.
+ * Self-serve purchase recovery: maps an on-chain signature back to its credit
+ * so a buyer whose browser lost the claim token isn't stranded.
  */
-export async function releaseCredit(claimToken: string): Promise<void> {
+export async function findCreditByPaymentId(
+  paymentId: string
+): Promise<{ claimToken: string; tier: Tier; consumed: boolean } | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select({
+      claimToken: scanCredits.claimToken,
+      tier: scanCredits.tier,
+      consumedAt: scanCredits.consumedAt,
+    })
+    .from(scanCredits)
+    .where(eq(scanCredits.paymentId, paymentId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return { claimToken: row.claimToken, tier: row.tier as Tier, consumed: row.consumedAt !== null };
+}
+
+/**
+ * Marks a reservation as safely delivered. Until this runs the credit is still
+ * sweepable, so a function killed mid-scan gets refunded automatically.
+ */
+export async function confirmCreditDelivered(claimToken: string): Promise<void> {
   const db = getDb();
   if (!db) return;
 
   await db
     .update(scanCredits)
-    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null })
+    .set({ reservedAt: null })
     .where(eq(scanCredits.claimToken, claimToken));
+}
+
+/**
+ * Hands a reserved credit back when the scan it was reserved for delivered
+ * nothing, so an empty result or upstream failure never costs the buyer.
+ *
+ * Scoped to the exact reservation: without the chain/token predicates a late or
+ * duplicate release could un-consume a credit that a *different*, successful
+ * scan had legitimately spent, handing out a free scan.
+ */
+export async function releaseCredit(
+  claimToken: string,
+  chain: string,
+  tokenAddress: string
+): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+
+  const released = await db
+    .update(scanCredits)
+    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null, reservedAt: null })
+    .where(
+      and(
+        eq(scanCredits.claimToken, claimToken),
+        isNotNull(scanCredits.consumedAt),
+        eq(scanCredits.consumedChain, chain),
+        eq(scanCredits.consumedTokenAddress, tokenAddress)
+      )
+    )
+    .returning({ id: scanCredits.id });
+
+  return released.length > 0;
+}
+
+/**
+ * Safety net for every crash, timeout or deploy that interrupts a scan after
+ * the credit was reserved. A reservation older than the grace window can no
+ * longer belong to an in-flight request, so it is given back.
+ */
+export async function releaseStaleReservations(graceMinutes = 10): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  const cutoff = new Date(Date.now() - graceMinutes * 60_000);
+  const released = await db
+    .update(scanCredits)
+    .set({ consumedAt: null, consumedChain: null, consumedTokenAddress: null, reservedAt: null })
+    .where(and(isNotNull(scanCredits.reservedAt), lt(scanCredits.reservedAt, cutoff)))
+    .returning({ id: scanCredits.id });
+
+  return released.length;
 }

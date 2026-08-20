@@ -13,7 +13,11 @@ export function isOwnerKey(key: string | null): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export type AccessDenyReason = "payment_required" | "credit_used" | "credit_invalid";
+export type AccessDenyReason =
+  | "payment_required"
+  | "credit_used"
+  | "credit_pending"
+  | "credit_invalid";
 
 export interface AccessResult {
   allowed: boolean;
@@ -63,7 +67,15 @@ export async function resolveAccess(
       allowed: false,
       maxLimit: 0,
       isOwner: false,
-      reason: status.reason === "already_used" ? "credit_used" : "credit_invalid",
+      reason:
+        status.reason === "already_used"
+          ? "credit_used"
+          : // A reservation this young belongs to a scan that is genuinely still
+            // running: reserveCredit hands the token back to its owner once the
+            // reservation is stale, so reaching here means "wait", not "spent".
+            status.reason === "reservation_pending"
+            ? "credit_pending"
+            : "credit_invalid",
     };
   }
 

@@ -11,7 +11,7 @@ const MAX_VISITS_PER_MINUTE = 10;
 /** Fire-and-forget page-view beacon for the owner dashboard. */
 export async function POST(request: NextRequest) {
   const ip = clientIp(request);
-  const limited = rateLimit(`visit:${ip}`, MAX_VISITS_PER_MINUTE, 60_000);
+  const limited = await rateLimit(`visit:${ip}`, MAX_VISITS_PER_MINUTE, 60_000);
   if (!limited.ok) return new NextResponse(null, { status: 204 });
 
   let path = "/";
