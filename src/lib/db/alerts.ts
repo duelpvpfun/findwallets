@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   alertState,
@@ -10,10 +10,12 @@ import {
   type AlertWalletSnapshot,
 } from "./schema";
 import {
+  AGED_SAMPLE_SECONDS,
   ALERT_TIERS,
   ALERT_WINDOWS_SECONDS,
   EPISODE_GAP_SECONDS,
   EVENT_RETENTION_HOURS,
+  FRESH_SAMPLE_SECONDS,
   LONGEST_WINDOW_SECONDS,
   MAX_SAMPLES,
   MIN_BUY_USD,
@@ -459,34 +461,47 @@ export interface TrackingTarget {
 }
 
 /**
- * Distinct tokens still inside their tracking window, least recently checked
- * first. Deduplicated, so five alerts on one token cost one price lookup rather
- * than five.
+ * Tokens due for a market-cap sample, least recently checked first.
+ *
+ * **Sampling tapers with age.** A memecoin's peak is almost always in the first
+ * day, so a token alerted in the last 24 hours is re-read every run (ten
+ * minutes) and anything older once an hour. Sampling everything every ten
+ * minutes for a week would cost roughly six times as much upstream for
+ * resolution nobody reads — and sampling hourly from the start would miss the
+ * part that matters.
+ *
+ * Deduplicated by token, so five calls on one token cost one price lookup.
  */
-export async function fetchTrackingTokens(chain: string, limit = 300): Promise<TrackingTarget[]> {
+export async function fetchTrackingTokens(chain: string, limit = 400): Promise<TrackingTarget[]> {
   const db = getDb();
   if (!db) return [];
 
-  const rows = await db
-    .select({
-      tokenAddress: alertsFired.tokenAddress,
-      supplyAtAlert: sql<number | null>`max(${alertsFired.supplyAtAlert})`,
-    })
-    .from(alertsFired)
-    .where(
-      and(
-        eq(alertsFired.chain, chain),
-        eq(alertsFired.superseded, false),
-        sql`${alertsFired.trackedUntil} > now()`
-      )
-    )
-    .groupBy(alertsFired.tokenAddress)
-    .orderBy(asc(sql`min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt}))`))
-    .limit(limit);
+  const rows = await db.execute<{ token_address: string; supply_at_alert: number | null }>(sql`
+    select
+      ${alertsFired.tokenAddress} as token_address,
+      max(${alertsFired.supplyAtAlert}) as supply_at_alert
+    from ${alertsFired}
+    where ${alertsFired.chain} = ${chain}
+      and ${alertsFired.superseded} = false
+      and ${alertsFired.trackedUntil} > now()
+    group by ${alertsFired.tokenAddress}
+    -- Seconds arithmetic rather than \`make_interval(secs => $n)\`: Postgres
+    -- cannot infer a type for a bound parameter in that argument position and
+    -- the whole statement fails to plan.
+    having extract(epoch from (
+             now() - min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt}))
+           )) > case
+             when max(${alertsFired.createdAt}) > now() - interval '24 hours'
+             then ${FRESH_SAMPLE_SECONDS}::float8
+             else ${AGED_SAMPLE_SECONDS}::float8
+           end
+    order by min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt})) asc
+    limit ${limit}
+  `);
 
   return rows.map((r) => ({
-    tokenAddress: r.tokenAddress,
-    supplyAtAlert: r.supplyAtAlert === null ? null : Number(r.supplyAtAlert),
+    tokenAddress: r.token_address,
+    supplyAtAlert: num(r.supply_at_alert),
   }));
 }
 
@@ -599,7 +614,7 @@ function num(value: unknown): number | null {
  * proven wallets IS the product — it is what a scan sells, and what took every
  * paid upstream call in the database to assemble. A public feed handing back
  * full addresses would let anyone rebuild that list for free by polling
- * `/api/alerts/feed`, and no amount of truncation in the UI would help, because
+ * `/api/feed`, and no amount of truncation in the UI would help, because
  * the addresses would still be sitting in the JSON.
  *
  * So it happens here, at the read that serves the public endpoint, and the

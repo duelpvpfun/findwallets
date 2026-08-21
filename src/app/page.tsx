@@ -13,6 +13,12 @@ import OnboardingCarousel, {
   markOnboardingSeen,
 } from "@/components/OnboardingCarousel";
 import WalletConnectButton from "@/components/WalletConnectButton";
+
+/** Public channel handle, resolved once. Absent env just hides the icon. */
+const TELEGRAM_CHANNEL = process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL;
+const TELEGRAM_URL = TELEGRAM_CHANNEL
+  ? `https://t.me/${TELEGRAM_CHANNEL.replace(/^@/, "")}`
+  : null;
 import { useAccount } from "@/components/AccountProvider";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { detectAddressFamily } from "@/lib/chains";
@@ -412,6 +418,30 @@ export default function Home() {
             </div>
           </button>
           <div className="flex items-center gap-2">
+            {/* Two ways into the free side of the product, both ahead of the
+                wallet button: the feed is the top-of-funnel for the scanner,
+                and the channel is where people actually keep it open. */}
+            <Link
+              href="/feed"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-live-pulse" />
+              Feed
+            </Link>
+            {TELEGRAM_URL && (
+              <a
+                href={TELEGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Smart money alerts on Telegram"
+                title="Smart money alerts on Telegram"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:border-neutral-700 hover:text-[#29a9eb]"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M21.94 4.3a1.2 1.2 0 0 0-1.63-1.15L2.9 9.9c-1.06.42-1.05 1.93.02 2.33l3.9 1.47 1.5 4.72c.3.96 1.53 1.2 2.17.43l2.1-2.53 4 2.95c.79.58 1.92.14 2.11-.83l3.24-14.14ZM8.7 13.2l8.2-5.1-6.42 6.02a1.2 1.2 0 0 0-.36.72l-.28 2.02-1.14-3.66Z" />
+                </svg>
+              </a>
+            )}
             <WalletConnectButton />
             {/* Only once there is an account to look at: signed out the page is
                 just a sign-in prompt, which the Connect button already is. */}

@@ -32,15 +32,15 @@ export interface AlertTier {
  * marginal information in "now 9 wallets" over "now 8 wallets" is nil.
  */
 export const ALERT_TIERS: AlertTier[] = [
-  { wallets: 2, windowSeconds: 120, label: "2 in 2m", kind: "burst" },
-  { wallets: 3, windowSeconds: 300, label: "3 in 5m", kind: "burst" },
-  { wallets: 4, windowSeconds: 3600, label: "4 in 1h", kind: "cluster" },
-  { wallets: 5, windowSeconds: 3600, label: "5 in 1h", kind: "cluster" },
-  { wallets: 6, windowSeconds: 3600, label: "6 in 1h", kind: "cluster" },
-  { wallets: 8, windowSeconds: 3600, label: "8 in 1h", kind: "accumulation" },
-  { wallets: 10, windowSeconds: 3600, label: "10 in 1h", kind: "accumulation" },
-  { wallets: 15, windowSeconds: 3600, label: "15 in 1h", kind: "accumulation" },
-  { wallets: 20, windowSeconds: 3600, label: "20 in 1h", kind: "accumulation" },
+  { wallets: 2, windowSeconds: 120, label: "2 wallets", kind: "burst" },
+  { wallets: 3, windowSeconds: 300, label: "3 wallets", kind: "burst" },
+  { wallets: 4, windowSeconds: 3600, label: "4 wallets", kind: "cluster" },
+  { wallets: 5, windowSeconds: 3600, label: "5 wallets", kind: "cluster" },
+  { wallets: 6, windowSeconds: 3600, label: "6 wallets", kind: "cluster" },
+  { wallets: 8, windowSeconds: 3600, label: "8 wallets", kind: "accumulation" },
+  { wallets: 10, windowSeconds: 3600, label: "10 wallets", kind: "accumulation" },
+  { wallets: 15, windowSeconds: 3600, label: "15 wallets", kind: "accumulation" },
+  { wallets: 20, windowSeconds: 3600, label: "20 wallets", kind: "accumulation" },
 ];
 
 /** Distinct window lengths, longest first — the shape the window query wants. */
@@ -62,7 +62,35 @@ export function tierFor(wallets: number): AlertTier | undefined {
  * behaviour before committing, and three of those inside two minutes is a
  * false alert, not a signal.
  */
-export const MIN_BUY_USD = 50;
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+export const MIN_BUY_USD = envNumber("ALERTS_MIN_BUY_USD", 250);
+
+/**
+ * Below this market cap an alert is recorded and tracked but never announced.
+ *
+ * Measured on the first hour of live traffic: 50 of 84 alerts fired under $20K,
+ * which is where a single buy moves the chart and the "multiple" stops meaning
+ * anything. They stay in the database because the scoreboard needs the sample;
+ * they do not reach the channel.
+ */
+export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 20_000);
+
+/**
+ * Lowest tier that reaches Telegram. Everything still lands on the feed.
+ *
+ * The tiers were calibrated for a ~500-wallet roster. At 1,685 active traders,
+ * two of them buying the same token inside two minutes happens by coincidence
+ * constantly: the live rate was 561 alerts an hour, which is a channel nobody
+ * stays subscribed to. Four independent proven wallets is a claim worth a
+ * notification; two is worth a row on a page.
+ */
+export const TELEGRAM_MIN_TIER = envNumber("ALERTS_TELEGRAM_MIN_TIER", 4);
 
 /**
  * How long a token must go without a single tracked buy before its escalation
@@ -90,9 +118,23 @@ export const EVENT_RETENTION_HOURS = 48;
  */
 export const TRACKING_DAYS = 7;
 
-/** Cap on the stored hourly series: 7 days at one an hour, plus the alert-time
- * sample. Enough to draw the whole tracked life of an alert. */
-export const MAX_SAMPLES = TRACKING_DAYS * 24 + 1;
+/**
+ * How often a token's market cap is re-read, by how old the call is.
+ *
+ * Ten minutes for the first 24 hours, then hourly. A memecoin's peak is almost
+ * always inside the first day, and the running maximum is only as good as the
+ * sampling rate around it — but paying ten-minute resolution for a week would
+ * be six times the upstream cost for detail nobody looks at.
+ */
+export const FRESH_SAMPLE_SECONDS = 10 * 60;
+export const AGED_SAMPLE_SECONDS = 60 * 60;
+
+/**
+ * Cap on the stored series: the dense first day (six an hour) plus six more
+ * days hourly, plus the alert-time sample. Enough to draw the whole tracked
+ * life of a call at the resolution it was actually measured.
+ */
+export const MAX_SAMPLES = 24 * 6 + (TRACKING_DAYS - 1) * 24 + 1;
 
 /**
  * Below this, a market cap is too thin for the multiple to mean anything — a

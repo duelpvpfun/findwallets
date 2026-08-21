@@ -6,6 +6,10 @@ import type { TierScore } from "@/lib/db/alerts";
 /**
  * Which shape of alert is actually worth acting on.
  *
+ * Operator-only, on /admin. It is the answer to "how should we tune the tiers",
+ * not a claim to make to customers: an "average peak" published on a public
+ * page gets read as a return somebody actually made, which it is not.
+ *
  * This is the only honest answer to that question, and it is the reason the
  * hourly market-cap tracker exists at all: without it the product could
  * generate alerts forever and never prove one of them worked.
@@ -103,7 +107,7 @@ export default function TierScoreboard({ scores }: { scores: TierScore[] }) {
               return (
                 <tr key={row.tier} className="align-middle">
                   <th scope="row" className="w-24 pr-3 text-xs font-medium whitespace-nowrap text-neutral-300">
-                    {row.label}
+                    {row.tier} wallets
                   </th>
 
                   <td className="w-full pr-3">

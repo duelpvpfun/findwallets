@@ -26,7 +26,7 @@ const API_BASE = "https://api.telegram.org";
  * instead of the domain.
  */
 function brandUrl(): string {
-  return new URL("/alerts", SITE_URL).toString();
+  return new URL("/feed", SITE_URL).toString();
 }
 
 export function isTelegramConfigured(): boolean {
@@ -254,7 +254,7 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
 
   rows.push([
     { text: "📈 Chart", url: dexScreenerUrl(chain, tokenAddress) },
-    { text: "🔎 AlphaWallets.fun", url: brandUrl() },
+    { text: "🔎 Live feed", url: brandUrl() },
   ]);
   return rows;
 }

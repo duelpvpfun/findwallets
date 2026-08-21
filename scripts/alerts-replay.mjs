@@ -225,7 +225,8 @@ if (CLASSIFY_ONLY) {
       const match = subjects.filter(([, v]) => (side === "buy" ? v > 0 : v < 0));
       if (match.length !== 1 || Math.abs(quoteUsd) < 1) continue;
 
-      side === "buy" ? buys++ : sells++;
+      if (side === "buy") buys++;
+      else sells++;
       const name = wallet.label || wallet.address.slice(0, 6);
       console.log(
         `${side === "buy" ? "BUY " : "SELL"}  $${Math.abs(quoteUsd).toFixed(0).padStart(7)}  ` +

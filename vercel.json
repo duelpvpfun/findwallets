@@ -15,7 +15,7 @@
     },
     {
       "path": "/api/cron/alert-track",
-      "schedule": "7 * * * *"
+      "schedule": "*/10 * * * *"
     }
   ]
 }

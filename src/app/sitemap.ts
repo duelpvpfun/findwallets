@@ -15,7 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...(alertsArePublic()
       ? [
           {
-            url: new URL("/alerts", SITE_URL).toString(),
+            url: new URL("/feed", SITE_URL).toString(),
             lastModified: new Date(),
             changeFrequency: "hourly" as const,
             priority: 0.8,

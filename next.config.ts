@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      // The page was /alerts before launch. Any link already shared, and the
+      // "All alerts" button on Telegram messages posted before the rename,
+      // still has to land somewhere.
+      { source: "/alerts", destination: "/feed", permanent: false },
+    ];
+  },
+
   async headers() {
     return [
       {

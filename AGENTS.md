@@ -222,6 +222,21 @@ supply change cannot masquerade as a market-cap move. `greatest()` means the pea
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
+**Volume is tuned by env, not by code.** The tiers were calibrated for a ~500-wallet roster; at
+1,685 the measured live rate was **561 alerts an hour**, because two proven wallets buying the same
+token inside two minutes happens by coincidence constantly. Three knobs, all with defaults that
+were set from that first hour of real traffic: `ALERTS_TELEGRAM_MIN_TIER` (4),
+`ALERTS_MIN_MCAP_USD` (20,000 — half of the first 84 alerts fired under it), `ALERTS_MIN_BUY_USD`
+(250). **A suppressed alert is still recorded and still tracked**, because a suppressed call that
+turns out to have been a good one is the only evidence that the knobs are set wrong.
+
+**Market caps are sampled every 10 minutes for the first 24 hours, then hourly.** A memecoin's peak
+is almost always inside the first day, and the running maximum is only as good as the sampling rate
+around it — but ten-minute resolution for a full week is six times the upstream cost for detail
+nobody reads. `fetchTrackingTokens` does the tapering in its `HAVING`. Note it uses seconds
+arithmetic rather than `make_interval(secs => $n)`: Postgres cannot infer a type for a bound
+parameter in that argument position and the statement fails to plan.
+
 **One token escalating 2 -> 3 -> 4 is ONE call, and the feed groups it as one.** Each step still
 writes its own `alerts_fired` row — that is what makes each fire exactly once, and what lets the
 tier scoreboard answer "would you have done better entering on the 2-wallet alert or the 4-wallet
@@ -230,7 +245,7 @@ step** (crediting ourselves with the 4-wallet entry after announcing at 2 would 
 homework), the roster and averages come from the highest, and the peak is shared because it is a
 property of the token. In Telegram each escalation replies to the first message of its own call.
 
-**`/alerts` is owner-only until `ALERTS_PUBLIC=1`.** The page renders exactly as it will in
+**`/feed` is owner-only until `ALERTS_PUBLIC=1`.** The page renders exactly as it will in
 public and is reached with the `/admin` cookie, so what gets reviewed is the real page rather than
 a preview of it, and shipping is an env var rather than a diff. **The gate covers the page, the
 JSON feed and the sitemap together** — a private page served by a public endpoint is a public page

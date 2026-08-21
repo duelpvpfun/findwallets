@@ -3,6 +3,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
+import TierScoreboard from "@/components/feed/TierScoreboard";
+import type { TierScore } from "@/lib/db/alerts";
 
 const REFRESH_MS = 60_000;
 
@@ -309,7 +311,13 @@ const PaymentsTable = memo(function PaymentsTable({
   );
 });
 
-export default function AdminDashboard({ initial }: { initial: AdminStats }) {
+export default function AdminDashboard({
+  initial,
+  alertScores,
+}: {
+  initial: AdminStats;
+  alertScores: TierScore[];
+}) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
   const [hourly, setHourly] = useState(false);
@@ -413,10 +421,10 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
               owner-only until ALERTS_PUBLIC is set, so the admin cookie is
               currently the only way in. */}
           <a
-            href="/alerts"
+            href="/feed"
             className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-600"
           >
-            Alert calls
+            Live feed
           </a>
           <button
             onClick={refresh}
@@ -454,6 +462,13 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
           value={`${conversion.toFixed(2)}%`}
           sub={`${formatCompactNumber(visitors.visitors30d)} visitors in 30d`}
         />
+      </div>
+
+      {/* Operator-only, and deliberately not on the public feed: "average peak"
+          published to customers reads as a return somebody made. Here it is
+          what it actually is — the number that says how to tune the tiers. */}
+      <div className="mt-6">
+        <TierScoreboard scores={alertScores} />
       </div>
 
       <section className="mt-8">
