@@ -273,7 +273,8 @@ textarea:focus-visible {
 
   .radar-sweep,
   .radar-ping,
-  .animate-progress-drift {
+  .animate-progress-drift,
+  .animate-live-pulse {
     animation: none;
   }
 
@@ -281,4 +282,22 @@ textarea:focus-visible {
     opacity: 0.18;
     transform: scale(1);
   }
+}
+
+/* Live-stream indicator on the alerts page. Opacity only — nothing that
+   triggers layout. Its reduced-motion opt-out is at the bottom of this file,
+   and the button also reads useReducedMotion(), because the dot sits next to
+   JS-driven polling that must go quiet at the same time. */
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-live-pulse {
+  animation: livePulse 1.8s ease-in-out infinite;
 }

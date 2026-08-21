@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   date,
   doublePrecision,
@@ -411,5 +412,176 @@ export const scanResults = pgTable(
     index("scan_results_user_created_idx").on(t.userId, sql`${t.createdAt} desc`),
     index("scan_results_credit_idx").on(t.creditId),
     index("scan_results_expires_at_idx").on(t.expiresAt),
+  ]
+);
+
+/**
+ * The wallets whose on-chain buys we stream. A denormalised roster rather than a
+ * view over `walletTokens`: the alert message quotes each wallet's track record,
+ * and the hot path is a Helius webhook arriving several times a second on a
+ * Postgres pool of 3. One indexed read per POST, no joins.
+ *
+ * Membership is recomputed by `scripts/sync-alert-wallets.mjs`, which is also
+ * what pushes the address list to Helius. Rows are deactivated, never deleted,
+ * so an alert fired last week still resolves the wallets that were in it.
+ */
+export const alertWallets = pgTable(
+  "alert_wallets",
+  {
+    id: serial("id").primaryKey(),
+    chain: text("chain").notNull(),
+    address: text("address").notNull(),
+    walletId: integer("wallet_id")
+      .notNull()
+      .references(() => wallets.id),
+    label: text("label"),
+    twitter: text("twitter"),
+    tokenCount: integer("token_count").notNull().default(0),
+    avgMultipleX: doublePrecision("avg_multiple_x"),
+    avgPnlUsd: doublePrecision("avg_pnl_usd"),
+    bestMultipleX: doublePrecision("best_multiple_x"),
+    bestPnlUsd: doublePrecision("best_pnl_usd"),
+    bestSymbol: text("best_symbol"),
+    active: boolean("active").notNull().default(true),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("alert_wallets_chain_address_idx").on(t.chain, t.address),
+    index("alert_wallets_active_idx").on(t.chain, t.active),
+  ]
+);
+
+/**
+ * A classified swap by a rostered wallet. Short-lived — the retention sweep in
+ * the hourly cron drops anything older than `EVENT_RETENTION_HOURS`, because
+ * this is a rolling window, not an archive.
+ *
+ * Sells are stored alongside buys and never trigger anything. They exist so an
+ * alert can say a wallet had already exited by the time it fired.
+ */
+export const walletEvents = pgTable(
+  "wallet_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    chain: text("chain").notNull(),
+    txSignature: text("tx_signature").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    side: text("side").notNull(),
+    amountUsd: doublePrecision("amount_usd").notNull().default(0),
+    tokenAmount: doublePrecision("token_amount"),
+    priceUsd: doublePrecision("price_usd"),
+    blockTime: timestamp("block_time", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Helius retries any non-2xx delivery, and one transaction reaches us once
+    // per tracked wallet in it. Both are no-ops because of this index.
+    uniqueIndex("wallet_events_dedupe_idx").on(
+      t.chain,
+      t.txSignature,
+      t.walletAddress,
+      t.tokenAddress,
+      t.side
+    ),
+    index("wallet_events_window_idx").on(t.chain, t.tokenAddress, t.side, sql`${t.blockTime} desc`),
+    index("wallet_events_block_time_idx").on(t.blockTime),
+  ]
+);
+
+/**
+ * Per-token escalation state. `episode` increments once a token has been quiet
+ * for longer than the configured gap, which is what re-arms it: without it, a
+ * token that escalated 2 -> 3 -> 4 last Tuesday could never alert again.
+ */
+export const alertState = pgTable(
+  "alert_state",
+  {
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    episode: integer("episode").notNull().default(1),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chain, t.tokenAddress] })]
+);
+
+/** One wallet as it stood when an alert fired. Frozen — a later roster resync
+ * must not be able to rewrite what an alert claimed at the time. */
+export interface AlertWalletSnapshot {
+  address: string;
+  label: string | null;
+  twitter: string | null;
+  /** Mean multiple across this wallet's recorded wins. */
+  multipleX: number | null;
+  /** Mean realized PNL across those wins. */
+  pnlUsd: number | null;
+  bestMultipleX: number | null;
+  bestSymbol: string | null;
+  /** What it put in on THIS token, in the window. */
+  boughtUsd: number;
+  boughtAt: string;
+  /** Sold at least part of it before the alert fired. Still counted. */
+  exited: boolean;
+}
+
+/** One hourly market-cap sample: `[unixSeconds, mcapUsd]`. */
+export type AlertMcapSample = [number, number];
+
+/**
+ * An announced alert, and how the token did afterwards.
+ *
+ * The market-cap columns are the product's own scoreboard: every alert pins the
+ * cap it fired at, the hourly cron keeps the running maximum, and the ratio of
+ * the two is how a tier proves it is worth reading. Supply is pinned too, so a
+ * later sample is price x the same supply and a supply change cannot show up as
+ * a market-cap move.
+ */
+export const alertsFired = pgTable(
+  "alerts_fired",
+  {
+    id: serial("id").primaryKey(),
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    tokenSymbol: text("token_symbol"),
+    tokenName: text("token_name"),
+    tokenImageUrl: text("token_image_url"),
+    tier: integer("tier").notNull(),
+    episode: integer("episode").notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    /** Real first-to-last buy span. The message quotes this, not the configured
+     * window, because "in the past 2 minutes" has to be true. */
+    spanSeconds: integer("span_seconds").notNull().default(0),
+    walletCount: integer("wallet_count").notNull(),
+    wallets: jsonb("wallets").$type<AlertWalletSnapshot[]>().notNull().default([]),
+    exitedCount: integer("exited_count").notNull().default(0),
+    avgMultipleX: doublePrecision("avg_multiple_x"),
+    avgPnlUsd: doublePrecision("avg_pnl_usd"),
+    totalBoughtUsd: doublePrecision("total_bought_usd"),
+    priceAtAlertUsd: doublePrecision("price_at_alert_usd"),
+    mcapAtAlertUsd: doublePrecision("mcap_at_alert_usd"),
+    supplyAtAlert: doublePrecision("supply_at_alert"),
+    athMcapUsd: doublePrecision("ath_mcap_usd"),
+    athAt: timestamp("ath_at", { withTimezone: true }),
+    lastMcapUsd: doublePrecision("last_mcap_usd"),
+    samples: jsonb("samples").$type<AlertMcapSample[]>().notNull().default([]),
+    trackedUntil: timestamp("tracked_until", { withTimezone: true }).notNull(),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    /** A lower tier claimed in the same instant as the one actually announced,
+     * so it can never fire later on a smaller count. Excluded from the feed and
+     * from every performance figure. */
+    superseded: boolean("superseded").notNull().default(false),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deliveryError: text("delivery_error"),
+    /** Set on the first announced step of a call, so later escalations on the
+     * same token and episode reply to it rather than arriving as unrelated
+     * posts. See `drizzle/0023_alert_calls.sql`. */
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("alerts_fired_key_idx").on(t.chain, t.tokenAddress, t.tier, t.episode),
+    index("alerts_fired_created_idx").on(sql`${t.createdAt} desc`),
+    index("alerts_fired_tracking_idx").on(t.trackedUntil, t.lastCheckedAt),
   ]
 );
