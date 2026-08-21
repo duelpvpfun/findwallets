@@ -184,24 +184,23 @@ export const TRADE_LINKS: TradeLink[] = [
     plain: (chain, address) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${address}`,
   },
   {
-    // The only destination with no per-token deep link: `basedbot.app/r/<ref>`
-    // is a referral landing page, so a buyer arrives at the app rather than at
-    // the coin. That is why it sits last, and why the "Copy contract" button is
-    // first — the contract is already on their clipboard when they land.
-    // Replace both forms the moment a per-token URL is known.
-    //
-    // Listed on all three chains: the app is Base-first (its root redirects to
-    // /base) but exposes ETH, SOL and BNB, and a referral landing page is
-    // chain-agnostic anyway.
+    // Deep-links per token, same as the others. The referral code goes on as
+    // `?ref=`, which is the convention but is NOT confirmed for this host —
+    // Cloudflare blocks any request that could verify it. A wrong parameter is
+    // ignored rather than broken, so the risk is silently losing commission,
+    // not a dead link. Confirm it attaches, and if the parameter has another
+    // name this is a one-word change.
     name: "BasedBot",
     chains: ["solana", "bsc", "base"],
     refEnv: "ALERTS_REF_BASEDBOT",
-    withRef: (_chain, _address, ref) => `https://basedbot.app/r/${ref}`,
-    plain: () => `https://basedbot.app`,
+    withRef: (chain, address, ref) =>
+      `https://basedbot.app/token/${BASEDBOT_CHAIN_SLUG[chain]}/${address}?ref=${ref}`,
+    plain: (chain, address) => `https://basedbot.app/token/${BASEDBOT_CHAIN_SLUG[chain]}/${address}`,
   },
 ];
 
 const GMGN_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
+const BASEDBOT_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
 
 /** The buttons for one chain, in display order. */
 export function tradeLinksFor(chain: Chain): TradeLink[] {
@@ -212,4 +211,21 @@ const DEXSCREENER_SLUG: Record<Chain, string> = { solana: "solana", bsc: "bsc", 
 
 export function dexScreenerUrl(chain: Chain, address: string): string {
   return `https://dexscreener.com/${DEXSCREENER_SLUG[chain]}/${address}`;
+}
+
+
+/**
+ * Whether `/alerts` and its feed are public.
+ *
+ * Off by default, which makes the page owner-only: it renders exactly as it
+ * will in public, behind the same admin cookie as `/admin`, so what gets
+ * reviewed is the real thing rather than a preview of it. Flipping
+ * `ALERTS_PUBLIC=1` ships it — no code change, no redeploy of anything else,
+ * and no chance of the switch and the page disagreeing.
+ *
+ * The gate has to cover the API as well as the page. A private page served by a
+ * public JSON endpoint is a public page with extra steps.
+ */
+export function alertsArePublic(): boolean {
+  return process.env.ALERTS_PUBLIC === "1";
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { formatMultiple, formatUsd } from "@/lib/format";
 import { dexScreenerUrl, tradeLinksFor, tierFor } from "@/lib/alerts/config";
 import type { Chain } from "@/lib/types";
@@ -44,8 +44,54 @@ function humanSpan(seconds: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
+/**
+ * The loudest single credential in the group. Mirrors `bestWin` in telegram.ts,
+ * so the page and the channel make the same claim about the same alert. Below
+ * 5x it is not worth a line.
+ *
+ * The return type narrows `bestMultipleX` and `bestSymbol` to non-null rather
+ * than leaving the caller to assert it, so the "we already checked" is carried
+ * by the types instead of by memory.
+ */
+interface Standout {
+  name: string;
+  bestMultipleX: number;
+  bestSymbol: string;
+}
+
+function standoutWin(alert: AlertFeedRow): Standout | null {
+  let best: Standout | null = null;
+  for (const w of alert.wallets) {
+    if (w.bestMultipleX === null || !w.bestSymbol) continue;
+    if (w.bestMultipleX < 5) continue;
+    if (best === null || w.bestMultipleX > best.bestMultipleX) {
+      best = {
+        name: w.label || w.address,
+        bestMultipleX: w.bestMultipleX,
+        bestSymbol: w.bestSymbol,
+      };
+    }
+  }
+  return best;
+}
+
 export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyContract = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(alert.tokenAddress);
+      setCopied(true);
+      // Long enough to register, short enough that the button is ready again
+      // before anyone reaches for it twice.
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard access can be refused (insecure origin, denied permission).
+      // The address is rendered in full beside the button, so there is still a
+      // way to get it.
+    }
+  }, [alert.tokenAddress]);
 
   const tier = tierFor(alert.tier);
   const symbol = (alert.tokenSymbol || "?").replace(/^\$+/, "");
@@ -57,6 +103,7 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
 
   const wallets = expanded ? alert.wallets : alert.wallets.slice(0, VISIBLE_WALLETS);
   const hidden = alert.wallets.length - wallets.length;
+  const standout = standoutWin(alert);
 
   return (
     <article className="animate-fade-in rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-4 transition-colors hover:border-neutral-700/80">
@@ -132,6 +179,26 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
         ) : null}
       </p>
 
+      {standout ? (
+        <p className="mt-1.5 text-xs text-neutral-400">
+          ⭐{" "}
+          <span className="font-medium text-neutral-200">{standout.name}</span>{" "}
+          once did{" "}
+          <span className="tnum font-semibold text-blue-300">
+            {formatMultiple(standout.bestMultipleX)}
+          </span>{" "}
+          on ${standout.bestSymbol.replace(/^\$+/, "")}
+        </p>
+      ) : null}
+
+      {alert.exitedCount > 0 ? (
+        // Counted toward the tier — the entry is the signal — but nobody should
+        // chase an entry a wallet has already left without being told.
+        <p className="mt-1.5 text-xs text-amber-300/90">
+          ⚠️ {alert.exitedCount} of {alert.walletCount} already sold some back
+        </p>
+      ) : null}
+
       {/* Performance. `peak` is why the whole hourly tracker exists, so it gets
           the emphasis; `now` is the honest counterweight beside it. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-neutral-800/60 bg-neutral-950/50 px-3 py-2.5">
@@ -205,9 +272,19 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
             {link.name}
           </a>
         ))}
-        <code className="ml-auto max-w-full truncate font-mono text-[10px] text-neutral-600">
-          {alert.tokenAddress}
-        </code>
+        {/* Same job as the Telegram "Copy contract" button: copying the address
+            is the step between reading an alert and owning the coin. */}
+        <button
+          type="button"
+          onClick={copyContract}
+          title={alert.tokenAddress}
+          className="ml-auto flex min-w-0 items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[10px] font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+        >
+          <span aria-hidden>{copied ? "✓" : "📋"}</span>
+          <span className="truncate font-mono">
+            {copied ? "Copied" : alert.tokenAddress}
+          </span>
+        </button>
       </footer>
     </article>
   );

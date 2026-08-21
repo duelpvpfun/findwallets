@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { fetchAlertFeed, fetchAlertSummary, fetchTierScoreboard } from "@/lib/db/alerts";
+import { alertsArePublic } from "@/lib/alerts/config";
+import { isAdminRequest } from "@/lib/adminAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,18 +10,23 @@ const MAX_REQUESTS_PER_MINUTE = 60;
 const CHAIN = "solana";
 
 /**
- * The public alert feed. Free and unauthenticated on purpose: it is the
- * top-of-funnel for the paid scanner and for the Telegram channel, and it costs
- * nothing per viewer beyond an indexed read.
+ * The alert feed, as JSON.
  *
- * It exposes full wallet addresses, unlike `/api/showcase`, which masks them.
- * That is deliberate and not a leak of the paid product: the paid product is a
- * token's complete ranked trader list with entry and exit prices. Here a reader
- * gets a handful of addresses attached to one alert, with no ranking, no
- * prices, and no way to ask for another token — the same thing they would see
- * in the free Telegram channel.
+ * Gated in lockstep with the page: owner-only until `ALERTS_PUBLIC=1`, because
+ * a private page served by a public endpoint is a public page with extra steps.
+ *
+ * Wallet addresses arrive already masked from `fetchAlertFeed`. That masking is
+ * a business boundary rather than a display choice — the curated list of proven
+ * wallets is what a scan sells, and full addresses here would let anyone rebuild
+ * it by polling this URL.
  */
 export async function GET(request: NextRequest) {
+  // The same gate as the page. A private page served by a public JSON endpoint
+  // is a public page with extra steps.
+  if (!alertsArePublic() && !(await isAdminRequest())) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
   const limit = await rateLimit(`alerts:${clientIp(request)}`, MAX_REQUESTS_PER_MINUTE, 60_000);
   if (!limit.ok) {
     return NextResponse.json(

@@ -409,6 +409,15 @@ export default function AdminDashboard({ initial }: { initial: AdminStats }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* The alert feed renders exactly as it will in public but is
+              owner-only until ALERTS_PUBLIC is set, so the admin cookie is
+              currently the only way in. */}
+          <a
+            href="/alerts"
+            className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-600"
+          >
+            Alert calls
+          </a>
           <button
             onClick={refresh}
             className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-600"

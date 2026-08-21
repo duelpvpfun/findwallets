@@ -222,6 +222,12 @@ supply change cannot masquerade as a market-cap move. `greatest()` means the pea
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
+**`/alerts` is owner-only until `ALERTS_PUBLIC=1`.** The page renders exactly as it will in
+public and is reached with the `/admin` cookie, so what gets reviewed is the real page rather than
+a preview of it, and shipping is an env var rather than a diff. **The gate covers the page, the
+JSON feed and the sitemap together** — a private page served by a public endpoint is a public page
+with extra steps, and the three must flip in one move.
+
 **The public feed masks wallet addresses, and that is a business boundary.** The curated list of
 proven wallets IS the paid product — it is what a scan sells and what every paid upstream call in
 the database went into assembling. `fetchAlertFeed` truncates to `abcd…wxyz` at the read that

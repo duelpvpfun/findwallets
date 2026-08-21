@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import WalletConnectButton from "@/components/WalletConnectButton";
 import AlertsClient from "@/components/alerts/AlertsClient";
 import { fetchAlertFeed, fetchAlertSummary, fetchTierScoreboard } from "@/lib/db/alerts";
+import { alertsArePublic } from "@/lib/alerts/config";
+import { isAdminRequest } from "@/lib/adminAuth";
 import { isDbConfigured } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -12,19 +15,25 @@ export const metadata: Metadata = {
   description:
     "Live alerts when several proven Solana wallets buy the same token inside minutes of each other, with every call's market cap tracked from the moment it fired.",
   alternates: { canonical: "/alerts" },
+  // Flipped to indexable in the same release that sets ALERTS_PUBLIC. Metadata
+  // is static, so this stays conservative until then rather than risking the
+  // page being crawled while it is still owner-only.
+  robots: { index: false, follow: false },
 };
 
 const CHAIN = "solana";
 const INITIAL_ALERTS = 40;
 
 /**
- * The public alert feed.
+ * The alert feed.
  *
- * Free, and it stays free: it is the top-of-funnel for both the paid scanner
- * and the Telegram channel, and it costs nothing per viewer beyond an indexed
- * read. Nothing on this page is gated, and nothing on it should ever become
- * gated — the paid product is a token's complete ranked trader list, not a
- * handful of addresses attached to one alert.
+ * Owner-only until `ALERTS_PUBLIC=1`, and rendered exactly as it will be in
+ * public so that what gets reviewed is the real page rather than a preview of
+ * it. Once flipped it costs nothing per viewer beyond an indexed read, and it
+ * is the top-of-funnel for both the paid scanner and the Telegram channel.
+ *
+ * Wallet addresses are masked at the database read either way — the curated
+ * wallet list is the paid product, and this page never resolves one.
  *
  * Server-rendered so a reload never shows an empty shell, then polled client
  * side. Every query below runs one after another: a `Promise.all` of database
@@ -33,6 +42,11 @@ const INITIAL_ALERTS = 40;
  * all. See AGENTS.md.
  */
 export default async function AlertsPage() {
+  // Owner-only until ALERTS_PUBLIC is set. `notFound()` rather than a login
+  // prompt: an unreleased page should not advertise that it exists, and the
+  // owner already holds the /admin cookie that opens it.
+  if (!alertsArePublic() && !(await isAdminRequest())) notFound();
+
   const configured = isDbConfigured();
 
   const alerts = configured ? await fetchAlertFeed(CHAIN, INITIAL_ALERTS) : [];
