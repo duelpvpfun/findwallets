@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatMultiple, formatUsd, shortenAddress } from "@/lib/format";
+import { formatMultiple, formatUsd } from "@/lib/format";
 import { dexScreenerUrl, tradeLinksFor, tierFor } from "@/lib/alerts/config";
 import type { Chain } from "@/lib/types";
 import type { AlertFeedRow } from "@/lib/db/alerts";
@@ -17,7 +17,7 @@ import McapSparkline from "./McapSparkline";
 
 /** Wallets shown before the list collapses. Enough to judge the call; past this
  * a 20-wallet accumulation alert becomes a wall of addresses. */
-const VISIBLE_WALLETS = 4;
+const VISIBLE_WALLETS = 3;
 
 const TIER_STYLES: Record<string, string> = {
   burst: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -155,16 +155,16 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
       <ul className="mt-3 space-y-1.5">
         {wallets.map((wallet) => (
           <li key={wallet.address} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-            <a
-              href={`https://solscan.io/account/${wallet.address}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`font-medium transition-colors hover:text-blue-300 ${
-                wallet.label ? "text-neutral-200" : "font-mono text-neutral-400"
-              }`}
+            {/* Not a link. The feed masks addresses on purpose — the curated
+                wallet list is the paid product — so there is nothing here a
+                block explorer could resolve. */}
+            <span
+              className={
+                wallet.label ? "font-medium text-neutral-200" : "font-mono text-neutral-400"
+              }
             >
-              {wallet.label || shortenAddress(wallet.address)}
-            </a>
+              {wallet.label || wallet.address}
+            </span>
             {wallet.multipleX !== null ? (
               <span className="tnum text-neutral-400">{formatMultiple(wallet.multipleX)} avg</span>
             ) : null}

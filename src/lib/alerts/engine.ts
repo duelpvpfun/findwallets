@@ -54,8 +54,9 @@ const MAX_TOKENS_PER_DELIVERY = 12;
 const MAX_STORED_WALLETS = 25;
 
 /** Wallets named in the Telegram message. Past this it stops being scannable in
- * a chat and becomes a wall of addresses. */
-const MAX_MESSAGE_WALLETS = 6;
+ * a chat and becomes a wall of addresses; a 20-wallet accumulation alert would
+ * fill a phone screen on its own. The block states how many were withheld. */
+const MAX_MESSAGE_WALLETS = 4;
 
 export interface DeliveryReport {
   transactions: number;

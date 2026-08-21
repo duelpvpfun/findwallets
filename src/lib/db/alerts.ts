@@ -573,6 +573,11 @@ export async function secondsSinceLastEvent(chain: string): Promise<number | nul
 
 // --- Reads for the public feed ---
 
+/**
+ * One alert as the PUBLIC feed sees it. Wallet addresses on this shape are
+ * masked (`abcd…wxyz`) and are not resolvable — see `maskAddress`. Anything
+ * that needs a real address must read `alerts_fired.wallets` directly.
+ */
 export interface AlertFeedRow {
   id: number;
   chain: string;
@@ -595,6 +600,25 @@ export interface AlertFeedRow {
   athAt: string | null;
   samples: AlertMcapSample[];
   createdAt: string;
+}
+
+/**
+ * Cut a stored wallet address down to `abcd…wxyz` for public consumption.
+ *
+ * **This is a business boundary, not a display choice.** The curated list of
+ * proven wallets IS the product — it is what a scan sells, and what took every
+ * paid upstream call in the database to assemble. A public feed handing back
+ * full addresses would let anyone rebuild that list for free by polling
+ * `/api/alerts/feed`, and no amount of truncation in the UI would help, because
+ * the addresses would still be sitting in the JSON.
+ *
+ * So it happens here, at the read that serves the public endpoint, and the
+ * stored `alerts_fired.wallets` keeps the full address for our own use. Enough
+ * is shown to prove the alert names real, distinct wallets; not enough to
+ * follow one.
+ */
+function maskAddress(address: string): string {
+  return address.length <= 12 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
 export async function fetchAlertFeed(
@@ -642,7 +666,7 @@ export async function fetchAlertFeed(
 
   return rows.map((r) => ({
     ...r,
-    wallets: r.wallets ?? [],
+    wallets: (r.wallets ?? []).map((w) => ({ ...w, address: maskAddress(w.address) })),
     samples: r.samples ?? [],
     athAt: r.athAt ? r.athAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),

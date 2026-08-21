@@ -106,12 +106,21 @@ export interface AlertMessageInput {
  * tier's configured window. "in the past 2 minutes" has to be true.
  */
 export function buildAlertMessage(input: AlertMessageInput): string {
-  const symbol = escapeHtml((input.tokenSymbol || "?").replace(/^\$+/, ""));
+  const raw = escapeHtml((input.tokenSymbol || "?").replace(/^\$+/, ""));
+  // Telegram can only copy the literal contents of a <code> span, so tapping a
+  // ticker cannot put the contract on the clipboard. The ticker opens the chart
+  // instead, and the "Copy contract" button does the copying.
+  const symbol = `<a href="${dexScreenerUrl(input.chain, input.tokenAddress)}">${raw}</a>`;
   const count = input.walletCount;
   const out: string[] = [];
 
+  // The span belongs in the headline, not below it: "3 wallets bought" is a
+  // fact, "3 wallets bought inside 40 seconds" is the reason to act. The figure
+  // is the REAL first-to-last span, never the tier's configured window — "in
+  // the past 2 minutes" has to be true.
   out.push(
-    `${tierPips(input.tier, count)} <b>${count} SMART WALLET${count === 1 ? "" : "S"}</b> bought <b>$${symbol}</b>`
+    `${tierPips(input.tier, count)} <b>${count} SMART WALLET${count === 1 ? "" : "S"}</b> bought` +
+      ` <b>$${symbol}</b> in the past <b>${humanSpan(input.spanSeconds)}</b>`
   );
   if (input.tokenName && input.tokenName.toLowerCase() !== (input.tokenSymbol ?? "").toLowerCase()) {
     out.push(`<i>${escapeHtml(input.tokenName)}</i>`);
@@ -120,8 +129,7 @@ export function buildAlertMessage(input: AlertMessageInput): string {
 
   // Three facts, one line. Three separate labelled lines was more readable on a
   // desktop and worse where it matters, which is a phone in a busy channel.
-  const facts = [`⏱ <b>${humanSpan(input.spanSeconds)}</b> apart`];
-  facts.push(`💵 <b>${formatUsd(input.totalBoughtUsd)}</b> in`);
+  const facts = [`💵 <b>${formatUsd(input.totalBoughtUsd)}</b> in`];
   if (input.mcapUsd && input.mcapUsd > 0) facts.push(`📊 <b>${formatUsd(input.mcapUsd)}</b> MC`);
   out.push(facts.join("  ·  "));
 
@@ -137,7 +145,7 @@ export function buildAlertMessage(input: AlertMessageInput): string {
   if (standout) out.push(`⭐ ${standout}`);
 
   out.push("");
-  out.push(walletBlock(input.wallets));
+  out.push(walletBlock(input.wallets, count));
 
   if (input.exitedCount > 0) {
     // Counted toward the tier regardless — the entry is the signal — but
@@ -175,7 +183,7 @@ function bestWin(wallets: AlertWalletSnapshot[]): string | null {
  * 20-wallet accumulation alert from burying every other message in the channel
  * while still letting anyone who cares open it.
  */
-function walletBlock(wallets: AlertWalletSnapshot[]): string {
+function walletBlock(wallets: AlertWalletSnapshot[], total: number): string {
   const lines = wallets.map((wallet) => {
     const who = wallet.label
       ? `<b>${escapeHtml(wallet.label)}</b>`
@@ -187,14 +195,21 @@ function walletBlock(wallets: AlertWalletSnapshot[]): string {
     return `${who} — ${parts.join(" · ")}${flag}`;
   });
 
+  // Never a silent truncation: an accumulation alert that lists four of twenty
+  // wallets has to say so, or the block reads as the whole picture.
+  const withheld = total - wallets.length;
+  if (withheld > 0) lines.push(`<i>+ ${withheld} more</i>`);
+
   const tag = lines.length > 4 ? "<blockquote expandable>" : "<blockquote>";
   return `${tag}${lines.join("\n")}</blockquote>`;
 }
 
-interface InlineButton {
-  text: string;
-  url: string;
-}
+/** A url button, or a `copy_text` button — Telegram copies the string to the
+ * clipboard on tap, with no bot round trip, which is the only way to make
+ * "tap to get the contract" work from a channel post. */
+type InlineButton =
+  | { text: string; url: string }
+  | { text: string; copy_text: { text: string } };
 
 /**
  * The referral row, plus the two links that make the alert useful rather than
@@ -213,6 +228,12 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
   });
 
   const rows: InlineButton[][] = [];
+
+  // First, and alone on its row. Copying the contract is the step between
+  // reading the alert and owning the coin, so it gets the biggest target on
+  // screen. `copy_text` needs no bot round trip and works in a channel.
+  rows.push([{ text: "📋 Copy contract", copy_text: { text: tokenAddress } }]);
+
   // Two per row. Telegram shrinks the label to fit, and three buttons wide
   // stops being tappable on a small phone.
   for (let i = 0; i < trade.length; i += 2) rows.push(trade.slice(i, i + 2));

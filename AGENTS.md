@@ -217,6 +217,20 @@ supply change cannot masquerade as a market-cap move. `greatest()` means the pea
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
+**The public feed masks wallet addresses, and that is a business boundary.** The curated list of
+proven wallets IS the paid product — it is what a scan sells and what every paid upstream call in
+the database went into assembling. `fetchAlertFeed` truncates to `abcd…wxyz` at the read that
+serves `/api/alerts/feed`, **not** in the component: truncating in the UI would leave the full
+addresses sitting in the JSON, where polling the endpoint rebuilds the whole database for free. The
+stored `alerts_fired.wallets` keeps the real address for our own use. Anything that needs a
+resolvable address must read the table directly, and nothing on the public path may link one to a
+block explorer.
+
+**Telegram cannot make arbitrary text copy something else** — a `<code>` span copies its own literal
+contents, so tapping a ticker cannot yield the contract. The `copy_text` inline button does it
+instead, with no bot round trip, and it works from a channel post. It is the first button and alone
+on its row, because copying the contract is the step between reading an alert and owning the coin.
+
 **The roster is quality-selected, not `times_seen`-selected.** `scripts/sync-alert-wallets.mjs`
 takes wallets with one 4x+ win, or two 3x+ wins, or a 2x with $5K+ profit — and only counts rows
 with a real cost basis (see the duplication table above). `times_seen` measures which tokens
