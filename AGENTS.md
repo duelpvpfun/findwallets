@@ -48,6 +48,12 @@ exhaust connections. `POSTGRES_URL_NON_POOLING` is the direct connection and is 
 Never swap them. `src/lib/db/index.ts` sets `prepare: false` because the pooler doesn't support
 prepared statements.
 
+**`tsc` errors inside `.next/` are not your code.** Killing `next dev` mid-write leaves a truncated
+`.next/dev/types/validator.ts`, which reports syntax errors in a file nobody wrote; deleting `.next`
+removes the generated globals instead, and `layout.tsx` then can't find `LayoutProps`. Both are
+artifacts of `.next` state, in opposite directions. Read the output with `| grep -v '^\.next/'`, and
+if `LayoutProps` is the only failure, start `next dev` once to regenerate the types.
+
 **If `next dev` returns 404 for every route, delete `.next`.** A production build left in the same
 directory does this — the server starts, reports "Ready", compiles the route on request, and then
 404s the whole app. `rm -rf .next` and restart.
@@ -206,11 +212,31 @@ anonymous claim-token flow is unchanged. Do not let that slip.
 - `useFocusTrap` for modals; `:focus-visible` is styled globally, so don't add per-component rings.
 - Exactly one list is mounted at a time (`useMediaQuery`), never both hidden with CSS — that was
   ~1000 live row subtrees at Top 500 and is what froze phones.
+- **A row's `#` is its position in the list on screen, not the provider's rank.** `filteredTraders`
+  overwrites `Row.rank` with the display position where the order is decided, so the number, the
+  top-three medal accent and an export named by rank cannot disagree. It keeps a row's object
+  identity when the number is already right, which is what preserves the row memo — don't replace
+  that with an unconditional `map`. The wallets in a scan are still *selected* upstream by realized
+  PNL (both providers only rank on that), so changing the PNL basis re-ranks the set we were given
+  rather than fetching a different one.
+- **Modals that auto-advance are a fixed height.** The walkthrough's five panels are five different
+  sizes, and letting the dialog size to its content threw it around the screen between steps.
+- **"Don't show this again" starts unchecked.** Closing the walkthrough must not decide on the
+  visitor's behalf; ticking the box is the only thing that writes the opt-out.
 
 ## Style
 
 - Comments explain *why*, not *what*. The existing code does this well — match it.
 - No `any`. No non-null assertions on data crossing a trust boundary.
+- **Copy a customer reads is short, factual and has no em dashes.** Owner instruction, 2026-08-21:
+  the walkthrough had been written like one half of a conversation ("you watch the count climb
+  instead of staring at a spinner") and that is not what a paying user should be handed. Full stops
+  instead of dashes, no second-person narration of their feelings, no filler. The exception is
+  `PaywallDialog`: its payment-safety wording is load-bearing, so re-punctuate it rather than
+  rewriting it.
+- **There is no Prettier here.** It is not a dependency and there is no config, so running it
+  reformats whole files to defaults that don't match the hand-formatting in the tree. Match the
+  surrounding style by hand.
 - Errors from upstream providers go through `src/lib/upstream.ts` so the user sees a sane message.
 - Analytics, enrichment, and history are best-effort: they must never throw into a paid request path.
 

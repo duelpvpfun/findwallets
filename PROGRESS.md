@@ -312,3 +312,126 @@ realized PNL **$1,000**, zero null multiples, zero orphaned wallets, zero dangli
 foreign keys, zero duplicates, and 331 wallets still carrying multi-token tags.
 
 Re-run the report any time; it is idempotent and prints without `--apply`.
+
+
+# Live polish + EVM accounts — 2026-08-21
+
+Two things happened this day. Everything in section 1 is **merged to `main` and
+verified in production**. Section 2 is **PR #3, open and unmerged**.
+
+## 1. Shipped (PR #2, merge commit `736b899`, then `02c8650` on main)
+
+The accounts/onboarding/UI branch went out, followed by two rounds of the owner's
+own feedback from the preview. In the order it will matter to whoever picks this up:
+
+- **Admin payments table** now flags a first-time buyer with a gold `NEW` badge and
+  shows a lifetime purchase count per payer (`1-4 / 5-9 / 10-19 / 20-49 / 50+`,
+  hue climbing). Both come from one `buyers` CTE in `adminStats.ts` that aggregates
+  the **whole table**, not the 100 rows on the page, so neither is confused by the
+  `limit`. Purchases are counted **per signature** (`split_part(payment_id,'#',1)`),
+  because a bulk order mints one row per credit and that is one purchase.
+- **Row numbers follow the list, not the provider.** `#1` is the top row on screen.
+  The renumbering happens in `filteredTraders` where the order is decided, so the
+  number, the top-three accent and a rank-named export all agree. Rows already
+  numbered correctly keep their object identity, which preserves the row memo. The
+  medal accent is suppressed while sorted ascending, or last place gets a gold bar.
+  **The wallets in a scan are still *selected* upstream by realized PNL** — both
+  providers only rank on realized — so switching the PNL basis re-ranks that set
+  rather than fetching a different one. That caveat lives in the toggle's tooltip.
+- **New filters:** average entry market cap and total USD bought, both in
+  thousands. Entry filters on market cap whatever the Mcap/Price toggle shows.
+  The "Why Avg X isn't Exit ÷ Entry" disclosure is gone; the same text is still on
+  the column header and every Avg X cell as a tooltip.
+- **The walkthrough** is a fixed height (five panels of five sizes under an
+  auto-advance threw the dialog around the screen), holds each panel **5s**, and
+  has "Don't show this again" **unchecked by default** — ticking it is the only
+  thing that suppresses it, and then it never returns.
+- **Free sample scans are paced** through the real scan panel. A cached sample
+  returns in one response, so the panel used to flash for a single frame and the
+  free run felt like nothing happened. Abandoned via a run counter if the visitor
+  hits Back or starts a real scan; skipped entirely under reduced motion.
+- **The wallet dropdown was opening behind the hero heading.** `backdrop-blur` on
+  the header makes it a stacking context, so the dropdown's own `z-50` only ever
+  applied inside it. The header is `z-40` now, under every modal.
+- **`/profile` is reachable**: a header link (only once a wallet is connected) and
+  a back arrow in the page header. "Total spent" removed from the balance strip.
+- **The wallet approval prompt is branded**: the signed message leads with
+  `alphawallets.fun`, and a 180px `apple-icon` was added because wallets show the
+  largest site icon they can find and the 64px favicon rendered soft.
+- **Customer-facing copy was rewritten** across the walkthrough, paywall, profile,
+  sign-in prompt, partial-scan banner, recover page and tooltips. See the style
+  rule this produced in `AGENTS.md`.
+
+Verified live after the merge: all pages 200, `/api/admin/stats` 401,
+`/apple-icon` 200, no Profile link in signed-out HTML, `/api/auth/nonce` returning
+the branded message, and the 5s auto-advance present in the production bundle
+(`setTimeout(...,5e3)`).
+
+## 2. Open: EVM accounts (PR #3, branch `feat/evm-accounts`)
+
+Sign-in was Ed25519-only, so anyone arriving with MetaMask and no Solana wallet
+could not have an account — and without an account a purchase lives and dies with
+their localStorage, which is the exact bug accounts were built to fix. Since the
+tool ranks BNB Chain and Base too, that is a large share of customers.
+
+Either family now signs in, chosen by address format. Solana keeps `signMessage`
+and Ed25519; EVM uses `personal_sign` and is verified by **secp256k1 recovery**,
+because an EVM address is a hash of a public key and there is nothing to compare
+directly. Details and the traps are in `AGENTS.md` under Accounts.
+
+- `npm run test:accounts` passes end to end, with four new steps (EVM sign-in, a
+  checksummed address resolving to the **same** account, `wallet_chain` recorded,
+  a signature from a different key refused).
+- Migration `0020` (`users.wallet_chain`) is **already applied to the live
+  database**. Additive with a default, so `main` is unaffected if this is not merged.
+- `@noble/curves` and `@noble/hashes` became **direct** dependencies. Already in
+  the tree via `@solana/web3.js`; pinned so a lockfile change cannot remove
+  something the auth path calls.
+- **Known rough edge:** an EVM account gets no retroactive backfill, because
+  payment is in SOL/USDC so `payer_wallet` is always base58. It fills from
+  purchases made while signed in, and `/profile` says so. The real fix is
+  **linking a second wallet to one account**, which is the obvious next task here.
+- Not built: EIP-1271 smart-contract wallets. No key to recover, and a Safe cannot
+  pay in SOL.
+
+## Growth shortlist (owner asked, 2026-08-21)
+
+$250 in the first two days, ~50-80 scans, average order ~$3.50. The two numbers
+that matter: **AOV is tiny** and **every dollar needs a fresh wallet round-trip**.
+The moat is `wallet_tokens` (~2,880 curated wallets), not the scanner.
+
+Ranked by return per hour of work:
+
+1. **Bundles at checkout** — 10 scans for $19. `createCredits` already mints
+   multi-scan purchases and accounts already hold spares, so this is pricing and
+   UI only. Moves AOV from $3.50 toward $19.
+2. **"Is smart money already in this token?"** — reverse the query: paste a CA,
+   get how many curated wallets hold it now. Free, instant, no upstream credits,
+   and it answers the question people have *before* paying.
+3. **A public track record** — take wallets flagged 30 days ago and show what they
+   did after. Trust is what caps conversion at $6, and only we can compute it.
+4. Alerts as a subscription (Helius webhooks + worker): "3+ of your tracked
+   wallets just bought the same token". The scan is how they find wallets; the
+   watching is the product. Biggest build, changes the ceiling.
+5. Rescan diffing — who sold, who added, who is new since your last scan.
+6. Cross-token alpha leaderboard, free teaser + subscription.
+7. Sharper labels (snipers, bundlers, deployer-funded) to justify a premium tier.
+8. Free daily "alpha radar" post/feed as top-of-funnel, runs on our own data.
+9. Referral credits and KOL codes. Accounts + `payer_wallet` make attribution cheap.
+10. Export presets for Photon / BullX / Axiom / GMGN / Trojan.
+
+## Still open
+
+1. **Top 500 on a real phone is still unprofiled.** Same gap as the hardening
+   pass: no browser automation in this container, so every layout and render claim
+   on these branches is reasoned, not measured. The one to check is Top 500 plus
+   Copy JSON on a phone.
+2. **Upstash and Sentry are still unset in Vercel.** Rate limiting falls back to
+   per-instance memory (so the real limit is `configured × instances`) and paid
+   scan failures are invisible. Both free signups. Ideas 4 and 8 above would make
+   both mandatory rather than optional.
+3. **`AUTH_SESSION_SECRET` is still unset.** It derives from `OWNER_ACCESS_KEY`,
+   so rotating the owner key signs every user out.
+4. **`/api/showcase` still fans out three `Promise.all` database calls** — the
+   pattern `AGENTS.md` forbids. Predates all of this; three concurrent queries on
+   a pool of three is right at the edge. One-line fix, never done.
