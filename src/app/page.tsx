@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import ScanProgress from "@/components/ScanProgress";
@@ -351,7 +352,10 @@ export default function Home() {
         <div className="absolute top-96 right-0 h-[400px] w-[500px] rounded-full bg-emerald-500/5 blur-3xl" />
       </div>
 
-      <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
+      {/* z-40: `backdrop-blur` makes this a stacking context, so without an
+          explicit layer the wallet dropdown inside it paints *under* <main>
+          and the hero heading covers it. Below every modal (z-50 and up). */}
+      <header className="relative z-40 border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={resetToHome}
@@ -372,6 +376,17 @@ export default function Home() {
           </button>
           <div className="flex items-center gap-2">
             <WalletConnectButton />
+            <Link
+              href="/profile"
+              title="Your purchases and saved results"
+              className="flex items-center gap-1.5 rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="8" r="3.5" />
+                <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
+              </svg>
+              <span className="hidden sm:inline">Profile</span>
+            </Link>
             {/* Persistent way back into the walkthrough — the modal only ever
                 greets someone once, so this is how anyone re-opens it. */}
             <button
