@@ -59,11 +59,11 @@ const REVEAL_PAGES = 8;
 type PanelId = "paste" | "scan" | "rank" | "export" | "try";
 
 const PANELS: Array<{ id: PanelId; step: string; title: string }> = [
-  { id: "paste", step: "Paste", title: "Start with a contract address" },
-  { id: "scan", step: "Scan", title: "Watch the wallets arrive" },
-  { id: "rank", step: "Rank", title: "Read the winners, top down" },
-  { id: "export", step: "Export", title: "Straight into your tracker" },
-  { id: "try", step: "Try it", title: "Run one now, free" },
+  { id: "paste", step: "Paste", title: "Paste a contract address" },
+  { id: "scan", step: "Scan", title: "Watch the scan run" },
+  { id: "rank", step: "Rank", title: "Read the ranking" },
+  { id: "export", step: "Export", title: "Export to your tracker" },
+  { id: "try", step: "Try it", title: "Run one free" },
 ];
 
 export function markOnboardingSeen(): void {
@@ -105,6 +105,10 @@ export default function OnboardingCarousel({
   const [interacted, setInteracted] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [typed, setTyped] = useState("");
+  // Checked by default, because closing the walkthrough has always meant "seen
+  // it". The checkbox exists so that is a visible, reversible choice rather
+  // than a silent side effect of hitting the X.
+  const [remember, setRemember] = useState(true);
 
   const reducedMotion = useReducedMotion();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -113,9 +117,9 @@ export default function OnboardingCarousel({
   const sample = samples[0] ?? null;
 
   const dismiss = useCallback(() => {
-    markOnboardingSeen();
+    if (remember) markOnboardingSeen();
     onClose();
-  }, [onClose]);
+  }, [onClose, remember]);
 
   // `next` is deliberately un-wrapped when the direction is decided, so a wrap
   // from the last panel to the first still animates forward.
@@ -211,7 +215,11 @@ export default function OnboardingCarousel({
         onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60 outline-none sm:max-h-[90vh] sm:rounded-2xl"
+        // Fixed height, not content height: the five panels are not the same
+        // size, and letting the dialog resize under an auto-advance threw the
+        // whole thing around the screen between steps. Taller panels scroll
+        // inside the body instead.
+        className="flex h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60 outline-none sm:h-[min(34rem,90vh)] sm:rounded-2xl"
       >
         {/* Header: step rail doubles as the dot indicator on wide screens. */}
         <div className="flex items-start justify-between gap-4 border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900/80 to-neutral-950 px-5 py-4">
@@ -256,11 +264,11 @@ export default function OnboardingCarousel({
                   setTyped(value);
                 }}
                 onRunSample={() => {
-                  markOnboardingSeen();
+                  if (remember) markOnboardingSeen();
                   if (sample) onRunSample(sample);
                 }}
                 onUseAddress={() => {
-                  markOnboardingSeen();
+                  if (remember) markOnboardingSeen();
                   onUseAddress(typed.trim());
                 }}
               />
@@ -269,53 +277,65 @@ export default function OnboardingCarousel({
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-3 border-t border-neutral-800/80 bg-neutral-950 px-5 py-3.5">
-          <button
-            onClick={() => goTo(index - 1, true)}
-            disabled={index === 0}
-            aria-label="Previous step"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-100 disabled:opacity-30 disabled:hover:border-neutral-800"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m14 18-6-6 6-6" />
-            </svg>
-          </button>
-
-          <div className="flex flex-1 items-center justify-center gap-2">
-            {PANELS.map((p, i) => (
-              <button
-                key={p.id}
-                onClick={() => goTo(i, true)}
-                aria-label={`Go to step ${i + 1}: ${p.step}`}
-                aria-current={i === index ? "step" : undefined}
-                className={`h-1.5 rounded-full transition-all duration-200 ${
-                  i === index
-                    ? "w-6 bg-blue-400"
-                    : "w-1.5 bg-neutral-700 hover:bg-neutral-500"
-                }`}
-              />
-            ))}
-          </div>
-
-          {index === PANELS.length - 1 ? (
+        <div className="border-t border-neutral-800/80 bg-neutral-950 px-5 py-3">
+          <div className="flex items-center gap-3">
             <button
-              onClick={dismiss}
-              className="shrink-0 rounded-lg border border-neutral-800 px-4 py-2 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-100"
+              onClick={() => goTo(index - 1, true)}
+              disabled={index === 0}
+              aria-label="Previous step"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-100 disabled:opacity-30 disabled:hover:border-neutral-800"
             >
-              Done
-            </button>
-          ) : (
-            <button
-              onClick={() => goTo(index + 1, true)}
-              aria-label="Next step"
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500"
-            >
-              Next
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m10 6 6 6-6 6" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m14 18-6-6 6-6" />
               </svg>
             </button>
-          )}
+
+            <div className="flex flex-1 items-center justify-center gap-2">
+              {PANELS.map((p, i) => (
+                <button
+                  key={p.id}
+                  onClick={() => goTo(i, true)}
+                  aria-label={`Go to step ${i + 1}: ${p.step}`}
+                  aria-current={i === index ? "step" : undefined}
+                  className={`h-1.5 rounded-full transition-all duration-200 ${
+                    i === index
+                      ? "w-6 bg-blue-400"
+                      : "w-1.5 bg-neutral-700 hover:bg-neutral-500"
+                  }`}
+                />
+              ))}
+            </div>
+
+            {index === PANELS.length - 1 ? (
+              <button
+                onClick={dismiss}
+                className="shrink-0 rounded-lg border border-neutral-800 px-4 py-2 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-100"
+              >
+                Done
+              </button>
+            ) : (
+              <button
+                onClick={() => goTo(index + 1, true)}
+                aria-label="Next step"
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2 text-xs font-semibold text-white shadow shadow-blue-600/20 transition-all hover:from-blue-400 hover:to-blue-500"
+              >
+                Next
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m10 6 6 6-6 6" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 text-[11px] text-neutral-500 hover:text-neutral-300">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-3 w-3 accent-blue-500"
+            />
+            Don&apos;t show this again
+          </label>
         </div>
       </div>
     </div>
@@ -345,9 +365,8 @@ function PastePanel({ sample }: { sample: OnboardingSample | null }) {
   return (
     <div>
       <PanelCopy>
-        Paste any token contract address. The chain switches itself to match —
-        Solana and EVM addresses can&apos;t be confused for each other, so a
-        mis-pasted address is rejected before it ever costs you a scan.
+        Paste a token contract address. The chain is detected from the address.
+        An invalid address is rejected before it costs a scan.
       </PanelCopy>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 sm:flex-row sm:items-center">
@@ -375,9 +394,9 @@ function PastePanel({ sample }: { sample: OnboardingSample | null }) {
 
       {sample && (
         <p className="mt-3 text-[11px] text-neutral-500">
-          That&apos;s the real address for{" "}
-          <span className="font-medium text-neutral-300">${sample.symbol}</span> — the same one this
-          walkthrough uses on every panel from here.
+          Live contract for{" "}
+          <span className="font-medium text-neutral-300">${sample.symbol}</span>, used on every
+          panel below.
         </p>
       )}
     </div>
@@ -424,8 +443,7 @@ function ScanPanel({
   return (
     <div>
       <PanelCopy>
-        Results stream in while we page the chain — you watch the count climb
-        instead of staring at a spinner. A Top 500 usually lands in a few seconds.
+        Wallets arrive in pages with a live count. A Top 500 takes a few seconds.
       </PanelCopy>
 
       <div className="relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/40">
@@ -476,8 +494,8 @@ function ScanPanel({
 
       {sample && (
         <p className="mt-3 text-[11px] text-neutral-500">
-          Real wallets from a real ${sample.symbol} scan, replayed from our database. The figures are
-          exactly what that scan returned — only the pacing is a replay.
+          Real ${sample.symbol} results, replayed from our database. The figures are unchanged. Only
+          the pacing is simulated.
         </p>
       )}
     </div>
@@ -486,18 +504,26 @@ function ScanPanel({
 
 /** The ranking, in the same visual language as the live results table. */
 function RankPanel({ preview }: { preview: PreviewData | null }) {
-  const rows = preview?.traders.slice(0, PANEL_ROWS) ?? [];
+  // Total PNL, ordered and numbered exactly as the real table does it: the
+  // stored scan arrives in the provider's realized-PNL order, which would show
+  // a #3 at the top of a list sorted any other way.
+  const rows = useMemo(() => {
+    const all = (preview?.traders ?? []).map((t) => ({
+      trader: t,
+      pnlUsd: t.realizedPnlUsd + (t.unrealizedPnlUsd ?? 0),
+    }));
+    return all.sort((a, b) => b.pnlUsd - a.pnlUsd).slice(0, PANEL_ROWS);
+  }, [preview]);
 
   return (
     <div>
       <PanelCopy>
-        Ranked by realized PNL — profit actually taken, not paper gains or bag
-        size. Each row carries the average entry and exit, the multiple, and how
-        much of the position is still held.
+        Ranked by total PNL: profit taken plus the value of tokens still held.
+        Each row shows the multiple, average entry and exit, and the size left.
       </PanelCopy>
 
       <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/40">
-        <div className="grid grid-cols-[2rem_1fr_4rem_5.5rem] gap-2 border-b border-neutral-800 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-neutral-500 sm:grid-cols-[2rem_1fr_5rem_6rem_7rem]">
+        <div className="grid grid-cols-[2rem_1fr_4rem_5.5rem] gap-2 border-b border-neutral-800 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-neutral-500 sm:grid-cols-[1.75rem_1fr_4rem_5.5rem_9rem]">
           <span>#</span>
           <span>Wallet</span>
           <span className="text-right">Avg X</span>
@@ -509,17 +535,17 @@ function RankPanel({ preview }: { preview: PreviewData | null }) {
             Loading a real scan…
           </p>
         ) : (
-          rows.map((t, i) => (
+          rows.map(({ trader: t, pnlUsd }, i) => (
             <div
               key={t.address}
-              className={`grid grid-cols-[2rem_1fr_4rem_5.5rem] items-center gap-2 border-b border-neutral-900/70 px-4 py-2.5 text-xs sm:grid-cols-[2rem_1fr_5rem_6rem_7rem] ${
+              className={`grid grid-cols-[2rem_1fr_4rem_5.5rem] items-center gap-2 border-b border-neutral-900/70 px-4 py-2.5 text-xs sm:grid-cols-[1.75rem_1fr_4rem_5.5rem_9rem] ${
                 i === 0 ? "bg-amber-500/[0.04]" : ""
               }`}
             >
               <span
                 className={`tnum ${i < 3 ? "font-bold text-amber-300" : "text-neutral-500"}`}
               >
-                {t.rank}
+                {i + 1}
               </span>
               <span className="truncate font-mono text-neutral-200">
                 {shortenAddress(t.address, 5)}
@@ -529,12 +555,14 @@ function RankPanel({ preview }: { preview: PreviewData | null }) {
               </span>
               <span
                 className={`tnum text-right font-semibold ${
-                  t.realizedPnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+                  pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
                 }`}
               >
-                {formatUsd(t.realizedPnlUsd)}
+                {formatUsd(pnlUsd)}
               </span>
-              <span className="tnum hidden text-right text-neutral-400 sm:block">
+              {/* nowrap: two six-figure mcaps used to wrap onto a second line
+                  and knock this row out of alignment with the others. */}
+              <span className="tnum hidden whitespace-nowrap text-right text-[11px] text-neutral-400 sm:block">
                 {formatUsd(t.avgBuyMcapUsd)} → {formatUsd(t.avgSellMcapUsd)}
               </span>
             </div>
@@ -543,8 +571,8 @@ function RankPanel({ preview }: { preview: PreviewData | null }) {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Sort, filter by multiple or PNL, and narrow to wallets we&apos;ve already caught winning on
-        other tokens.
+        Sort and filter by multiple, PNL, entry or size bought. Or show only wallets already caught
+        winning on other tokens.
       </p>
     </div>
   );
@@ -566,8 +594,8 @@ function ExportPanel({ preview }: { preview: PreviewData | null }) {
   return (
     <div>
       <PanelCopy>
-        Tick the wallets you want and export. The file below is produced by the
-        same function the download button calls — byte for byte what you get.
+        Select the wallets you want and export. The file below is the real
+        output, byte for byte.
       </PanelCopy>
 
       <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950">
@@ -585,8 +613,8 @@ function ExportPanel({ preview }: { preview: PreviewData | null }) {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Or hit <span className="font-medium text-neutral-300">Copy JSON</span> and paste it straight
-        into your tracker — no download step.
+        <span className="font-medium text-neutral-300">Copy JSON</span> pastes straight into your
+        tracker, with no download step.
       </p>
     </div>
   );
@@ -609,8 +637,7 @@ function TryPanel({
   return (
     <div>
       <PanelCopy>
-        Two ways in. Replay a full sample scan for free, or point it at a token
-        you actually care about.
+        Run a free sample scan, or scan a token of your own.
       </PanelCopy>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -623,8 +650,8 @@ function TryPanel({
           </h3>
           <p className="mt-1 flex-1 text-[11px] leading-relaxed text-neutral-400">
             {sample
-              ? `${sample.walletCount} real wallets we've already ranked. Costs nothing and needs no wallet connection.`
-              : "A real ranking from our database. Costs nothing and needs no wallet connection."}
+              ? `${sample.walletCount} ranked wallets from our database. Free, and no wallet needed.`
+              : "A real ranking from our database. Free, and no wallet needed."}
           </p>
           <button
             onClick={onRunSample}
@@ -641,7 +668,7 @@ function TryPanel({
           </span>
           <h3 className="mt-2.5 text-sm font-semibold text-neutral-100">Scan a specific coin</h3>
           <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">
-            Paste its contract address and we&apos;ll load it into the search bar.
+            Paste the contract address to load it into the search bar.
           </p>
           <input
             value={typed}
@@ -665,8 +692,7 @@ function TryPanel({
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
-        Pricing only appears once you ask for a full ranking of your own token — nothing on this
-        walkthrough charges you.
+        Nothing here charges you. Pricing appears only when you scan a token of your own.
       </p>
     </div>
   );
