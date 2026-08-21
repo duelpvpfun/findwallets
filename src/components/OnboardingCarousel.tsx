@@ -48,7 +48,7 @@ interface OnboardingCarouselProps {
   onUseAddress: (address: string) => void;
 }
 
-const AUTO_ADVANCE_MS = 3200;
+const AUTO_ADVANCE_MS = 5000;
 /** How many real rows the ranking and export panels show. */
 const PANEL_ROWS = 5;
 /** Ignore a horizontal drag shorter than this — it was a scroll, not a swipe. */
