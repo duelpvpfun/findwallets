@@ -22,14 +22,14 @@ export default function SignInPrompt({ configured }: { configured: boolean }) {
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-400">
           Your purchases are attached to the wallet you paid from. Connect it and
-          every scan you&apos;ve ever bought shows up here — including ones from
+          every scan you have ever bought shows up here, including ones from
           before accounts existed.
         </p>
 
         <ul className="mx-auto mt-5 max-w-sm space-y-2 text-left text-[13px] text-neutral-400">
           <Bullet>Credits follow the account, not the browser.</Bullet>
           <Bullet>Re-download any result from the last 7 days, free.</Bullet>
-          <Bullet>Signing is free — a message, never a transaction.</Bullet>
+          <Bullet>Signing is free. A message, never a transaction.</Bullet>
         </ul>
 
         {configured ? (

@@ -207,12 +207,12 @@ function WalletRow({
         <Stat
           label="Avg entry (all buys)"
           value={formatUsd(wallet.avgBuyMcapUsd)}
-          title="Volume-weighted average across every buy — includes tokens the wallet never sold."
+          title="Volume-weighted average across every buy. Includes tokens the wallet never sold."
         />
         <Stat
           label="Avg exit (sold)"
           value={formatUsd(wallet.avgSellMcapUsd)}
-          title="Volume-weighted average across every sell — covers only the tokens actually sold."
+          title="Volume-weighted average across every sell. Covers only the tokens actually sold."
         />
         <Stat
           label="Avg X"

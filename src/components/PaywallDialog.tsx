@@ -181,7 +181,7 @@ export default function PaywallDialog({
 
       setStatus("error");
       setMessage(
-        "Your payment may have gone through, but our confirmation is still catching up. Retry below — or send us the transaction id and we'll unlock it manually."
+        "Your payment may have gone through while our confirmation catches up. Retry below, or send us the transaction id and we'll unlock it manually."
       );
     },
     [nonce, onPaid]
@@ -261,7 +261,7 @@ export default function PaywallDialog({
               </h3>
               <p className="mt-0.5 text-xs text-neutral-500">
                 {status === "confirming"
-                  ? "Hang tight — don't close this window"
+                  ? "Do not close this window"
                   : "One payment, one full scan. No subscription."}
               </p>
             </div>
@@ -396,7 +396,7 @@ export default function PaywallDialog({
                   <div>
                     <div className="text-[13px] font-medium text-neutral-200">Number of scans</div>
                     <div className="text-[11px] text-neutral-500">
-                      Spares wait on your account — no expiry.
+                      Spares wait on your account. No expiry.
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -548,7 +548,7 @@ function PaymentSuccess({ tier }: { tier: number | null }) {
       <div className="animate-fade-in">
         <p className="text-sm font-semibold text-emerald-300">Payment confirmed</p>
         <p className="mt-1 text-xs text-neutral-400">
-          {tier ? `Top ${tier} unlocked — starting your scan…` : "Starting your scan…"}
+          {tier ? `Top ${tier} unlocked. Starting your scan…` : "Starting your scan…"}
         </p>
       </div>
     </div>
@@ -569,7 +569,7 @@ function Confirming({ elapsed }: { elapsed: number }) {
         </p>
         <p className="mt-1 text-xs text-neutral-500">
           {slow
-            ? "The network is busy. Your payment is safe — keep this open."
+            ? "The network is busy. Your payment is safe. Keep this open."
             : "Usually done in a few seconds."}
         </p>
       </div>

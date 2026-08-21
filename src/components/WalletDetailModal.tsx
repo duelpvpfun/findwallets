@@ -294,12 +294,12 @@ export default function WalletDetailModal({
                   <Stat
                     label="Avg Entry (all buys)"
                     value={showMcap ? formatUsd(trader.avgBuyMcapUsd) : `$${trader.avgBuyPriceUsd.toPrecision(3)}`}
-                    title="Volume-weighted average across every buy — includes tokens the wallet never sold."
+                    title="Volume-weighted average across every buy. Includes tokens the wallet never sold."
                   />
                   <Stat
                     label="Avg Exit (sold only)"
                     value={showMcap ? formatUsd(trader.avgSellMcapUsd) : `$${trader.avgSellPriceUsd.toPrecision(3)}`}
-                    title="Volume-weighted average across every sell — covers only the tokens actually sold."
+                    title="Volume-weighted average across every sell. Covers only the tokens actually sold."
                   />
                   <Stat
                     label="Avg Multiple"
@@ -363,13 +363,13 @@ export default function WalletDetailModal({
                         <th className="py-2 pl-3 font-medium">Token</th>
                         <th
                           className="py-2 font-medium"
-                          title="Volume-weighted average across every buy — includes tokens the wallet never sold."
+                          title="Volume-weighted average across every buy. Includes tokens the wallet never sold."
                         >
                           Avg Entry <span className="text-neutral-600 normal-case">(all buys)</span>
                         </th>
                         <th
                           className="py-2 font-medium"
-                          title="Volume-weighted average across every sell — covers only the tokens actually sold."
+                          title="Volume-weighted average across every sell. Covers only the tokens actually sold."
                         >
                           Avg Exit <span className="text-neutral-600 normal-case">(sold)</span>
                         </th>

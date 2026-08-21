@@ -242,6 +242,11 @@ export default function TradersTable({
     return ordered.map((t, i) => (t.rank === i + 1 ? t : { ...t, rank: i + 1 }));
   }, [matchingTraders, sort, basis]);
 
+  // The medal accent means "top of a ranking". Sorted ascending the top row is
+  // the *worst* wallet, so the emphasis is dropped rather than handing the last
+  // place a gold bar.
+  const bestFirst = !sort || sort.dir === "desc";
+
   const toggleSort = useCallback((key: SortKey) => {
     setSort((prev) => {
       if (prev?.key !== key) return { key, dir: "desc" };
@@ -392,7 +397,7 @@ export default function TradersTable({
               {token.rankingWindow !== "all_time" && (
                 <Badge tone="neutral">Ranked over last {token.rankingWindow}, not all-time</Badge>
               )}
-              {isDemoData && <Badge tone="yellow">Demo data — API key not configured for this chain</Badge>}
+              {isDemoData && <Badge tone="yellow">Demo data: no API key for this chain</Badge>}
             </div>
           </div>
         </div>
@@ -425,7 +430,7 @@ export default function TradersTable({
           <span className="text-sm text-neutral-300">
             The data provider was slow, so this scan stopped at {traders.length}
             {requestedCount ? ` of ${requestedCount}` : ""} wallets. These rows are yours to keep and
-            export. A fresh scan needs a new purchase — if you think this one under-delivered,{" "}
+            export. A fresh scan needs a new purchase. If you think this one under-delivered,{" "}
             <a href="/recover" className="font-medium text-amber-400 underline hover:text-amber-300">
               recover your purchase
             </a>{" "}
@@ -650,6 +655,7 @@ export default function TradersTable({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
             sort={sort}
             onSort={toggleSort}
           />
@@ -664,6 +670,7 @@ export default function TradersTable({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
           />
         ))}
 
@@ -716,7 +723,7 @@ function CopyJsonButton({
       ref={ref}
       onClick={handleCopy}
       disabled={state === "working"}
-      title="Copy the export JSON to your clipboard (c) — no download needed"
+      title="Copy the export JSON to your clipboard (c). No download needed."
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
         state === "copied"
           ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
@@ -747,6 +754,8 @@ interface ListProps {
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  /** False while the user has sorted ascending, i.e. worst-first. */
+  bestFirst: boolean;
 }
 
 const ROW_ESTIMATE_PX = 84;
@@ -764,6 +773,7 @@ function DesktopTable({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
   sort,
   onSort,
 }: ListProps & {
@@ -874,6 +884,7 @@ function DesktopTable({
                     showMcap={showMcap}
                     basis={basis}
                     hasHoldingData={hasHoldingData}
+                    bestFirst={bestFirst}
                   />
                 );
               })}
@@ -900,6 +911,7 @@ function DesktopTable({
                 showMcap={showMcap}
                 basis={basis}
                 hasHoldingData={hasHoldingData}
+                bestFirst={bestFirst}
               />
             ))
           )}
@@ -919,6 +931,7 @@ interface RowProps {
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  bestFirst: boolean;
 }
 
 const TableRow = memo(function TableRow({
@@ -933,6 +946,7 @@ const TableRow = memo(function TableRow({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
 }: RowProps & {
   ref?: (node: HTMLTableRowElement | null) => void;
   dataIndex?: number;
@@ -940,7 +954,7 @@ const TableRow = memo(function TableRow({
   // Weight and colour before badges: the top three should read as obviously
   // best at a glance, and the accent bar does that without adding chrome to
   // every row below them.
-  const isTop = t.rank <= 3;
+  const isTop = bestFirst && t.rank <= 3;
   return (
     <tr
       ref={ref}
@@ -1034,6 +1048,7 @@ function CardList({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
 }: ListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualize = rows.length > VIRTUALIZE_THRESHOLD;
@@ -1056,6 +1071,7 @@ function CardList({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
             selected={selected.has(t.address)}
             onToggle={onToggle}
             onShare={onShare}
@@ -1085,6 +1101,7 @@ function CardList({
                 showMcap={showMcap}
                 basis={basis}
                 hasHoldingData={hasHoldingData}
+                bestFirst={bestFirst}
                 selected={selected.has(t.address)}
                 onToggle={onToggle}
                 onShare={onShare}
@@ -1409,7 +1426,7 @@ function TokenAmounts({
         <div className="text-neutral-500">
           sold {soldShare.toFixed(soldShare < 10 ? 1 : 0)}% of bag
           {movedOut >= 1 && (
-            <span title="Left the wallet without being sold — common for wallets that split a position across addresses">
+            <span title="Left the wallet without being sold. Common when a position is split across several addresses.">
               {" "}
               · {movedOut.toFixed(0)}% moved out
             </span>
@@ -1471,6 +1488,7 @@ const TraderCard = memo(function TraderCard({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
   selected,
   onToggle,
   onShare,
@@ -1481,12 +1499,13 @@ const TraderCard = memo(function TraderCard({
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  bestFirst: boolean;
   selected: boolean;
   onToggle: (address: string) => void;
   onShare: (trader: WalletTrader) => void;
 }) {
   const positive = trader.pnlUsd >= 0;
-  const isTop = trader.rank <= 3;
+  const isTop = bestFirst && trader.rank <= 3;
   return (
     <div
       className={`relative px-4 py-3.5 transition-colors duration-150 ${

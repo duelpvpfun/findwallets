@@ -41,7 +41,7 @@ export default function ScanProgress({ progress, chain, limit }: ScanProgressPro
       ? "Resolving the token"
       : ratio < 1
       ? "Paging the chain for traders"
-      : "Ranking by realized PNL";
+      : "Ranking by PNL";
 
   const slowChainNote =
     chain !== "solana" && limit > 100

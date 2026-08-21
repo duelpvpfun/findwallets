@@ -666,7 +666,7 @@ export default function Home() {
                   <FeatureCard
                     icon={<ChartIcon />}
                     title="Real PNL ranking"
-                    description="Ranked by realized profit — not just holdings or activity."
+                    description="Ranked by realized profit, not holdings or activity."
                   />
                   <FeatureCard
                     icon={<ExportIcon />}

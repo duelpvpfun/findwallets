@@ -166,7 +166,7 @@ export default function ProfileClient({
           <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-neutral-100">Saved results</h2>
             <p className="text-[11px] text-neutral-500">
-              Kept for {retentionDays} days — export anything you want to keep. Pin up to{" "}
+              Kept for {retentionDays} days. Export anything you want to keep. Pin up to{" "}
               {maxPinned} to keep them indefinitely.
             </p>
           </div>
@@ -197,7 +197,7 @@ export default function ProfileClient({
           {purchases.length === 0 ? (
             <EmptyCard>
               No purchases attached to this wallet. If you paid from a different one, connect that
-              wallet instead — purchases follow the wallet that sent the payment.
+              wallet instead. Purchases follow the wallet that sent the payment.
             </EmptyCard>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/40">
