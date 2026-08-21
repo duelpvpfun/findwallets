@@ -105,10 +105,10 @@ export default function OnboardingCarousel({
   const [interacted, setInteracted] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [typed, setTyped] = useState("");
-  // Checked by default, because closing the walkthrough has always meant "seen
-  // it". The checkbox exists so that is a visible, reversible choice rather
-  // than a silent side effect of hitting the X.
-  const [remember, setRemember] = useState(true);
+  // Unchecked by default: closing the walkthrough no longer decides for the
+  // visitor that they never want to see it again. Ticking the box is the only
+  // thing that suppresses it, and it then never returns.
+  const [remember, setRemember] = useState(false);
 
   const reducedMotion = useReducedMotion();
   const dialogRef = useRef<HTMLDivElement>(null);

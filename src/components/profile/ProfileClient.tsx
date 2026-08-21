@@ -109,8 +109,6 @@ export default function ProfileClient({
     }
   }, []);
 
-  const spent = purchases.reduce((sum, p) => sum + (p.priceUsd ?? 0), 0);
-
   return (
     <ProfileShell>
       <div className="space-y-6">
@@ -127,11 +125,10 @@ export default function ProfileClient({
 
         {/* Balance */}
         <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40">
-          <div className="grid grid-cols-2 divide-neutral-800/80 sm:grid-cols-4 sm:divide-x">
+          <div className="grid grid-cols-3 divide-neutral-800/80 sm:divide-x">
             <Stat label="Scans available" value={String(balance.total)} accent />
             <Stat label="Held by a scan" value={String(balance.pending)} />
             <Stat label="Purchases" value={String(purchases.length)} />
-            <Stat label="Total spent" value={spent > 0 ? formatUsd(spent) : "—"} />
           </div>
 
           {balance.byTier.length > 0 && (

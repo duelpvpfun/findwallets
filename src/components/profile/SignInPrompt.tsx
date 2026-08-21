@@ -27,7 +27,7 @@ export default function SignInPrompt({ configured }: { configured: boolean }) {
         </p>
 
         <ul className="mx-auto mt-5 max-w-sm space-y-2 text-left text-[13px] text-neutral-400">
-          <Bullet>Credits follow the account, not the browser.</Bullet>
+          <Bullet>Credits follow the account.</Bullet>
           <Bullet>Re-download any result from the last 7 days, free.</Bullet>
           <Bullet>Signing is free. A message, never a transaction.</Bullet>
         </ul>

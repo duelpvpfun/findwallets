@@ -11,7 +11,19 @@ export default function ProfileShell({ children }: { children: React.ReactNode }
 
       <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
-          <Link href="/" className="flex items-center gap-3 rounded-lg transition-opacity hover:opacity-80">
+          {/* An explicit way back. The logo has always been one, but nobody
+              reads a logo as a button, and the only other exit was in the
+              footer, below however many saved results you have. */}
+          <Link
+            href="/"
+            aria-label="Back to scanning"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5m0 0 6-6m-6 6 6 6" />
+            </svg>
+          </Link>
+          <Link href="/" className="mr-auto flex items-center gap-3 rounded-lg transition-opacity hover:opacity-80">
             <span className="alpha-glow select-none text-2xl leading-none font-semibold text-white">
               α
             </span>

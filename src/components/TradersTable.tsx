@@ -989,7 +989,7 @@ const TableRow = memo(function TableRow({
       <td className="py-3 align-top">
         <WalletCell trader={t} history={history} onShare={onShare} />
       </td>
-      <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
+      <td className="py-3 align-top tabular-nums font-medium text-blue-300">
         <span
           title={t.multipleX === null ? NO_MULTIPLE_REASON : avgXBasis(basis)}
           className="cursor-help border-b border-dotted border-neutral-700"
