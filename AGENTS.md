@@ -215,14 +215,34 @@ this account died, silently, while its dashboard still looked healthy. A malform
 worth that risk. The hourly cron carries a heartbeat for the same reason: no events for 90 minutes
 posts a warning to Telegram.
 
-**The peak alone is not a result, and the scoreboard must be able to show a loss.** `ath_mcap_usd`
-is a running maximum seeded at the entry cap, so `ath / entry` is >= 1.00 **by construction** — the
-first version of this reported only that, and every tier looked profitable. `low_mcap_usd` (the
-drawdown) and `mcap_{1,6,24}h_usd` exist to counterweight it: the drawdown says whether a call would
-have stopped you out before it ran, and the 24-hour mark is the closest thing to a result anyone
-could have taken. On the first 185 live calls the median peak was 1.00x while the median drawdown
-was 0.45-0.80x and 30-50% rugged, which is the whole point. **Report medians, never means** — one
-50x drags a mean anywhere. Anything that shows peak without drawdown beside it is lying.
+**The alerting band is $10K-$1M, checked at the moment a tier fires.** The owner's rule: below
+$10K one buy moves the chart, above $1M the reader cannot get the entry the wallets did. A tier that
+crosses outside it is still **claimed** — so it can never fire later on the same count — but marked
+`out_of_band`, which keeps it off Telegram, out of the feed and out of every figure. That is what
+makes the rule behave as intended: two wallets in at $5K is skipped, and the third buying at $11K
+fires **with $11K as the entry**, because $5K is a price nobody was told about.
+
+**The scoreboard counts good calls, not losses.** Memecoins mostly go to zero, so the downside is
+near-constant and carries almost no information; what varies is how often a tier catches a runner
+and how far it runs. So: hits at 2x/5x/10x, normalised per day, and the median peak **of the
+winners** (a median over all calls is ~1.00x and says nothing). The drawdown is still recorded — the
+same sample writes it, so it is free — and still shown per call in the feed, so a "hit" can be
+checked against how rough the ride was.
+
+**Two arithmetic traps in that table, both of which shipped wrong once.** The headline must count
+**calls**, not `alerts_fired` rows: a token escalating 2 → 6 writes five rows, and summing the tier
+table reported one token as five ten-baggers. And the per-day denominator is **floored at one day**,
+because 113 calls over forty minutes extrapolates to "4,082 calls/day".
+
+**`ath_mcap_usd` is never seeded from the entry cap.** Doing that made a call seconds old read
+"called at $3.2K, peak $3.2K" — a peak nobody had observed, only assumed — and made `peak / entry`
+>= 1.00 by construction, so no call could ever read as a loss. It starts null and the first real
+sample sets it.
+
+**A token whose last market cap is under `DEAD_MCAP_USD` ($4K) is abandoned by the tracker.** Most
+never come back, and re-reading them every ten minutes for a week is the bulk of the tracking spend
+for no information. The check is on the last cap seen, so a token that never gets that low keeps
+being tracked normally.
 
 **Every alert pins the market cap it fired at, and the cron keeps the running maximum.**
 That ratio is the scoreboard, and it is the only honest answer to "which alert type is worth

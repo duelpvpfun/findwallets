@@ -238,14 +238,19 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
               </span>
               {peakX ? ` (${formatMultiple(peakX)})` : ""}
             </span>
-            {/* The counterweight to the peak: how far underwater it went first. */}
-            <span>
-              Low{" "}
-              <span className="text-rose-400/90">
-                {alert.lowMcapUsd ? formatUsd(alert.lowMcapUsd) : "—"}
+            {/* Still recorded — the sample that writes the peak writes this too,
+                so it costs nothing — and still shown per call, so a "hit" can be
+                checked against how rough the ride was. Just not what the
+                scoreboard is built on. */}
+            {lowX && lowX < 0.95 ? (
+              <span>
+                Low{" "}
+                <span className="text-rose-400/90">
+                  {alert.lowMcapUsd ? formatUsd(alert.lowMcapUsd) : "—"}
+                </span>
+                {` (${formatMultiple(lowX)})`}
               </span>
-              {lowX ? ` (${formatMultiple(lowX)})` : ""}
-            </span>
+            ) : null}
             <span>
               Now{" "}
               <span className={up ? "text-emerald-400" : "text-rose-400"}>

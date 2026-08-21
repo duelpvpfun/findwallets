@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 import TierScoreboard from "@/components/feed/TierScoreboard";
-import type { TierScore } from "@/lib/db/alerts";
+import type { CallScore, TierScore } from "@/lib/db/alerts";
 
 const REFRESH_MS = 60_000;
 
@@ -314,9 +314,11 @@ const PaymentsTable = memo(function PaymentsTable({
 export default function AdminDashboard({
   initial,
   alertScores,
+  callScore,
 }: {
   initial: AdminStats;
   alertScores: TierScore[];
+  callScore: CallScore;
 }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
@@ -411,7 +413,12 @@ export default function AdminDashboard({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-neutral-100">Admin</h1>
-          <p className="text-xs text-neutral-500">
+          {/* `now` is seeded from Date.now() in a component that is also
+              server-rendered, so the server and the browser compute different
+              strings whenever the snapshot age crosses a minute boundary — a
+              hard hydration error that discards and re-renders this whole tree.
+              Suppressing is right for a clock: the value is meant to differ. */}
+          <p className="text-xs text-neutral-500" suppressHydrationWarning>
             Updated {timeAgo(stats.generatedAt, now)}
             {refreshing ? " · refreshing…" : ""}
           </p>
@@ -468,7 +475,7 @@ export default function AdminDashboard({
           published to customers reads as a return somebody made. Here it is
           what it actually is — the number that says how to tune the tiers. */}
       <div className="mt-6">
-        <TierScoreboard scores={alertScores} />
+        <TierScoreboard scores={alertScores} calls={callScore} />
       </div>
 
       <section className="mt-8">

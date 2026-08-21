@@ -72,21 +72,38 @@ function envNumber(name: string, fallback: number): number {
 export const MIN_BUY_USD = envNumber("ALERTS_MIN_BUY_USD", 50);
 
 /**
- * Below this market cap an alert is recorded and tracked but never announced.
+ * The alerting band. A call only fires while the token's market cap is inside
+ * it — the owner's rule, 2026-08-21.
  *
- * **Off by default (0), pending the owner's decision on how to cut volume.**
- * The lever exists because the first hour of live traffic put 50 of 84 alerts
- * under $20K, where a single buy moves the chart — but which knob to turn, and
- * how far, is his call and not a default to assume.
+ * Below $10K a single buy moves the chart and the "multiple" measures nothing.
+ * Above $1M the wallets are no longer early and the reader cannot get the entry
+ * they did. Between the two is the only range where the signal is both real and
+ * actionable, and cutting to it removes most of the noise on its own.
+ *
+ * Checked at the moment a tier fires, against the cap right then. That is what
+ * makes the rule behave as intended: two wallets in at $5K is skipped, and when
+ * a third buys at $11K that step fires — with $11K as the entry, because $5K is
+ * a price nobody was told about.
  */
-export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 0);
+export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 10_000);
+export const MAX_ALERT_MCAP_USD = envNumber("ALERTS_MAX_MCAP_USD", 1_000_000);
 
 /**
- * Lowest tier that reaches Telegram. Everything still lands on the feed.
+ * A token whose market cap has fallen below this is abandoned: no more samples.
  *
- * **Off by default (0), pending the owner's decision.** The measured live rate
- * was 561 alerts an hour, so something has to give — but he asked to choose the
- * approach himself, so this ships inert rather than opinionated.
+ * Most of these go to zero and stay there, so re-reading them every ten minutes
+ * for a week is the bulk of the tracking spend for no information. The trade is
+ * explicit and the owner's: a coin that dies below $4K and then somehow runs is
+ * missed. Not once-and-for-all — the check is on the last cap we saw, so a token
+ * that never gets that low keeps being tracked normally.
+ */
+export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 4_000);
+
+/**
+ * Lowest tier that reaches Telegram. Everything in-band still lands on the feed.
+ *
+ * **Off by default (0).** The band above is the volume control the owner chose;
+ * this stays as a second lever in case it is not enough.
  */
 export const TELEGRAM_MIN_TIER = envNumber("ALERTS_TELEGRAM_MIN_TIER", 0);
 
@@ -103,16 +120,16 @@ export const EPISODE_GAP_SECONDS = 2 * 60 * 60;
 
 /** How long `wallet_events` rows survive. Long enough to serve the longest
  * window with room for late-arriving Helius deliveries; this is a rolling
- * window, not an archive, and unpruned it is 60k–500k rows a day. */
+ * window, not an archive, and unpruned it is 60k-500k rows a day. */
 export const EVENT_RETENTION_HOURS = 48;
 
 /**
- * How long an alert's market cap keeps getting sampled.
+ * How long a call's market cap keeps getting sampled.
  *
  * Seven days. The peak of a memecoin run is almost always inside 48 hours, and
- * every extra day of tracking is another hourly price call per still-open
- * alert. Tokens are deduplicated across alerts, so tracking cost is per token,
- * not per alert.
+ * every extra day is another price call per still-open call. Tokens are
+ * deduplicated, so the cost is per token rather than per call — and a token
+ * that falls under `DEAD_MCAP_USD` is dropped before the week is up.
  */
 export const TRACKING_DAYS = 7;
 
@@ -120,9 +137,9 @@ export const TRACKING_DAYS = 7;
  * How often a token's market cap is re-read, by how old the call is.
  *
  * Ten minutes for the first 24 hours, then hourly. A memecoin's peak is almost
- * always inside the first day, and the running maximum is only as good as the
- * sampling rate around it — but paying ten-minute resolution for a week would
- * be six times the upstream cost for detail nobody looks at.
+ * always inside the first day, and a running maximum is only as good as the
+ * sampling rate around it — but ten-minute resolution for a full week would be
+ * six times the upstream cost for detail nobody looks at.
  */
 export const FRESH_SAMPLE_SECONDS = 10 * 60;
 export const AGED_SAMPLE_SECONDS = 60 * 60;
@@ -135,11 +152,12 @@ export const AGED_SAMPLE_SECONDS = 60 * 60;
 export const MAX_SAMPLES = 24 * 6 + (TRACKING_DAYS - 1) * 24 + 1;
 
 /**
- * Below this, a market cap is too thin for the multiple to mean anything — a
- * $3K cap doubling is one buy, not a call working. Alerts still fire and still
- * track; they are just excluded from the tier averages on the scoreboard.
+ * Below this, a market cap is too thin for a multiple to mean anything — a $3K
+ * cap doubling is one buy, not a call working. Kept as a scoreboard filter even
+ * though the alerting band now starts higher, so historical calls from before
+ * the band are scored on the same footing.
  */
-export const MIN_SCOREBOARD_MCAP_USD = 20_000;
+export const MIN_SCOREBOARD_MCAP_USD = 10_000;
 
 /** Quote assets. A token leg paired against one of these is a trade; a token
  * moving with no quote leg at all is a transfer or an airdrop and must never

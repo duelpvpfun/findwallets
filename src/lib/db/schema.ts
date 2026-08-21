@@ -580,6 +580,10 @@ export const alertsFired = pgTable(
      * so it can never fire later on a smaller count. Excluded from the feed and
      * from every performance figure. */
     superseded: boolean("superseded").notNull().default(false),
+    /** Claimed while the token's market cap was outside the alerting band.
+     * Claimed so it can never fire later on the same count, but not announced
+     * and not part of the record — see `drizzle/0025_alert_band.sql`. */
+    outOfBand: boolean("out_of_band").notNull().default(false),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     deliveryError: text("delivery_error"),
     /** Set on the first announced step of a call, so later escalations on the

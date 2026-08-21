@@ -1,6 +1,6 @@
 import { isAdminConfigured, isAdminRequest } from "@/lib/adminAuth";
 import { fetchAdminStats } from "@/lib/db/adminStats";
-import { fetchTierScoreboard } from "@/lib/db/alerts";
+import { fetchCallScore, fetchTierScoreboard } from "@/lib/db/alerts";
 import AdminLogin from "@/components/admin/AdminLogin";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 
@@ -34,6 +34,7 @@ export default async function AdminPage() {
 
   // Sequential, never Promise.all — see AGENTS.md.
   const alertScores = await fetchTierScoreboard("solana");
+  const callScore = await fetchCallScore("solana");
 
-  return <AdminDashboard initial={stats} alertScores={alertScores} />;
+  return <AdminDashboard initial={stats} alertScores={alertScores} callScore={callScore} />;
 }

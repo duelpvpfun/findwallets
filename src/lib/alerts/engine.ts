@@ -2,6 +2,7 @@ import "server-only";
 import {
   attachTokenSnapshot,
   claimTier,
+  markOutOfBand,
   countWindows,
   currentEpisode,
   fetchRoster,
@@ -14,7 +15,12 @@ import {
 } from "../db/alerts";
 import type { AlertWalletSnapshot } from "../db/schema";
 import { classifyBatch, type ClassifiedEvent, type HeliusEnhancedTransaction } from "./classify";
-import { MIN_ALERT_MCAP_USD, MIN_BUY_USD, TELEGRAM_MIN_TIER } from "./config";
+import {
+  MAX_ALERT_MCAP_USD,
+  MIN_ALERT_MCAP_USD,
+  MIN_BUY_USD,
+  TELEGRAM_MIN_TIER,
+} from "./config";
 import { fetchAlertTokenSnapshot, solPriceUsd } from "./pricing";
 import {
   buildAlertButtons,
@@ -225,22 +231,28 @@ async function evaluateToken(
   const snapshot = await fetchAlertTokenSnapshot(tokenAddress);
   await attachTokenSnapshot(claimed.id, snapshot);
 
-  // Recorded and tracked either way; announced only if it clears both gates.
-  // The feed keeps everything because the scoreboard needs the sample, and a
-  // suppressed alert that later turns out to have been a good call is evidence
-  // the gates are set wrong — which is only visible if it was stored.
-  const belowTier = tier.wallets < TELEGRAM_MIN_TIER;
-  const belowMcap =
-    typeof snapshot.mcapUsd === "number" && snapshot.mcapUsd > 0
-      ? snapshot.mcapUsd < MIN_ALERT_MCAP_USD
+  // The band, checked against the cap right now. Outside it the tier stays
+  // CLAIMED — so it can never fire later on the same count — but it is marked
+  // out of band, which keeps it off Telegram, out of the feed and out of the
+  // record. That is what makes the rule work as intended: two wallets in at $5K
+  // is skipped, and the third buying at $11K fires with $11K as the entry.
+  //
+  // A token whose cap could not be read at all is let through: silently
+  // dropping calls because an upstream lookup failed would look like a quiet
+  // day, and that failure mode has already cost this system once.
+  const mcap = snapshot.mcapUsd;
+  const outOfBand =
+    typeof mcap === "number" && mcap > 0
+      ? mcap < MIN_ALERT_MCAP_USD || mcap > MAX_ALERT_MCAP_USD
       : false;
 
-  if (belowTier || belowMcap) {
-    await markDelivered(
-      claimed.id,
-      belowTier ? `suppressed-below-tier-${TELEGRAM_MIN_TIER}` : "suppressed-below-mcap",
-      null
-    );
+  if (outOfBand) {
+    await markOutOfBand(claimed.id, mcap ?? 0);
+    return { tokenAddress, tier: tier.wallets, wallets: buyers.length };
+  }
+
+  if (tier.wallets < TELEGRAM_MIN_TIER) {
+    await markDelivered(claimed.id, `suppressed-below-tier-${TELEGRAM_MIN_TIER}`, null);
     return { tokenAddress, tier: tier.wallets, wallets: buyers.length };
   }
 

@@ -12,6 +12,7 @@ import {
 import {
   AGED_SAMPLE_SECONDS,
   ALERT_TIERS,
+  DEAD_MCAP_USD,
   ALERT_WINDOWS_SECONDS,
   EPISODE_GAP_SECONDS,
   EVENT_RETENTION_HOURS,
@@ -427,13 +428,35 @@ export async function attachTokenSnapshot(
       priceAtAlertUsd: snapshot.priceUsd,
       mcapAtAlertUsd: snapshot.mcapUsd,
       supplyAtAlert: snapshot.supply,
-      athMcapUsd: snapshot.mcapUsd,
-      athAt: hasMcap ? now : null,
-      lowMcapUsd: snapshot.mcapUsd,
-      lowAt: hasMcap ? now : null,
+      // NOT seeded from the entry cap. Doing that produced "called at $3.2K,
+      // peak $3.2K" on a call seconds old — a peak nobody had observed, only
+      // assumed. The first real sample sets it.
+      athMcapUsd: null,
+      athAt: null,
+      lowMcapUsd: null,
+      lowAt: null,
       lastMcapUsd: snapshot.mcapUsd,
       samples,
       lastCheckedAt: now,
+    })
+    .where(eq(alertsFired.id, alertId));
+}
+
+/**
+ * Take a claimed tier out of the record because the market cap was outside the
+ * band when it fired. It keeps its claim, so it can never fire again on the
+ * same count, and it keeps the cap it was rejected at — without that there is
+ * no way to check whether the band is set sensibly.
+ */
+export async function markOutOfBand(alertId: number, mcapUsd: number): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .update(alertsFired)
+    .set({
+      outOfBand: true,
+      mcapAtAlertUsd: mcapUsd > 0 ? mcapUsd : null,
+      deliveryError: "out-of-band",
     })
     .where(eq(alertsFired.id, alertId));
 }
@@ -485,12 +508,18 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
     from ${alertsFired}
     where ${alertsFired.chain} = ${chain}
       and ${alertsFired.superseded} = false
+      and ${alertsFired.outOfBand} = false
       and ${alertsFired.trackedUntil} > now()
     group by ${alertsFired.tokenAddress}
-    -- Seconds arithmetic rather than \`make_interval(secs => $n)\`: Postgres
-    -- cannot infer a type for a bound parameter in that argument position and
-    -- the whole statement fails to plan.
-    having extract(epoch from (
+    -- Abandon tokens that have died: most never come back, and re-reading them
+    -- every ten minutes for a week is the bulk of the tracking spend for no
+    -- information. max() so one still-live call keeps the token tracked.
+    --
+    -- Seconds arithmetic rather than make_interval(secs => $n): Postgres cannot
+    -- infer a type for a bound parameter in that argument position, and the
+    -- whole statement then fails to plan.
+    having max(coalesce(${alertsFired.lastMcapUsd}, ${alertsFired.mcapAtAlertUsd}, 0)) >= ${DEAD_MCAP_USD}
+       and extract(epoch from (
              now() - min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt}))
            )) > case
              when max(${alertsFired.createdAt}) > now() - interval '24 hours'
@@ -574,6 +603,7 @@ export async function applyMcapSample(
         eq(alertsFired.chain, chain),
         eq(alertsFired.tokenAddress, tokenAddress),
         eq(alertsFired.superseded, false),
+        eq(alertsFired.outOfBand, false),
         sql`${alertsFired.trackedUntil} > now()`
       )
     )
@@ -799,6 +829,7 @@ export async function fetchAlertFeed(
     from ${alertsFired}
     where ${alertsFired.chain} = ${chain}
       and ${alertsFired.superseded} = false
+      and ${alertsFired.outOfBand} = false
     group by ${alertsFired.chain}, ${alertsFired.tokenAddress}, ${alertsFired.episode}
     ${beforeId ? sql`having min(${alertsFired.id}) < ${beforeId}` : sql``}
     order by min(${alertsFired.id}) desc
@@ -856,6 +887,7 @@ export async function fetchCallAnchorMessageId(
         eq(alertsFired.tokenAddress, tokenAddress),
         eq(alertsFired.episode, episode),
         eq(alertsFired.superseded, false),
+        eq(alertsFired.outOfBand, false),
         isNotNull(alertsFired.telegramMessageId)
       )
     )
@@ -865,49 +897,47 @@ export async function fetchCallAnchorMessageId(
 }
 
 /**
- * Per-tier performance, stated so that it can show a loss.
+ * Per-tier performance: how many good calls a tier produces, and how big.
  *
- * The first version of this reported only `peak / entry`, and `peak` is a
- * running maximum seeded at the entry cap — so it was >= 1.00 by construction.
- * Every tier looked profitable and the "average" was an upper bound dressed up
- * as a result. Four things fix that:
+ * The owner's framing, and the right one for this asset class: memecoins mostly
+ * go to zero, so the downside is near-constant and carries almost no
+ * information. What varies — and what decides whether a tier is worth reading —
+ * is how OFTEN it produces a runner and how far those run. So this counts hits
+ * at 2x, 5x and 10x, normalises to calls per day so tiers that fire at wildly
+ * different rates are comparable, and reports the median peak *of the winners*
+ * rather than of everything.
  *
- *  - **Median, not mean.** One 50x in a hundred calls drags a mean anywhere it
- *    likes. The median is what a typical call did.
- *  - **The drawdown** (`low / entry`) sits next to the peak. A call that halved
- *    before it ran is a call most people would have sold; that is now visible.
- *  - **The 24-hour mark** is the closest thing to a realised result, because
- *    nobody sells the exact top. It can be, and often is, below 1.
- *  - **A rug rate**: the share that fell 70% or more. This is the number that
- *    makes a high average peak honest or damning.
+ * `medianWinnerPeakX` is deliberately conditional on having hit 2x. A median
+ * over all calls is ~1.00x in a market where most calls do nothing, which tells
+ * you nothing about the ones that worked.
  *
- * Calls that fired under `MIN_SCOREBOARD_MCAP_USD` are still excluded — a $3K
- * cap doubling is one buy — and the 24-hour column only counts calls old enough
- * to have one.
+ * The drawdown is still recorded (it costs nothing — the same sample writes it)
+ * and is still surfaced per call in the feed, so a "hit" can always be checked
+ * against how rough the ride was. It is just not what this table is about.
+ *
+ * Out-of-band and superseded rows are excluded, as is anything that fired below
+ * `MIN_SCOREBOARD_MCAP_USD`.
  */
 export interface TierScore {
   tier: number;
   windowSeconds: number;
   label: string;
   kind: AlertTier["kind"];
-  /** Rows in this tier, before the scoreboard's own filters. */
+  /** Rows in this tier over the window. */
   alerts: number;
-  /** Rows with a usable entry cap, which is what everything below is over. */
+  /** Rows with both a usable entry cap and an observed peak. */
   scored: number;
-  medianPeakX: number | null;
-  bestPeakX: number | null;
-  /** Median of `low / entry`. Below 1; the lower, the rougher the ride. */
-  medianDrawdownX: number | null;
-  worstDrawdownX: number | null;
-  /** Median of `cap at +24h / entry`, over calls at least 24h old. */
-  median24hX: number | null;
-  scored24h: number;
-  /** Share that touched 2x at any point. */
+  callsPerDay: number;
+  hits2x: number;
+  hits5x: number;
+  hits10x: number;
+  /** Good calls per day: the headline. */
+  hits2xPerDay: number;
+  /** Share of scored calls that reached 2x. */
   hitRate2x: number | null;
-  /** Share that fell 70% or more from entry. */
-  rugRate: number | null;
-  /** Share still at or above entry 24 hours later. */
-  greenAt24h: number | null;
+  /** Median peak among calls that reached 2x. */
+  medianWinnerPeakX: number | null;
+  bestPeakX: number | null;
 }
 
 export async function fetchTierScoreboard(chain: string, days = 30): Promise<TierScore[]> {
@@ -918,47 +948,48 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
     tier: number;
     alerts: number;
     scored: number;
-    median_peak_x: number | null;
+    hits_2x: number;
+    hits_5x: number;
+    hits_10x: number;
+    median_winner_peak_x: number | null;
     best_peak_x: number | null;
-    median_dd_x: number | null;
-    worst_dd_x: number | null;
-    median_24h_x: number | null;
-    scored_24h: number;
-    hit_2x: number | null;
-    rug: number | null;
-    green_24h: number | null;
+    span_days: number | null;
   }>(sql`
     with scored as (
       select
         ${alertsFired.tier} as tier,
-        ${alertsFired.mcapAtAlertUsd} as entry,
+        ${alertsFired.createdAt} as created_at,
+        -- Only calls with an OBSERVED peak. A call minutes old has no peak yet,
+        -- and counting it as a miss would understate every tier.
         case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
-             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x,
-        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
-             then ${alertsFired.lowMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as dd_x,
-        -- Only calls old enough to HAVE a 24-hour mark. Counting a call that is
-        -- ten minutes old as "flat at 24h" would be inventing data.
-        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
-              and ${alertsFired.mcap24hUsd} is not null
-             then ${alertsFired.mcap24hUsd} / ${alertsFired.mcapAtAlertUsd} end as x24
+              and ${alertsFired.athMcapUsd} is not null
+             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x
       from ${alertsFired}
       where ${alertsFired.chain} = ${chain}
         and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
         and ${alertsFired.createdAt} > now() - make_interval(days => ${days})
     )
     select
       tier,
       count(*)::int as alerts,
       count(peak_x)::int as scored,
-      percentile_cont(0.5) within group (order by peak_x)::float8 as median_peak_x,
+      count(*) filter (where peak_x >= 2)::int as hits_2x,
+      count(*) filter (where peak_x >= 5)::int as hits_5x,
+      count(*) filter (where peak_x >= 10)::int as hits_10x,
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then peak_x end
+      )::float8 as median_winner_peak_x,
       max(peak_x)::float8 as best_peak_x,
-      percentile_cont(0.5) within group (order by dd_x)::float8 as median_dd_x,
-      min(dd_x)::float8 as worst_dd_x,
-      percentile_cont(0.5) within group (order by x24)::float8 as median_24h_x,
-      count(x24)::int as scored_24h,
-      (count(*) filter (where peak_x >= 2)::float8 / nullif(count(peak_x), 0)) as hit_2x,
-      (count(*) filter (where dd_x <= 0.3)::float8 / nullif(count(dd_x), 0)) as rug,
-      (count(*) filter (where x24 >= 1)::float8 / nullif(count(x24), 0)) as green_24h
+      -- The real elapsed span, floored at one day. Two reasons: a feed three
+      -- days old must not be divided by thirty, and a feed forty minutes old
+      -- must not be multiplied by thirty-six — that produced "4,082 calls/day"
+      -- from 113 calls. Under a day these read as running totals, which is what
+      -- they honestly are.
+      greatest(
+        extract(epoch from (now() - min(created_at))) / 86400.0,
+        1.0
+      )::float8 as span_days
     from scored
     group by tier
   `);
@@ -967,24 +998,124 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
 
   return ALERT_TIERS.map((t) => {
     const row = byTier.get(t.wallets);
+    const alerts = Number(row?.alerts ?? 0);
+    const hits2x = Number(row?.hits_2x ?? 0);
+    const scored = Number(row?.scored ?? 0);
+    const spanDays = Number(row?.span_days ?? 1) || 1;
     return {
       tier: t.wallets,
       windowSeconds: t.windowSeconds,
       label: t.label,
       kind: t.kind,
-      alerts: Number(row?.alerts ?? 0),
-      scored: Number(row?.scored ?? 0),
-      medianPeakX: num(row?.median_peak_x),
+      alerts,
+      scored,
+      callsPerDay: alerts / spanDays,
+      hits2x,
+      hits5x: Number(row?.hits_5x ?? 0),
+      hits10x: Number(row?.hits_10x ?? 0),
+      hits2xPerDay: hits2x / spanDays,
+      hitRate2x: scored > 0 ? hits2x / scored : null,
+      medianWinnerPeakX: num(row?.median_winner_peak_x),
       bestPeakX: num(row?.best_peak_x),
-      medianDrawdownX: num(row?.median_dd_x),
-      worstDrawdownX: num(row?.worst_dd_x),
-      median24hX: num(row?.median_24h_x),
-      scored24h: Number(row?.scored_24h ?? 0),
-      hitRate2x: num(row?.hit_2x),
-      rugRate: num(row?.rug),
-      greenAt24h: num(row?.green_24h),
     };
   });
+}
+
+/**
+ * The headline: how many calls, and how many were good.
+ *
+ * Grouped by call — `(token, episode)` — not by row. A token that escalates
+ * 2 -> 3 -> 4 -> 5 -> 6 writes five rows, and summing the per-tier table would
+ * count that one call five times. That is exactly what made the first version
+ * report "5" ten-baggers from one token.
+ *
+ * Entry is the FIRST step's cap, because that is where the call was made. Peak
+ * is shared across the call's rows, being a property of the token.
+ */
+export interface CallScore {
+  calls: number;
+  callsPerDay: number;
+  scored: number;
+  hits2x: number;
+  hits5x: number;
+  hits10x: number;
+  hits2xPerDay: number;
+  bestPeakX: number | null;
+  medianWinnerPeakX: number | null;
+}
+
+export async function fetchCallScore(chain: string, days = 30): Promise<CallScore> {
+  const empty: CallScore = {
+    calls: 0,
+    callsPerDay: 0,
+    scored: 0,
+    hits2x: 0,
+    hits5x: 0,
+    hits10x: 0,
+    hits2xPerDay: 0,
+    bestPeakX: null,
+    medianWinnerPeakX: null,
+  };
+  const db = getDb();
+  if (!db) return empty;
+
+  const [row] = await db.execute<{
+    calls: number;
+    scored: number;
+    hits_2x: number;
+    hits_5x: number;
+    hits_10x: number;
+    best_peak_x: number | null;
+    median_winner_peak_x: number | null;
+    span_days: number | null;
+  }>(sql`
+    with calls as (
+      select
+        min(${alertsFired.createdAt}) as created_at,
+        (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry,
+        max(${alertsFired.athMcapUsd}) as peak
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
+        and ${alertsFired.createdAt} > now() - make_interval(days => ${days})
+      group by ${alertsFired.tokenAddress}, ${alertsFired.episode}
+    ),
+    scored as (
+      select
+        created_at,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and peak is not null
+             then peak / entry end as peak_x
+      from calls
+    )
+    select
+      count(*)::int as calls,
+      count(peak_x)::int as scored,
+      count(*) filter (where peak_x >= 2)::int as hits_2x,
+      count(*) filter (where peak_x >= 5)::int as hits_5x,
+      count(*) filter (where peak_x >= 10)::int as hits_10x,
+      max(peak_x)::float8 as best_peak_x,
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then peak_x end
+      )::float8 as median_winner_peak_x,
+      greatest(extract(epoch from (now() - min(created_at))) / 86400.0, 1.0)::float8 as span_days
+    from scored
+  `);
+
+  const spanDays = Number(row?.span_days ?? 1) || 1;
+  const calls = Number(row?.calls ?? 0);
+  const hits2x = Number(row?.hits_2x ?? 0);
+  return {
+    calls,
+    callsPerDay: calls / spanDays,
+    scored: Number(row?.scored ?? 0),
+    hits2x,
+    hits5x: Number(row?.hits_5x ?? 0),
+    hits10x: Number(row?.hits_10x ?? 0),
+    hits2xPerDay: hits2x / spanDays,
+    bestPeakX: num(row?.best_peak_x),
+    medianWinnerPeakX: num(row?.median_winner_peak_x),
+  };
 }
 
 /** Headline counters for the page. */
@@ -1032,7 +1163,9 @@ export async function fetchAlertSummary(chain: string): Promise<AlertSummary> {
                then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end)::float8 as avg_peak_x,
       max(${alertsFired.createdAt}) as last_alert_at
     from ${alertsFired}
-    where ${alertsFired.chain} = ${chain} and ${alertsFired.superseded} = false
+    where ${alertsFired.chain} = ${chain}
+      and ${alertsFired.superseded} = false
+      and ${alertsFired.outOfBand} = false
   `);
 
   return {
