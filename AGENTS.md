@@ -70,6 +70,8 @@ both places:
 | `formatWinBadge` (`format.ts`) | `scripts/enrich-wallets.mjs` | Badges rendered two different ways |
 | `buildSignInMessage` (`auth/message.ts`) | `scripts/account-lifecycle.mjs` | Step B of that script fails loudly — which is the point |
 | `normalizeAddress` (`chains.ts`) | `scripts/import-export.mjs` | A second `tokens` row for one contract, splitting its history |
+| `MIN_COST_BASIS_USD`, `MAX_PLAUSIBLE_MULTIPLE_X` (`quality.ts`) | `scripts/sync-alert-wallets.mjs` | Dust-basis "588x" wallets onto the alert roster, inflating every alert's headline |
+| `MIN_SCOREBOARD_MCAP_USD` (`alerts/config.ts`) | `scripts/alerts-stats.mjs` | The CLI and the /alerts page disagree about which alerts count |
 
 **EVM addresses are stored lowercased; Solana is stored exactly as given.** Every `(chain, address)`
 unique index in the schema is case-sensitive, but an EVM address is not — Birdeye returns them
@@ -88,6 +90,11 @@ drizzle's type mapper, so `postgres.js` is handed a bare `Date` and the query di
 `ERR_INVALID_ARG_TYPE`. Use the typed helpers (`gt`, `gte`, `lt`) against the column, or — inside a
 hand-written statement where there is no column to take a mapper from — bind
 `date.toISOString()` with an explicit `::timestamptz`. This made every sign-in return a 500.
+
+**`sql.json(x)`, never `JSON.stringify(x)::jsonb`.** postgres.js JSON-encodes a bound value on
+its way to a `jsonb` parameter, so a pre-stringified array arrives as a jsonb *string containing*
+the array. `jsonb_to_recordset` then fails with `cannot call jsonb_to_recordset on a non-array`.
+This bit the alert roster's bulk upsert.
 
 **Anything touching money needs care.** These files decide whether a paying user gets what they paid
 for:
@@ -153,6 +160,86 @@ anonymous claim-token flow is unchanged. Do not let that slip.
   re-runs the scan**.
 - Verify any change to the above with `npm run test:accounts` (needs a running dev server; spends
   upstream API credits). `npm run test:credits` covers the anonymous path.
+
+## Smart money alerts
+
+Live Solana stream. A Helius enhanced webhook feeds `/api/stream/solana`, which classifies buys,
+counts distinct wallets in rolling windows, and announces each escalation step once to Telegram and
+to the free `/alerts` page. Entirely separate from the paid scan path — a broken alert must never
+be able to cost a buyer a credit.
+
+**The tiers are the owner's, 2026-08-21.** 2 wallets in 2 minutes, 3 in 5 minutes, 4+ within the
+hour, then 5, 6, 8, 10, 15, 20. Repeat buys from one wallet count once. Buys under $50 do not
+count. A wallet that already sold still counts toward the tier and is marked `exited` — the entry
+is the signal, and the reader deserves to know before chasing it.
+
+**Never filter the Helius webhook on `transactionTypes: ["SWAP"]`.** Measured against 120 real
+transactions from six roster wallets: Helius typed a DFLOW-routed swap as `UNKNOWN`, and typed
+three genuine pump.fun sells as `TRANSFER` because an unrelated USDC transfer in the same bundle
+won its description heuristic. `src/lib/alerts/classify.ts` therefore ignores `type` and
+`events.swap` entirely and reads balance deltas: the wallet's balance of exactly one non-quote mint
+went up while a quote asset (SOL/WSOL/USDC/USDT) went down. That shape is one no transfer or
+airdrop can imitate, and it is the only reason the feed is not full of airdrop spam. The webhook is
+registered with `["ANY"]`; roughly half of what arrives is noise the classifier discards.
+
+- **Deltas come from `accountData`, not `tokenTransfers`.** A multi-hop route lists the same mint
+  across four transfer legs and summing them double-counts. The account delta is already net.
+- **The network fee is added back** (`nativeDeltaSol`), or a wallet that merely paid a fee and
+  received a token reads as a buy.
+- **Two memecoins bought against one pot of SOL are skipped, not split.** There is no honest way to
+  divide the quote amount, and reporting a size nobody traded is worse than missing an alert.
+
+**Idempotency and escalation are both unique indexes, never read-then-write.** Helius retries every
+non-2xx, and one transaction reaches us once per tracked wallet in it.
+
+| Index | Stops |
+|---|---|
+| `wallet_events_dedupe_idx` | A retry double-counting a wallet and firing a tier off one buy |
+| `alerts_fired_key_idx` on `(chain, token, tier, episode)` | The same escalation step announcing twice |
+
+`alert_state.episode` increments after `EPISODE_GAP_SECONDS` (2h) of silence on a token, in the
+same upsert that reads it. Without an episode a token could only ever alert once in its life; with
+a read-then-write, two concurrent deliveries both read the same episode and one alert vanishes into
+a conflict. When a burst crosses several tiers at once only the highest is announced — the lower
+ones are claimed in the same statement as `superseded` so they can never fire later on a smaller
+count, and they are excluded from the feed and every performance figure.
+
+**`/api/stream/solana` returns 200 for everything except a failed auth check.** Helius auto-disables
+a webhook that keeps failing — "100.0% failure rate over 7d" is exactly how the previous webhook on
+this account died, silently, while its dashboard still looked healthy. A malformed delivery is not
+worth that risk. The hourly cron carries a heartbeat for the same reason: no events for 90 minutes
+posts a warning to Telegram.
+
+**Every alert pins the market cap it fired at, and the hourly cron keeps the running maximum.**
+That ratio is the scoreboard, and it is the only honest answer to "which alert type is worth
+reading". Supply is pinned at alert time and every later sample is `price x that supply`, so a
+supply change cannot masquerade as a market-cap move. `greatest()` means the peak only ever moves
+up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
+one buy, and a handful would flatter every figure into fiction.
+
+**The roster is quality-selected, not `times_seen`-selected.** `scripts/sync-alert-wallets.mjs`
+takes wallets with one 4x+ win, or two 3x+ wins, or a 2x with $5K+ profit — and only counts rows
+with a real cost basis (see the duplication table above). `times_seen` measures which tokens
+customers happened to scan at least as much as it measures the wallet. Rows are deactivated, never
+deleted: an alert fired last week still names them.
+
+**The script writes the roster AND the Helius address list.** Splitting them is how they drift — an
+address Helius streams that `alert_wallets` does not know is wasted invocations, and a wallet in
+the table Helius is not watching is never alerted on. Run it only after the route is deployed.
+
+```bash
+npm run alerts:sync                       # report only
+npm run alerts:sync -- --apply            # roster + Helius
+npm run alerts:sync -- --apply --db-only  # roster only
+npm run alerts:stats                      # tier performance, stream liveness, delivery failures
+npm run alerts:replay -- --classify       # what the classifier makes of real recent transactions
+npm run alerts:replay -- --wallets 6      # POST them to a running server
+npm run alerts:replay -- --simulate       # force an alert end to end; --undo cleans up
+```
+
+**`ALERTS_RAW_MODE=1` forwards every classified trade to Telegram, unaggregated.** The verification
+gate: buy classification is the one part of this system that cannot be proven correct by reading
+it. Turn it on for a few hours, check the lines against Solscan, turn it off. Never leave it on.
 
 ## Architecture notes
 

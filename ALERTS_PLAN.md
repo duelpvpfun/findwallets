@@ -1,28 +1,48 @@
 # Real-time wallet stream and alerts — build plan
 
-Status: **section 0 done, everything else is plan only.** Agreed sequence with the
-owner 2026-08-21, to be executed from 2026-08-22 when he pings. Confirm the shape
-with him before writing stream code.
+Status: **built and verified locally, 2026-08-21. Not yet deployed.**
 
-The product this is aiming at, in his words:
+Sections 0-3 below are done. What is left is operational, not code:
 
-> good wallet 1 bought 2 mins ago, then another good wallet buys → we fire
-> notification `2 good wallets bought [avg 5.75x] | [avg 50K pnl] into $FFGGGF in
-> the past 2 minutes`. same for 3,4,5,6 wallets. then we will have direct links to
-> top trading bots etc for referral
+| Step | State |
+|---|---|
+| Fix the bot flag | done 2026-08-21 |
+| Schema, classifier, stream route, escalation, Telegram, /alerts page | **done, verified end to end** |
+| Roster built and written (1,685 Solana wallets) | **done** |
+| Deploy the branch | pending |
+| Create the Helius webhook (`npm run alerts:sync -- --apply`) | **pending — needs a live URL** |
+| Telegram bot token + channel | **pending — needs the owner** |
+| Raw-mode verification pass | pending, after deploy |
+| BNB Chain / Base | not started; Helius is Solana-only |
 
-Three things in that sentence drive the whole design, and none of them are the
-obvious ones:
+**Why the webhook was not created yet.** It has to point at a URL that answers. Helius
+auto-disables a receiver that keeps failing, and that is exactly how the previous
+webhook on this account died. `npm run alerts:sync -- --apply` creates it in one
+command the moment the route is live; the API path is already proven against the
+account (the existing webhook was read successfully, and is untouched).
 
-1. **It escalates.** 2 wallets fires, then 3 fires, then 4. It is not one
-   threshold with a cooldown — it is one alert per count, per token.
-2. **The wallets' track record is in the message.** `avg 5.75x` and `avg 50K pnl`
-   come from `wallet_tokens`, our own curated history, not from this trade. That
-   line is the entire reason the alert is worth reading, and no competitor
-   scraping a mempool can produce it.
-3. **The alert is a monetisation surface.** Referral links to trading bots sit
-   inside the notification, so every alert is a revenue opportunity rather than a
-   cost centre.
+**What was verified locally, against the live database and real chain data:**
+
+- Classifier run over 120 real transactions from six roster wallets. Every
+  `SWAP` source landed — PUMP_AMM, JUPITER, PUMP_FUN, RAYDIUM, RAYDIUM_LAUNCHLAB,
+  OKX_DEX_ROUTER, BYREAL — plus one swap Helius typed `UNKNOWN` and three it
+  typed `TRANSFER`. Zero events from `INITIALIZE_ACCOUNT`, plain transfers or
+  airdrops.
+- 90 real transactions POSTed to the route: 32 events stored. Re-POSTing the same
+  payload inserted 0 — the dedupe index holds.
+- Escalation forced with three real roster wallets on a real token: buy 1 fired
+  nothing, buy 2 fired tier 2 (span 20s), buy 3 fired tier 3 (span 40s). Market
+  cap pinned, symbol resolved, lower tier claimed as superseded.
+- Hourly cron: sampled, appended to the series, and held the peak when the next
+  sample came in lower.
+- Auth: 401 with no header and with a wrong secret, on both the stream route and
+  the cron.
+- `/alerts` renders on desktop and mobile with no console errors, no hydration
+  error and no horizontal overflow.
+
+The design decisions and their reasoning now live in AGENTS.md under **Smart money
+alerts**, which is the file that gets read. What follows is the original plan,
+kept for the reasoning behind the shape.
 
 ---
 

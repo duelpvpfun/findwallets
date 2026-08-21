@@ -524,3 +524,53 @@ export async function fetchWalletLifetimeBatch(
   }
   return out;
 }
+
+interface MultiPriceEntry {
+  price?: number | null;
+  marketCap?: number | null;
+  liquidity?: number | null;
+}
+
+/**
+ * Prices for many mints in one call, for the hourly alert market-cap tracker.
+ *
+ * One request per 100 mints rather than one per mint: the tracker re-reads
+ * every token with an open alert every hour, and per-mint calls would make the
+ * cost of tracking scale with the number of alerts fired rather than with the
+ * number of distinct tokens.
+ *
+ * `marketCap` here is the pool's own figure. Callers that pinned a supply at
+ * alert time should prefer `price x pinned supply` — the same rule
+ * `fetchTokenMeta` follows, and the reason a supply change can never masquerade
+ * as a market-cap move.
+ */
+export async function fetchPricesMulti(
+  mints: string[]
+): Promise<Map<string, { priceUsd: number; marketCapUsd: number | null }>> {
+  const out = new Map<string, { priceUsd: number; marketCapUsd: number | null }>();
+  const BATCH_SIZE = 100;
+
+  for (let i = 0; i < mints.length; i += BATCH_SIZE) {
+    const chunk = mints.slice(i, i + BATCH_SIZE);
+    try {
+      const res = await stFetch<Record<string, MultiPriceEntry>>("/price/multi", undefined, {
+        tokens: chunk,
+      });
+      for (const [mint, entry] of Object.entries(res ?? {})) {
+        const price = entry?.price;
+        if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) continue;
+        out.set(mint, {
+          priceUsd: price,
+          marketCapUsd:
+            typeof entry.marketCap === "number" && Number.isFinite(entry.marketCap)
+              ? entry.marketCap
+              : null,
+        });
+      }
+    } catch {
+      // A dead batch costs one hour of samples for those tokens; the running
+      // maximum is unaffected, so it must not abort the rest of the sweep.
+    }
+  }
+  return out;
+}

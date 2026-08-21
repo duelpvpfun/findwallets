@@ -18,7 +18,10 @@
     "db:prune": "env -u DATABASE_URL node --env-file=.env.local scripts/db-prune.mjs",
     "test:credits": "env -u DATABASE_URL node --env-file=.env.local scripts/credit-lifecycle.mjs",
     "test:accounts": "env -u DATABASE_URL node --env-file=.env.local scripts/account-lifecycle.mjs",
-    "db:migrate": "env -u DATABASE_URL node --env-file=.env.local scripts/apply-migration.mjs"
+    "db:migrate": "env -u DATABASE_URL node --env-file=.env.local scripts/apply-migration.mjs",
+    "alerts:sync": "env -u DATABASE_URL node --env-file=.env.local scripts/sync-alert-wallets.mjs",
+    "alerts:stats": "env -u DATABASE_URL node --env-file=.env.local scripts/alerts-stats.mjs",
+    "alerts:replay": "env -u DATABASE_URL node --env-file=.env.local scripts/alerts-replay.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.70.0",

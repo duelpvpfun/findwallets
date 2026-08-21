@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/purge-scan-results",
       "schedule": "17 4 * * *"
+    },
+    {
+      "path": "/api/cron/alert-track",
+      "schedule": "7 * * * *"
     }
   ]
 }
