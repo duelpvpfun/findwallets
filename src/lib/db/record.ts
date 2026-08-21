@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import { tokens, walletTokens, wallets } from "./schema";
+import { normalizeAddress } from "../chains";
 import { meetsQualityBar } from "../quality";
 import type { TokenMeta, WalletTrader } from "../types";
 
@@ -73,7 +74,9 @@ export async function recordScan(
     .insert(tokens)
     .values({
       chain: token.chain,
-      address: token.address,
+      // Lowercased for EVM so one token cannot occupy two rows under two
+      // casings. See `normalizeAddress`.
+      address: normalizeAddress(token.chain, token.address),
       symbol: token.symbol,
       name: token.name,
       imageUrl: token.imageUrl,
