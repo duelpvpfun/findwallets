@@ -563,6 +563,15 @@ export const alertsFired = pgTable(
     supplyAtAlert: doublePrecision("supply_at_alert"),
     athMcapUsd: doublePrecision("ath_mcap_usd"),
     athAt: timestamp("ath_at", { withTimezone: true }),
+    /** Running MINIMUM. Without it `ath / entry` is >= 1 by construction and the
+     * scoreboard cannot express a losing call. See 0024_alert_drawdown.sql. */
+    lowMcapUsd: doublePrecision("low_mcap_usd"),
+    lowAt: timestamp("low_at", { withTimezone: true }),
+    /** Cap at fixed ages, snapshotted once each. The only figures that answer
+     * "what would I actually have made holding this" — nobody sells the top. */
+    mcap1hUsd: doublePrecision("mcap_1h_usd"),
+    mcap6hUsd: doublePrecision("mcap_6h_usd"),
+    mcap24hUsd: doublePrecision("mcap_24h_usd"),
     lastMcapUsd: doublePrecision("last_mcap_usd"),
     samples: jsonb("samples").$type<AlertMcapSample[]>().notNull().default([]),
     trackedUntil: timestamp("tracked_until", { withTimezone: true }).notNull(),

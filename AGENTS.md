@@ -215,20 +215,29 @@ this account died, silently, while its dashboard still looked healthy. A malform
 worth that risk. The hourly cron carries a heartbeat for the same reason: no events for 90 minutes
 posts a warning to Telegram.
 
-**Every alert pins the market cap it fired at, and the hourly cron keeps the running maximum.**
+**The peak alone is not a result, and the scoreboard must be able to show a loss.** `ath_mcap_usd`
+is a running maximum seeded at the entry cap, so `ath / entry` is >= 1.00 **by construction** — the
+first version of this reported only that, and every tier looked profitable. `low_mcap_usd` (the
+drawdown) and `mcap_{1,6,24}h_usd` exist to counterweight it: the drawdown says whether a call would
+have stopped you out before it ran, and the 24-hour mark is the closest thing to a result anyone
+could have taken. On the first 185 live calls the median peak was 1.00x while the median drawdown
+was 0.45-0.80x and 30-50% rugged, which is the whole point. **Report medians, never means** — one
+50x drags a mean anywhere. Anything that shows peak without drawdown beside it is lying.
+
+**Every alert pins the market cap it fired at, and the cron keeps the running maximum.**
 That ratio is the scoreboard, and it is the only honest answer to "which alert type is worth
 reading". Supply is pinned at alert time and every later sample is `price x that supply`, so a
 supply change cannot masquerade as a market-cap move. `greatest()` means the peak only ever moves
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
-**Volume is tuned by env, not by code.** The tiers were calibrated for a ~500-wallet roster; at
-1,685 the measured live rate was **561 alerts an hour**, because two proven wallets buying the same
-token inside two minutes happens by coincidence constantly. Three knobs, all with defaults that
-were set from that first hour of real traffic: `ALERTS_TELEGRAM_MIN_TIER` (4),
-`ALERTS_MIN_MCAP_USD` (20,000 — half of the first 84 alerts fired under it), `ALERTS_MIN_BUY_USD`
-(250). **A suppressed alert is still recorded and still tracked**, because a suppressed call that
-turns out to have been a good one is the only evidence that the knobs are set wrong.
+**Volume knobs exist but ship OFF.** The tiers were calibrated for a ~500-wallet roster; at 1,685
+the measured live rate was **561 alerts an hour**, because two proven wallets buying the same token
+inside two minutes happens by coincidence constantly. `ALERTS_TELEGRAM_MIN_TIER`,
+`ALERTS_MIN_MCAP_USD` and `ALERTS_MIN_BUY_USD` are all inert by default — **the owner asked to
+choose the approach himself, so nothing is throttled without him saying so.** When one is set, a
+suppressed alert is still recorded and still tracked, because a suppressed call that turns out to
+have been good is the only evidence the knob is wrong.
 
 **Market caps are sampled every 10 minutes for the first 24 hours, then hourly.** A memecoin's peak
 is almost always inside the first day, and the running maximum is only as good as the sampling rate

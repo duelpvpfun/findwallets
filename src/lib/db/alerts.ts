@@ -429,6 +429,8 @@ export async function attachTokenSnapshot(
       supplyAtAlert: snapshot.supply,
       athMcapUsd: snapshot.mcapUsd,
       athAt: hasMcap ? now : null,
+      lowMcapUsd: snapshot.mcapUsd,
+      lowAt: hasMcap ? now : null,
       lastMcapUsd: snapshot.mcapUsd,
       samples,
       lastCheckedAt: now,
@@ -535,6 +537,25 @@ export async function applyMcapSample(
         when ${mcapUsd} > coalesce(${alertsFired.athMcapUsd}, 0) then now()
         else ${alertsFired.athAt}
       end`,
+      // The drawdown. `least` mirrors the peak's `greatest`, so it only ever
+      // moves down and a transient bad print cannot erase a real low.
+      lowMcapUsd: sql`least(coalesce(${alertsFired.lowMcapUsd}, ${alertsFired.mcapAtAlertUsd}, ${mcapUsd}), ${mcapUsd})`,
+      lowAt: sql`case
+        when ${mcapUsd} < coalesce(${alertsFired.lowMcapUsd}, ${alertsFired.mcapAtAlertUsd}, ${mcapUsd}) then now()
+        else ${alertsFired.lowAt}
+      end`,
+      // Snapshotted once, on the first sample at or after each age. Sampling is
+      // every ten minutes for the first day, so each lands within ten minutes
+      // of its mark.
+      mcap1hUsd: sql`case
+        when ${alertsFired.mcap1hUsd} is null and ${alertsFired.createdAt} <= now() - interval '1 hour'
+        then ${mcapUsd} else ${alertsFired.mcap1hUsd} end`,
+      mcap6hUsd: sql`case
+        when ${alertsFired.mcap6hUsd} is null and ${alertsFired.createdAt} <= now() - interval '6 hours'
+        then ${mcapUsd} else ${alertsFired.mcap6hUsd} end`,
+      mcap24hUsd: sql`case
+        when ${alertsFired.mcap24hUsd} is null and ${alertsFired.createdAt} <= now() - interval '24 hours'
+        then ${mcapUsd} else ${alertsFired.mcap24hUsd} end`,
       // Append, then keep the newest MAX_SAMPLES in chronological order.
       samples: sql`coalesce((
         select jsonb_agg(entry order by ord)
@@ -685,6 +706,8 @@ export interface AlertFeedRow {
   /** From the FIRST step — where we called it. */
   mcapAtAlertUsd: number | null;
   athMcapUsd: number | null;
+  /** The drawdown, so the feed can show the peak's counterweight. */
+  lowMcapUsd: number | null;
   lastMcapUsd: number | null;
   athAt: string | null;
   samples: AlertMcapSample[];
@@ -712,6 +735,7 @@ interface CallRow extends Record<string, unknown> {
   total_bought_usd: number | null;
   entry_mcap_usd: number | null;
   ath_mcap_usd: number | null;
+  low_mcap_usd: number | null;
   last_mcap_usd: number | null;
   ath_at: string | null;
   samples: AlertMcapSample[] | null;
@@ -758,6 +782,7 @@ export async function fetchAlertFeed(
 
       -- Peak is a property of the token, shared by every step of the call.
       max(${alertsFired.athMcapUsd}) as ath_mcap_usd,
+      min(${alertsFired.lowMcapUsd}) as low_mcap_usd,
       max(${alertsFired.lastMcapUsd}) as last_mcap_usd,
       max(${alertsFired.athAt}) as ath_at,
 
@@ -803,6 +828,7 @@ export async function fetchAlertFeed(
     totalBoughtUsd: num(r.total_bought_usd),
     mcapAtAlertUsd: num(r.entry_mcap_usd),
     athMcapUsd: num(r.ath_mcap_usd),
+    lowMcapUsd: num(r.low_mcap_usd),
     lastMcapUsd: num(r.last_mcap_usd),
     athAt: r.ath_at ? new Date(r.ath_at).toISOString() : null,
     samples: r.samples ?? [],
@@ -839,28 +865,49 @@ export async function fetchCallAnchorMessageId(
 }
 
 /**
- * Per-tier performance. This is the question the whole tracking apparatus
- * exists to answer: which shape of alert is actually worth acting on.
+ * Per-tier performance, stated so that it can show a loss.
  *
- * `peakX` is peak market cap over the cap at the moment the alert fired — the
- * best a reader could have done, not what anyone did do. Alerts that fired
- * below `MIN_SCOREBOARD_MCAP_USD` are excluded: a $3K cap doubling is one buy,
- * and a handful of those would flatter every average here into fiction.
+ * The first version of this reported only `peak / entry`, and `peak` is a
+ * running maximum seeded at the entry cap — so it was >= 1.00 by construction.
+ * Every tier looked profitable and the "average" was an upper bound dressed up
+ * as a result. Four things fix that:
+ *
+ *  - **Median, not mean.** One 50x in a hundred calls drags a mean anywhere it
+ *    likes. The median is what a typical call did.
+ *  - **The drawdown** (`low / entry`) sits next to the peak. A call that halved
+ *    before it ran is a call most people would have sold; that is now visible.
+ *  - **The 24-hour mark** is the closest thing to a realised result, because
+ *    nobody sells the exact top. It can be, and often is, below 1.
+ *  - **A rug rate**: the share that fell 70% or more. This is the number that
+ *    makes a high average peak honest or damning.
+ *
+ * Calls that fired under `MIN_SCOREBOARD_MCAP_USD` are still excluded — a $3K
+ * cap doubling is one buy — and the 24-hour column only counts calls old enough
+ * to have one.
  */
 export interface TierScore {
   tier: number;
   windowSeconds: number;
   label: string;
   kind: AlertTier["kind"];
+  /** Rows in this tier, before the scoreboard's own filters. */
   alerts: number;
+  /** Rows with a usable entry cap, which is what everything below is over. */
   scored: number;
-  avgPeakX: number | null;
   medianPeakX: number | null;
   bestPeakX: number | null;
-  /** Share that at least doubled from the alert cap. */
+  /** Median of `low / entry`. Below 1; the lower, the rougher the ride. */
+  medianDrawdownX: number | null;
+  worstDrawdownX: number | null;
+  /** Median of `cap at +24h / entry`, over calls at least 24h old. */
+  median24hX: number | null;
+  scored24h: number;
+  /** Share that touched 2x at any point. */
   hitRate2x: number | null;
-  /** Share still above where it fired. */
-  greenRate: number | null;
+  /** Share that fell 70% or more from entry. */
+  rugRate: number | null;
+  /** Share still at or above entry 24 hours later. */
+  greenAt24h: number | null;
 }
 
 export async function fetchTierScoreboard(chain: string, days = 30): Promise<TierScore[]> {
@@ -871,25 +918,29 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
     tier: number;
     alerts: number;
     scored: number;
-    avg_peak_x: number | null;
     median_peak_x: number | null;
     best_peak_x: number | null;
+    median_dd_x: number | null;
+    worst_dd_x: number | null;
+    median_24h_x: number | null;
+    scored_24h: number;
     hit_2x: number | null;
-    green: number | null;
+    rug: number | null;
+    green_24h: number | null;
   }>(sql`
     with scored as (
       select
         ${alertsFired.tier} as tier,
-        case
-          when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
-           and ${alertsFired.athMcapUsd} is not null
-          then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd}
-        end as peak_x,
-        case
-          when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
-           and ${alertsFired.lastMcapUsd} is not null
-          then ${alertsFired.lastMcapUsd} / ${alertsFired.mcapAtAlertUsd}
-        end as now_x
+        ${alertsFired.mcapAtAlertUsd} as entry,
+        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
+             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x,
+        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
+             then ${alertsFired.lowMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as dd_x,
+        -- Only calls old enough to HAVE a 24-hour mark. Counting a call that is
+        -- ten minutes old as "flat at 24h" would be inventing data.
+        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
+              and ${alertsFired.mcap24hUsd} is not null
+             then ${alertsFired.mcap24hUsd} / ${alertsFired.mcapAtAlertUsd} end as x24
       from ${alertsFired}
       where ${alertsFired.chain} = ${chain}
         and ${alertsFired.superseded} = false
@@ -899,11 +950,15 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
       tier,
       count(*)::int as alerts,
       count(peak_x)::int as scored,
-      avg(peak_x)::float8 as avg_peak_x,
       percentile_cont(0.5) within group (order by peak_x)::float8 as median_peak_x,
       max(peak_x)::float8 as best_peak_x,
+      percentile_cont(0.5) within group (order by dd_x)::float8 as median_dd_x,
+      min(dd_x)::float8 as worst_dd_x,
+      percentile_cont(0.5) within group (order by x24)::float8 as median_24h_x,
+      count(x24)::int as scored_24h,
       (count(*) filter (where peak_x >= 2)::float8 / nullif(count(peak_x), 0)) as hit_2x,
-      (count(*) filter (where now_x >= 1)::float8 / nullif(count(now_x), 0)) as green
+      (count(*) filter (where dd_x <= 0.3)::float8 / nullif(count(dd_x), 0)) as rug,
+      (count(*) filter (where x24 >= 1)::float8 / nullif(count(x24), 0)) as green_24h
     from scored
     group by tier
   `);
@@ -919,11 +974,15 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
       kind: t.kind,
       alerts: Number(row?.alerts ?? 0),
       scored: Number(row?.scored ?? 0),
-      avgPeakX: num(row?.avg_peak_x),
       medianPeakX: num(row?.median_peak_x),
       bestPeakX: num(row?.best_peak_x),
+      medianDrawdownX: num(row?.median_dd_x),
+      worstDrawdownX: num(row?.worst_dd_x),
+      median24hX: num(row?.median_24h_x),
+      scored24h: Number(row?.scored_24h ?? 0),
       hitRate2x: num(row?.hit_2x),
-      greenRate: num(row?.green),
+      rugRate: num(row?.rug),
+      greenAt24h: num(row?.green_24h),
     };
   });
 }

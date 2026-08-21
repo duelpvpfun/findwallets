@@ -10,15 +10,27 @@ import McapSparkline from "./McapSparkline";
 /**
  * One call, as a terminal line.
  *
- * Collapsed it is a single scannable row — time, size of the confluence,
- * ticker, the wallets' track record, and what the token has done since. Opening
- * it reveals who was in and where to buy. That split is deliberate: a feed
- * someone keeps open all day has to be readable at a glance, and the detail is
- * only wanted for the one row in twenty that looks interesting.
+ * Collapsed it is a single scannable row; opening it reveals who was in. That
+ * split is deliberate — a feed someone keeps open all day has to be readable at
+ * a glance, and the detail is only wanted for the one row in twenty that looks
+ * interesting.
+ *
+ * The row is a `<div>`, not a `<button>`, with the expand toggle as one child
+ * and the venue links as siblings. Interactive elements cannot nest: an anchor
+ * inside a button is invalid HTML and browsers disagree about which one a click
+ * belongs to.
  */
 
 /** Wallets listed before the rest collapse behind a count. */
 const VISIBLE_WALLETS = 6;
+
+/** A colour per venue, so the row is scannable by shape and not just by letter. */
+const BOT_CHIP: Record<string, string> = {
+  Axiom: "bg-sky-500/20 text-sky-300 hover:bg-sky-500/30",
+  Trojan: "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30",
+  GMGN: "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30",
+  BasedBot: "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30",
+};
 
 const KIND_CHIP: Record<string, string> = {
   burst: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -32,15 +44,16 @@ function chipFor(tier: number): string {
   return KIND_CHIP.burst;
 }
 
-/** Wall-clock, not "3m ago": in a terminal feed the timestamp is the anchor you
- * use to line a row up against a chart. */
-function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+/** How long ago the call fired. Re-derived on render, and the parent re-renders
+ * on every poll, so it stays honest without a timer of its own. */
+function ago(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }
 
 function humanSpan(seconds: number): string {
@@ -56,14 +69,18 @@ interface Standout {
 }
 
 /** Mirrors `bestWin` in telegram.ts so the page and the channel make the same
- * claim about the same call. The return type narrows the two nullable fields so
- * the caller does not have to assert what was already checked. */
+ * claim about the same call. The return type narrows the two nullable fields, so
+ * the caller does not re-assert what was already checked. */
 function standoutWin(alert: AlertFeedRow): Standout | null {
   let best: Standout | null = null;
   for (const w of alert.wallets) {
     if (w.bestMultipleX === null || !w.bestSymbol || w.bestMultipleX < 5) continue;
     if (best === null || w.bestMultipleX > best.bestMultipleX) {
-      best = { name: w.label || w.address, bestMultipleX: w.bestMultipleX, bestSymbol: w.bestSymbol };
+      best = {
+        name: w.label || w.address,
+        bestMultipleX: w.bestMultipleX,
+        bestSymbol: w.bestSymbol,
+      };
     }
   }
   return best;
@@ -73,29 +90,27 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const copy = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(alert.tokenAddress);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {
-        // Refused on an insecure origin or by permission. The address is shown
-        // in full when the row is open, so there is still a way to get it.
-      }
-    },
-    [alert.tokenAddress]
-  );
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(alert.tokenAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Refused on an insecure origin or by permission. The address is printed
+      // in full when the row is open, so there is still a way to get it.
+    }
+  }, [alert.tokenAddress]);
 
   const symbol = (alert.tokenSymbol || "?").replace(/^\$+/, "");
   const base = alert.mcapAtAlertUsd;
   const peakX = base && base > 0 && alert.athMcapUsd ? alert.athMcapUsd / base : null;
   const nowX = base && base > 0 && alert.lastMcapUsd ? alert.lastMcapUsd / base : null;
+  const lowX = base && base > 0 && alert.lowMcapUsd ? alert.lowMcapUsd / base : null;
   const up = nowX === null || nowX >= 1;
   const standout = standoutWin(alert);
   const wallets = alert.wallets.slice(0, VISIBLE_WALLETS);
   const hidden = alert.wallets.length - wallets.length;
+  const links = tradeLinksFor(alert.chain as Chain);
 
   return (
     <div
@@ -103,75 +118,143 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
         fresh ? "animate-row-land bg-blue-500/[0.04]" : ""
       }`}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left sm:flex-nowrap"
-      >
-        <time
-          dateTime={alert.createdAt}
-          className="tnum hidden w-16 shrink-0 font-mono text-[11px] text-neutral-600 sm:block"
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={`${alert.peakTier} wallets bought $${symbol}`}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left sm:flex-nowrap"
         >
-          {clockTime(alert.createdAt)}
-        </time>
+          <span
+            aria-hidden
+            className={`shrink-0 text-neutral-600 transition-transform ${open ? "rotate-90" : ""}`}
+          >
+            ›
+          </span>
 
-        <span
-          className={`tnum w-9 shrink-0 rounded border text-center text-[11px] font-semibold ${chipFor(
-            alert.peakTier
-          )}`}
-        >
-          {alert.peakTier}w
-        </span>
+          <time
+            dateTime={alert.createdAt}
+            title={`${new Date(alert.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC`}
+            className="tnum hidden w-16 shrink-0 text-[11px] text-neutral-600 sm:block"
+            suppressHydrationWarning
+          >
+            {ago(alert.createdAt)}
+          </time>
 
-        <span className="w-24 shrink-0 truncate text-sm font-semibold text-neutral-50">
-          ${symbol}
-        </span>
+          <span
+            className={`tnum w-9 shrink-0 rounded border text-center text-[11px] font-semibold ${chipFor(
+              alert.peakTier
+            )}`}
+          >
+            {alert.peakTier}w
+          </span>
 
-        {/* The track record. This is the moat, so it gets fixed width and never
-            wraps under the ticker. */}
-        <span className="tnum hidden w-36 shrink-0 text-xs text-neutral-400 sm:block">
-          {alert.avgMultipleX !== null ? (
-            <span className="font-semibold text-blue-300">
-              {formatMultiple(alert.avgMultipleX)}
-            </span>
-          ) : (
-            "—"
-          )}
-          {alert.avgPnlUsd !== null ? ` · ${formatUsd(alert.avgPnlUsd)}` : ""}
-        </span>
+          <span className="w-24 shrink-0 truncate text-sm font-semibold text-neutral-50">
+            ${symbol}
+          </span>
 
-        <span className="tnum hidden w-14 shrink-0 text-right text-[11px] text-neutral-500 md:block">
-          {humanSpan(alert.spanSeconds)}
-        </span>
+          {/* The track record: the one thing nobody else can print. Fixed width
+              so it never wraps under the ticker. */}
+          <span className="tnum hidden w-36 shrink-0 text-xs text-neutral-400 sm:block">
+            {alert.avgMultipleX !== null ? (
+              <span className="font-semibold text-blue-300">
+                {formatMultiple(alert.avgMultipleX)}
+              </span>
+            ) : (
+              "—"
+            )}
+            {alert.avgPnlUsd !== null ? ` · ${formatUsd(alert.avgPnlUsd)}` : ""}
+          </span>
 
-        <span className="tnum w-20 shrink-0 text-right text-xs text-neutral-300">
-          {base ? formatUsd(base) : "—"}
-        </span>
+          <span className="tnum hidden w-12 shrink-0 text-right text-[11px] text-neutral-500 md:block">
+            {humanSpan(alert.spanSeconds)}
+          </span>
 
-        <span
-          className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
-            up ? "text-emerald-400" : "text-rose-400"
-          }`}
-          title="Peak market cap divided by the cap when we called it"
-        >
-          {peakX ? `${up ? "▲" : "▼"} ${formatMultiple(peakX)}` : "—"}
-        </span>
+          <span className="tnum w-20 shrink-0 text-right text-xs text-neutral-300">
+            {base ? formatUsd(base) : "—"}
+          </span>
 
-        <span className="ml-auto hidden shrink-0 lg:block">
+          {/* Peak carries NO arrow: it is a running maximum seeded at the entry
+              cap, so it is >= 1.00x by construction and an up-arrow beside it
+              would be claiming a gain that may never have existed. Dimmed until
+              it is actually meaningful. */}
+          <span
+            className={`tnum w-14 shrink-0 text-right text-xs ${
+              peakX && peakX >= 1.2 ? "font-semibold text-blue-300" : "text-neutral-500"
+            }`}
+            title="Highest market cap since the call, over the cap at the call"
+          >
+            {peakX ? formatMultiple(peakX) : "—"}
+          </span>
+
+          {/* Now is the honest one, and the only one that gets a direction. */}
+          <span
+            className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
+              nowX === null ? "text-neutral-500" : up ? "text-emerald-400" : "text-rose-400"
+            }`}
+            title="Market cap now, over the cap at the call"
+          >
+            {nowX ? `${up ? "▲" : "▼"} ${formatMultiple(nowX)}` : "—"}
+          </span>
+        </button>
+
+        <span className="hidden shrink-0 lg:block">
           <McapSparkline samples={alert.samples} baselineUsd={base} up={up} />
         </span>
 
-        <span
-          aria-hidden
-          className={`shrink-0 text-neutral-600 transition-transform ${open ? "rotate-90" : ""}`}
-        >
-          ›
+        {/* One click to a buy without opening the row. Monograms rather than the
+            real logos: hotlinking four third-party favicons leaks a referrer per
+            row and breaks the moment any of them moves a file. */}
+        <span className="hidden shrink-0 items-center gap-1 sm:flex">
+          {links.map((link) => (
+            <a
+              key={link.name}
+              href={link.plain(alert.chain as Chain, alert.tokenAddress)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Buy on ${link.name}`}
+              aria-label={`Buy $${symbol} on ${link.name}`}
+              className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-colors ${
+                BOT_CHIP[link.name] ?? "bg-neutral-800 text-neutral-300"
+              }`}
+            >
+              {link.name.slice(0, 1)}
+            </a>
+          ))}
         </span>
-      </button>
+      </div>
 
       {open ? (
-        <div className="px-3 pb-3 sm:pl-[4.75rem]">
+        <div className="px-3 pb-3 sm:pl-[5.5rem]">
+          <div className="tnum mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-500">
+            <span>
+              Called at <span className="text-neutral-300">{base ? formatUsd(base) : "—"}</span>
+            </span>
+            <span>
+              Peak{" "}
+              <span className="text-neutral-300">
+                {alert.athMcapUsd ? formatUsd(alert.athMcapUsd) : "—"}
+              </span>
+              {peakX ? ` (${formatMultiple(peakX)})` : ""}
+            </span>
+            {/* The counterweight to the peak: how far underwater it went first. */}
+            <span>
+              Low{" "}
+              <span className="text-rose-400/90">
+                {alert.lowMcapUsd ? formatUsd(alert.lowMcapUsd) : "—"}
+              </span>
+              {lowX ? ` (${formatMultiple(lowX)})` : ""}
+            </span>
+            <span>
+              Now{" "}
+              <span className={up ? "text-emerald-400" : "text-rose-400"}>
+                {alert.lastMcapUsd ? formatUsd(alert.lastMcapUsd) : "—"}
+              </span>
+              {nowX ? ` (${formatMultiple(nowX)})` : ""}
+            </span>
+          </div>
+
           {alert.steps.length > 1 ? (
             <p className="tnum mb-2 text-[11px] text-neutral-500">
               Called at {alert.firstTier}, escalated {alert.steps.map((s) => s.tier).join(" → ")}
@@ -194,11 +277,15 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             </p>
           ) : null}
 
-          {/* ONE grid for every wallet row, so the three columns line up with
-              each other. Per-row flex boxes could not: a short name and a long
-              one produce different column positions, which is what made this
-              look ragged. */}
+          {/* ONE grid for every wallet, so the columns line up across rows.
+              Per-row flex boxes could not: a short name and a long one give
+              different column positions, which is what made this look ragged. */}
           <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 text-xs">
+            <div className="col-span-3 grid grid-cols-subgrid text-[10px] uppercase tracking-wider text-neutral-600">
+              <span>Wallet</span>
+              <span className="text-right">Avg win</span>
+              <span className="text-right">Avg PNL</span>
+            </div>
             {wallets.map((w) => (
               <div key={w.address} className="col-span-3 grid grid-cols-subgrid items-baseline">
                 <span
@@ -223,9 +310,7 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             ))}
           </div>
 
-          {hidden > 0 ? (
-            <p className="mt-1 text-[11px] text-neutral-600">+ {hidden} more</p>
-          ) : null}
+          {hidden > 0 ? <p className="mt-1 text-[11px] text-neutral-600">+ {hidden} more</p> : null}
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <button
@@ -235,13 +320,12 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             >
               {copied ? "✓ Copied" : "📋 Copy CA"}
             </button>
-            {tradeLinksFor(alert.chain as Chain).map((link) => (
+            {links.map((link) => (
               <a
                 key={link.name}
                 href={link.plain(alert.chain as Chain, alert.tokenAddress)}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
                 className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"
               >
                 {link.name}
@@ -251,7 +335,6 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
               href={dexScreenerUrl(alert.chain as Chain, alert.tokenAddress)}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
               className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"
             >
               Chart

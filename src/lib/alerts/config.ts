@@ -69,28 +69,26 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
-export const MIN_BUY_USD = envNumber("ALERTS_MIN_BUY_USD", 250);
+export const MIN_BUY_USD = envNumber("ALERTS_MIN_BUY_USD", 50);
 
 /**
  * Below this market cap an alert is recorded and tracked but never announced.
  *
- * Measured on the first hour of live traffic: 50 of 84 alerts fired under $20K,
- * which is where a single buy moves the chart and the "multiple" stops meaning
- * anything. They stay in the database because the scoreboard needs the sample;
- * they do not reach the channel.
+ * **Off by default (0), pending the owner's decision on how to cut volume.**
+ * The lever exists because the first hour of live traffic put 50 of 84 alerts
+ * under $20K, where a single buy moves the chart — but which knob to turn, and
+ * how far, is his call and not a default to assume.
  */
-export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 20_000);
+export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 0);
 
 /**
  * Lowest tier that reaches Telegram. Everything still lands on the feed.
  *
- * The tiers were calibrated for a ~500-wallet roster. At 1,685 active traders,
- * two of them buying the same token inside two minutes happens by coincidence
- * constantly: the live rate was 561 alerts an hour, which is a channel nobody
- * stays subscribed to. Four independent proven wallets is a claim worth a
- * notification; two is worth a row on a page.
+ * **Off by default (0), pending the owner's decision.** The measured live rate
+ * was 561 alerts an hour, so something has to give — but he asked to choose the
+ * approach himself, so this ships inert rather than opinionated.
  */
-export const TELEGRAM_MIN_TIER = envNumber("ALERTS_TELEGRAM_MIN_TIER", 4);
+export const TELEGRAM_MIN_TIER = envNumber("ALERTS_TELEGRAM_MIN_TIER", 0);
 
 /**
  * How long a token must go without a single tracked buy before its escalation
