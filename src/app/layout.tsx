@@ -15,9 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const TITLE = "Alpha Wallet Finder — top memecoin traders by realized PNL";
+// Wallet extensions show the page title next to the domain on their approve
+// prompt, so it leads with the product name rather than a keyword phrase.
+const TITLE = "Alpha Wallet Finder: top memecoin traders by PNL";
 const DESCRIPTION =
-  "Paste any Solana, BNB Chain or Base memecoin contract address to surface its top 500 trading wallets, their entry/exit prices, and realized PNL — exportable straight to your tracking bot.";
+  "Paste any Solana, BNB Chain or Base memecoin contract address to surface its top 500 trading wallets, their entry and exit prices, and realized PNL. Exportable straight to your tracking bot.";
 
 export const metadata: Metadata = {
   metadataBase: SITE_URL,

@@ -55,11 +55,11 @@ const signMessage = (message) => bs58.encode(edSign(null, Buffer.from(message, "
 /** Mirror of src/lib/auth/message.ts. Keep in sync. */
 const buildSignInMessage = (wallet, nonce) =>
   [
-    "Alpha Wallet Finder — sign in",
+    "alphawallets.fun",
+    "Sign in to Alpha Wallet Finder",
     "",
-    "Signing this message is FREE. It authorizes no transaction and moves no",
-    "funds. It only proves you control this wallet, so your past purchases can",
-    "be restored to it.",
+    "This signature is free. It approves no transaction and moves no funds.",
+    "It proves you own this wallet, so your purchases can be restored to it.",
     "",
     `Wallet: ${wallet}`,
     `Nonce: ${nonce}`,

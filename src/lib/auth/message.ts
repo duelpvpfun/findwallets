@@ -9,20 +9,27 @@
  *
  * The wording is part of the security model, not decoration: a wallet prompt
  * that doesn't say plainly that nothing is being spent trains people to approve
- * prompts they haven't read.
+ * prompts they haven't read. It leads with the domain for the same reason it is
+ * the first thing a phishing prompt gets wrong.
+ *
+ * SIGN_IN_HOST is a hardcoded brand constant, NOT derived from SITE_URL:
+ * `VERCEL_PROJECT_PRODUCTION_URL` is server-only, so a derived host would
+ * differ between the browser and the API and every signature would fail to
+ * verify.
  *
  * Changing a single character invalidates every in-flight nonce. That is
  * harmless (they expire in five minutes) but it must change in one place.
  */
 export const SIGN_IN_DOMAIN = "Alpha Wallet Finder";
+export const SIGN_IN_HOST = "alphawallets.fun";
 
 export function buildSignInMessage(wallet: string, nonce: string): string {
   return [
-    `${SIGN_IN_DOMAIN} — sign in`,
+    SIGN_IN_HOST,
+    `Sign in to ${SIGN_IN_DOMAIN}`,
     "",
-    "Signing this message is FREE. It authorizes no transaction and moves no",
-    "funds. It only proves you control this wallet, so your past purchases can",
-    "be restored to it.",
+    "This signature is free. It approves no transaction and moves no funds.",
+    "It proves you own this wallet, so your purchases can be restored to it.",
     "",
     `Wallet: ${wallet}`,
     `Nonce: ${nonce}`,
