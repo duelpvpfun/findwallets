@@ -1,7 +1,8 @@
 # Real-time wallet stream and alerts — build plan
 
-Status: **plan only, nothing built.** Agreed sequence with the owner 2026-08-21,
-to be executed from 2026-08-22. Confirm with him before starting.
+Status: **section 0 done, everything else is plan only.** Agreed sequence with the
+owner 2026-08-21, to be executed from 2026-08-22 when he pings. Confirm the shape
+with him before writing stream code.
 
 The product this is aiming at, in his words:
 
@@ -25,10 +26,10 @@ obvious ones:
 
 ---
 
-## 0. Fix the bot flag FIRST (blocking)
+## 0. Fix the bot flag FIRST — **DONE 2026-08-21**
 
-`looksLikeBot` in `src/lib/db/record.ts` flags any wallet with **5,000+ lifetime
-trades** as a bot. The owner's call, 2026-08-21: *"5000+ lifetime trades is normal
+`looksLikeBot` in `src/lib/db/record.ts` used to flag any wallet with **5,000+
+lifetime trades** as a bot. The owner's call, 2026-08-21: *"5000+ lifetime trades is normal
 dont flag as bots lmao otherwise we will flag most wallets."* He is right, and the
 numbers are worse than the comment in that file claims:
 
@@ -44,16 +45,27 @@ The 5,000 line sits between p75 and p90, so it flags roughly a fifth of the
 database for being *active*. And the damning part: the **three most-seen wallets
 in the entire database** (22, 21 and 21 tokens each) are all flagged `is_bot`
 purely on trade count. Those are precisely the wallets this alert product should
-be built on. Filtering bots out of the top 500 would throw away our best signal.
+be built on. Filtering bots out of the top 500 would have thrown away our best
+signal.
 
-**The fix:**
+**Done, both halves:**
 
-- Trust upstream tags only. Delete the `BOT_LIFETIME_TRADES_THRESHOLD` branch.
-- Backfill to clear the 502. **`is_bot` is sticky** in the upsert
-  (`is_bot = ${wallets.isBot} or excluded.is_bot`), so a wallet flagged once stays
-  flagged forever no matter what a rescan says. Clearing rows that have no bot tag
-  is required, not optional.
-- Keep the sticky OR for tag-derived flags. That part is working.
+- `looksLikeBot` now trusts upstream tags and nothing else; the threshold branch
+  is gone, and so is `scripts/backfill-bot-flag.mjs`, which is what applied the
+  bad rule in bulk in the first place.
+- `scripts/unflag-false-bots.mjs` (report by default, `--apply` to change) cleared
+  **502 wallets** against the live database. 208 remain flagged, every one of them
+  by an upstream tag. Re-running reports 0 to clear, so it is idempotent.
+- The sticky OR stays for tag-derived flags. That part was working.
+
+**Ordering caveat:** `is_bot` is sticky in the upsert
+(`is_bot = ${wallets.isBot} or excluded.is_bot`), so until the code fix is
+**deployed**, any scan touching one of those 502 wallets re-flags it. Re-run the
+script after the deploy; it costs nothing and is safe to repeat.
+
+Side effect worth knowing: `is_bot` gates the public wallet ticker
+(`showcase.ts`), so those 502 — including the three most-seen wallets we have —
+had been silently excluded from the homepage. They are eligible again now.
 
 ---
 
@@ -189,13 +201,18 @@ user), Telegram alerts paid.
 
 ## 7. Open decisions
 
+He is bringing these when he pings, 2026-08-22:
+
 1. **Referral codes** for Photon / BullX / Trojan / Axiom / GMGN — needed before
    the links can go in the message.
 2. **Telegram bot token** from @BotFather.
-3. **Upstash account** — free signup, paid tier when volume justifies it.
+3. **Upstash credentials** — free signup, paid tier when volume justifies it.
 4. **The dead Helius webhook** — leave it or delete it?
-5. **Do the bot-flag fix now or as part of tomorrow's first step?** It changes
-   stored data (clears 502 rows), so it wants its own commit either way.
-6. **Alert stats definition** — `avg 5.75x` as the mean of each wallet's mean
-   multiple across all its stored tokens is my reading; confirm that is what he
-   means rather than, say, its best trade.
+
+Settled:
+
+- ~~Bot-flag fix~~ — done, section 0.
+- ~~Alert stats definition~~ — **confirmed 2026-08-21**: `avg 5.75x` is the mean of
+  each buying wallet's average `multiple_x` across all its stored tokens, then
+  averaged across the wallets in the window. Not its best trade. Same shape for
+  `avg 50K pnl`.

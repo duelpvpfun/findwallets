@@ -7,14 +7,23 @@ import type { TokenMeta, WalletTrader } from "../types";
 
 const BOT_TAGS = ["arbitrage-bot", "sniper-bot", "bot", "arbitrage"];
 
-// Above this many lifetime trades, upstream's own identity tags are the
-// exception, not the rule (232 of ~1000 wallets we've seen sit at 10k-50M
-// trades with no bot tag at all) — no human manually trades a token this often.
-const BOT_LIFETIME_TRADES_THRESHOLD = 5000;
-
-function looksLikeBot(tags: string[], lifetimeTrades: number | null): boolean {
-  if (tags.some((t) => BOT_TAGS.includes(t.toLowerCase()))) return true;
-  return (lifetimeTrades ?? 0) >= BOT_LIFETIME_TRADES_THRESHOLD;
+/**
+ * Upstream's identity tags, and nothing else.
+ *
+ * There used to be a second rule here: 5,000+ lifetime trades was treated as a
+ * bot on the theory that no human trades that often. Measured against the live
+ * database, that was wrong in a way that cost us our best data. Of 710 wallets
+ * flagged, **502 were flagged by trade count alone** with no upstream tag, the
+ * threshold sat between p75 (3,576) and p90 (13,474) of the distribution, and the
+ * three most-seen wallets in the entire database — 22, 21 and 21 tokens each —
+ * were all caught by it. Those are the repeat winners the product exists to find.
+ * A high trade count on a memecoin trader is normal; it is not evidence of a bot.
+ *
+ * `is_bot` gates the public wallet ticker (`showcase.ts`), so a false positive
+ * silently removes a wallet from the homepage.
+ */
+function looksLikeBot(tags: string[]): boolean {
+  return tags.some((t) => BOT_TAGS.includes(t.toLowerCase()));
 }
 
 export interface LifetimeStats {
@@ -105,7 +114,7 @@ export async function recordScan(
           identityName: t.nickname,
           twitter: t.twitter,
           tags: t.tags,
-          isBot: looksLikeBot(t.tags, lifetimeTrades),
+          isBot: looksLikeBot(t.tags),
           lifetimePnlUsd: lt?.pnlUsd ?? t.walletLifetimeRealizedPnlUsd ?? null,
           lifetimeWinRate: lt?.winRate ?? null,
           lifetimeTrades,
