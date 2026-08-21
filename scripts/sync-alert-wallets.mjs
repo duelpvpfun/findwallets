@@ -195,7 +195,7 @@ function webhookUrl() {
   const base =
     process.env.ALERTS_WEBHOOK_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
-    "https://findwallets.vercel.app";
+    "https://www.alphawallets.fun";
   return new URL("/api/stream/solana", base).toString();
 }
 

@@ -16,6 +16,19 @@ import type { AlertWalletSnapshot } from "../db/schema";
 
 const API_BASE = "https://api.telegram.org";
 
+/**
+ * Where every alert points back to.
+ *
+ * Resolved through `SITE_URL`, which prefers `NEXT_PUBLIC_SITE_URL` over
+ * Vercel's own `VERCEL_PROJECT_PRODUCTION_URL`. That order matters here: Vercel
+ * sets the latter to the `*.vercel.app` host automatically, so leaving
+ * `NEXT_PUBLIC_SITE_URL` unset would brand every alert with the deploy URL
+ * instead of the domain.
+ */
+function brandUrl(): string {
+  return new URL("/alerts", SITE_URL).toString();
+}
+
 export function isTelegramConfigured(): boolean {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_ALERT_CHAT_ID);
 }
@@ -158,6 +171,7 @@ export function buildAlertMessage(input: AlertMessageInput): string {
 
   out.push("");
   out.push(`<code>${escapeHtml(input.tokenAddress)}</code>`);
+  out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
 
   return out.join("\n");
 }
@@ -240,7 +254,7 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
 
   rows.push([
     { text: "📈 Chart", url: dexScreenerUrl(chain, tokenAddress) },
-    { text: "🔎 All alerts", url: new URL("/alerts", SITE_URL).toString() },
+    { text: "🔎 AlphaWallets.fun", url: brandUrl() },
   ]);
   return rows;
 }

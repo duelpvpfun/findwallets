@@ -13,7 +13,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Paste a Solana / BNB Chain / Base token contract address, get its top 100–500 traders ranked by
 realized PNL, export them as JSON for a tracking bot. **Users pay real money in SOL/USDC per scan.**
 
-Deployed on Vercel. Live at findwallets.vercel.app.
+Deployed on Vercel. Live at **www.alphawallets.fun** (the `*.vercel.app` host still answers).
+
+**Set `NEXT_PUBLIC_SITE_URL=https://www.alphawallets.fun` on every environment.** Vercel sets
+`VERCEL_PROJECT_PRODUCTION_URL` to the `*.vercel.app` host automatically, and `SITE_URL` falls back
+to it — so leaving `NEXT_PUBLIC_SITE_URL` unset silently brands every outbound link, OG tag and
+Telegram alert with the deploy URL instead of the domain.
 
 ## Stack
 

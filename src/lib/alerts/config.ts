@@ -184,11 +184,17 @@ export const TRADE_LINKS: TradeLink[] = [
     plain: (chain, address) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${address}`,
   },
   {
-    // No per-token deep link is published, so both forms are the referral
-    // landing page. A buyer arriving there still has to paste the contract,
-    // which the alert puts one tap away.
+    // The only destination with no per-token deep link: `basedbot.app/r/<ref>`
+    // is a referral landing page, so a buyer arrives at the app rather than at
+    // the coin. That is why it sits last, and why the "Copy contract" button is
+    // first — the contract is already on their clipboard when they land.
+    // Replace both forms the moment a per-token URL is known.
+    //
+    // Listed on all three chains: the app is Base-first (its root redirects to
+    // /base) but exposes ETH, SOL and BNB, and a referral landing page is
+    // chain-agnostic anyway.
     name: "BasedBot",
-    chains: ["base"],
+    chains: ["solana", "bsc", "base"],
     refEnv: "ALERTS_REF_BASEDBOT",
     withRef: (_chain, _address, ref) => `https://basedbot.app/r/${ref}`,
     plain: () => `https://basedbot.app`,
