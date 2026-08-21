@@ -14,6 +14,7 @@ import OnboardingCarousel, {
 } from "@/components/OnboardingCarousel";
 import WalletConnectButton from "@/components/WalletConnectButton";
 import { useAccount } from "@/components/AccountProvider";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 import { detectAddressFamily } from "@/lib/chains";
 import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
 import { consumeScanStream } from "@/lib/scanStream";
@@ -43,6 +44,11 @@ const PLACEHOLDERS: Record<Chain, string> = {
   base: "Paste Base token contract address (0x…)…",
 };
 
+/** Pacing for a replayed sample: the cached rows arrive in one response, so the
+ * counter is stepped through them at roughly the rate a real scan pages. */
+const PREVIEW_REVEAL_PAGES = 8;
+const PREVIEW_REVEAL_STEP_MS = 200;
+
 export default function Home() {
   const { user, balance, refresh: refreshAccount } = useAccount();
   const [chain, setChain] = useState<Chain>("solana");
@@ -62,6 +68,9 @@ export default function Home() {
   // localStorage read happens in a frame callback, after paint.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
+  // Bumped whenever a sample reveal should be abandoned (a new scan, or Back).
+  const previewRun = useRef(0);
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
     const id = requestAnimationFrame(() => setWelcomeOpen(shouldShowOnboarding()));
     return () => cancelAnimationFrame(id);
@@ -156,6 +165,8 @@ export default function Home() {
   const runSearch = useCallback(
     async (ca: string, searchChain: Chain, searchLimit: number, claimToken?: string | null) => {
       if (!ca.trim()) return;
+      // A real scan supersedes any sample reveal still stepping its counter.
+      previewRun.current += 1;
       setLoading(true);
       setProgress(null);
       setError(null);
@@ -251,27 +262,50 @@ export default function Home() {
    * Replays a cached scan. Never touches a credit or a paid upstream API, so
    * visitors can see the real product before deciding to buy.
    */
-  const runPreview = useCallback(async (sample: ShowcaseToken) => {
-    setLoading(true);
-    setError(null);
-    setChain(sample.chain);
-    setAddress(sample.address);
-    try {
-      const qs = new URLSearchParams({ chain: sample.chain, address: sample.address });
-      const res = await fetch(`/api/preview?${qs}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Preview unavailable.");
-        setResult(null);
-        return;
+  const runPreview = useCallback(
+    async (sample: ShowcaseToken) => {
+      setLoading(true);
+      setError(null);
+      setProgress(null);
+      setChain(sample.chain);
+      setAddress(sample.address);
+      const run = ++previewRun.current;
+      try {
+        const qs = new URLSearchParams({ chain: sample.chain, address: sample.address });
+        const res = await fetch(`/api/preview?${qs}`);
+        const data = await res.json();
+        if (run !== previewRun.current) return;
+        if (!res.ok) {
+          setError(data.error ?? "Preview unavailable.");
+          setResult(null);
+          return;
+        }
+        // A sample comes back from our own database in one shot, so without this
+        // the scan panel flashes for a frame and the free run feels like nothing
+        // happened. Paced through the same counter a real scan drives, which is
+        // the experience the sample is there to demonstrate.
+        const total: number = Array.isArray(data.traders) ? data.traders.length : 0;
+        if (!reducedMotion && total > 0) {
+          for (let page = 1; page <= PREVIEW_REVEAL_PAGES; page += 1) {
+            setProgress({
+              found: Math.round((page / PREVIEW_REVEAL_PAGES) * total),
+              requested: total,
+            });
+            await new Promise((resolve) => setTimeout(resolve, PREVIEW_REVEAL_STEP_MS));
+            // Back to the search screen, or another scan started: drop this one
+            // rather than dumping a stale table on top of what they did next.
+            if (run !== previewRun.current) return;
+          }
+        }
+        setResult(data);
+      } catch {
+        if (run === previewRun.current) setError("Failed to reach the server.");
+      } finally {
+        if (run === previewRun.current) setLoading(false);
       }
-      setResult(data);
-    } catch {
-      setError("Failed to reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [reducedMotion]
+  );
 
   /** True when the signed-in account already holds a credit for this size. */
   const accountCovers = (size: number) => (balance?.bestTier ?? 0) >= size;
@@ -338,9 +372,12 @@ export default function Home() {
 
   /** Clears the current scan so the search screen is reachable again. */
   function resetToHome() {
+    previewRun.current += 1;
     setResult(null);
     setAddress("");
     setError(null);
+    setLoading(false);
+    setProgress(null);
     clearScan();
   }
 
@@ -376,6 +413,9 @@ export default function Home() {
           </button>
           <div className="flex items-center gap-2">
             <WalletConnectButton />
+            {/* Only once there is an account to look at: signed out the page is
+                just a sign-in prompt, which the Connect button already is. */}
+            {user && (
             <Link
               href="/profile"
               title="Your purchases and saved results"
@@ -387,6 +427,7 @@ export default function Home() {
               </svg>
               <span className="hidden sm:inline">Profile</span>
             </Link>
+            )}
             {/* Persistent way back into the walkthrough — the modal only ever
                 greets someone once, so this is how anyone re-opens it. */}
             <button
@@ -478,7 +519,10 @@ export default function Home() {
               onChange={(e) => handleAddressChange(e.target.value)}
               placeholder={PLACEHOLDERS[chain]}
               spellCheck={false}
-              className="w-full truncate rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none transition-colors placeholder:font-sans placeholder:text-xs focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:placeholder:text-sm"
+              // Blue at rest, not only on focus. This is the one thing on the
+              // page we want someone to use, and it was the same grey as
+              // everything around it.
+              className="w-full truncate rounded-xl border border-blue-500/40 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none ring-2 ring-blue-500/10 transition-colors placeholder:font-sans placeholder:text-xs focus:border-blue-500/70 focus:ring-blue-500/25 sm:placeholder:text-sm"
             />
           </div>
           <div className="flex gap-2">
