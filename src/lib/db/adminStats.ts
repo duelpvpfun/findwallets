@@ -19,6 +19,9 @@ export type PaymentRow = {
   tier: number;
   amountUsd: number;
   payerWallet: string | null;
+  /** True when this is the earliest payment on record for that payer wallet,
+   * i.e. the buyer's first purchase. Always false when the payer is unknown. */
+  isNewCustomer: boolean;
   createdAt: string;
   consumedAt: string | null;
   consumedChain: string | null;
@@ -131,6 +134,12 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
         when 50 then 1.99 when 100 then 2.99
         when 250 then 4.45 when 500 then 5.99 else 0 end)::float8 as "amountUsd",
       c.payer_wallet as "payerWallet",
+      -- First-purchase flag. The window runs over the whole table before the
+      -- limit, so it stays correct even once a wallet's earlier payments have
+      -- scrolled off this page. Exact-match partition, no lower(): payers are
+      -- Solana base58 addresses and that is how users.ts matches them too.
+      (c.payer_wallet is not null
+        and c.created_at = min(c.created_at) over (partition by c.payer_wallet)) as "isNewCustomer",
       c.created_at as "createdAt",
       c.consumed_at as "consumedAt",
       c.consumed_chain as "consumedChain",

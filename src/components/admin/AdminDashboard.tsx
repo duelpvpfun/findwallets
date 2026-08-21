@@ -249,7 +249,17 @@ const PaymentsTable = memo(function PaymentsTable({
               <td className="px-3 py-2">Top {p.tier}</td>
               <td className="px-3 py-2 uppercase text-neutral-400">{p.method ?? "—"}</td>
               <td className="px-3 py-2 font-mono text-[11px] text-neutral-400">
-                {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
+                <span className="inline-flex items-center gap-1.5">
+                  {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
+                  {p.isNewCustomer && (
+                    <span
+                      title="First purchase from this wallet"
+                      className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[9px] font-semibold uppercase tracking-wide text-amber-400"
+                    >
+                      New
+                    </span>
+                  )}
+                </span>
               </td>
               <td className="px-3 py-2">
                 <TokenCell payment={p} />
