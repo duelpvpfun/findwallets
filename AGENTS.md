@@ -166,7 +166,17 @@ anonymous claim-token flow is unchanged. Do not let that slip.
   already-stored row below the bar, and nothing re-checks it. After any such backfill, run
   `node --env-file=.env.local scripts/purge-noncompliant.mjs` — it reports by default and needs
   `--apply` to delete. It also sweeps wallets left with no compliant trade, exempting any that still
-  carry GMGN `win_badges`.
+  carry GMGN `win_badges` **or a non-null `identity_source`** (see below).
+- **`wallets` also holds a curated identity directory, and it has no trades of its own.**
+  `scripts/import-kol-wallets.mjs` loads `data/fomo-kols.json` (a FOMO leaderboard dump) into three
+  rows per person — solana, bsc, base — carrying nothing but `identity_name`, `twitter` and
+  `identity_source = 'fomo'`. It exists because Birdeye returns no identity at all and Solana Tracker
+  only sometimes does, so every BNB Chain and Base row rendered as a bare address. `identity_source`
+  is the flag that keeps `purge-noncompliant.mjs` from deleting the whole import as orphan rows: a
+  curated entry never claimed to have a trade. **Both halves have to move together** — drop the
+  exemption and the next `--apply` silently undoes the import. EVM addresses are stored lowercased
+  and matched with `lower()` in `src/lib/db/identities.ts`, because Birdeye hands us checksummed
+  addresses and an exact match finds nothing.
 - **`drizzle-kit generate` is not safe here.** `drizzle/meta` only tracks as far as `0001`, so it
   would try to recreate the whole schema. Hand-write the numbered `.sql` file and apply it with
   `npm run db:migrate -- 0018_user_accounts` (which now takes named files, in order — it used to

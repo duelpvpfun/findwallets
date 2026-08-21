@@ -20,6 +20,7 @@ import { upstreamMessage, upstreamStatus } from "@/lib/upstream";
 import { isDbConfigured } from "@/lib/db";
 import { recordScan, type LifetimeStats } from "@/lib/db/record";
 import { fetchWalletHistories } from "@/lib/db/history";
+import { withWalletIdentities } from "@/lib/db/identities";
 import { filterNeedsEnrichment } from "@/lib/db/enriched";
 import {
   confirmCreditDelivered,
@@ -294,10 +295,14 @@ export async function GET(request: NextRequest) {
 
     // Read prior wins before persisting, so this scan doesn't show up as its own history.
     const histories = await fetchWalletHistories(chain, address, traders.map((t) => t.address));
+    // Names and X handles for the wallets we already know by name. Awaited after
+    // the histories rather than alongside them: a `Promise.all` of database
+    // calls on a pool of 3 is a latent hang, not a speed-up.
+    const named = await withWalletIdentities(chain, traders);
     // Enrichment is a side effect the buyer is not waiting for. Keeping it on
     // the critical path let upstream latency delay — or kill — the response
     // they already paid for.
-    waitUntil(persistScan(token, traders));
+    waitUntil(persistScan(token, named));
 
     // An EVM address is valid on every EVM chain, so a token pasted under the
     // wrong one looks like an empty result. Say so instead of leaving the buyer
@@ -330,7 +335,7 @@ export async function GET(request: NextRequest) {
 
     const payload: ScanResult = {
       token,
-      traders,
+      traders: named,
       histories,
       isDemoData: false,
       note,
