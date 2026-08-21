@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSolanaPubkey } from "@/lib/chains";
+import { normalizeWallet, walletFamily } from "@/lib/auth/wallet";
 import { isDbConfigured } from "@/lib/db";
 import { consumeAuthNonce, upsertUserAndClaimHistory } from "@/lib/db/users";
 import { buildSignInMessage } from "@/lib/auth/message";
-import { verifySignedMessage } from "@/lib/auth/signature";
+import { verifyWalletSignature } from "@/lib/auth/signature";
 import { issueSession, sessionCookieOptions } from "@/lib/auth/session";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Step 2 of Sign-In With Solana: verify the signature and issue a session.
+ * Step 2 of sign-in: verify the signature and issue a session.
  *
  * Three things make this safe, in order:
  *
@@ -20,8 +20,10 @@ export const dynamic = "force-dynamic";
  * 2. The signed message is REBUILT from the wallet and the stored nonce. A
  *    client-supplied message body is never verified — otherwise a caller could
  *    have a wallet sign anything at all and present it here.
- * 3. Verification is Ed25519 over that reconstructed text. It is a signature, not
- *    a transaction: signing in costs the user zero lamports.
+ * 3. Verification is Ed25519 for a Solana key and secp256k1 recovery for an EVM
+ *    address, chosen by the address format rather than by anything the caller
+ *    claims. Either way it is a signature and not a transaction: signing in
+ *    costs the user nothing.
  */
 const MAX_REQUESTS_PER_MINUTE = 12;
 
@@ -53,11 +55,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
+  const wallet = normalizeWallet(typeof body.wallet === "string" ? body.wallet : "");
   const nonce = typeof body.nonce === "string" ? body.nonce.trim() : "";
   const signature = typeof body.signature === "string" ? body.signature.trim() : "";
+  const family = wallet ? walletFamily(wallet) : null;
 
-  if (!isSolanaPubkey(wallet) || !nonce || !signature) {
+  if (!wallet || !family || !nonce || !signature) {
     return NextResponse.json({ error: REJECTED }, { status: 400 });
   }
 
@@ -71,11 +74,11 @@ export async function POST(request: NextRequest) {
 
     // Reconstructed, never taken from the request.
     const message = buildSignInMessage(wallet, nonce);
-    if (!verifySignedMessage(wallet, message, signature)) {
+    if (!verifyWalletSignature(wallet, message, signature)) {
       return NextResponse.json({ error: REJECTED }, { status: 401 });
     }
 
-    const user = await upsertUserAndClaimHistory(wallet);
+    const user = await upsertUserAndClaimHistory(wallet, family);
     if (!user) {
       return NextResponse.json({ error: "Could not create your account." }, { status: 503 });
     }

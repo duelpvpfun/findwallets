@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatUsd, shortenAddress } from "@/lib/format";
+import { walletFamily } from "@/lib/auth/wallet";
 import { saveScan, type CachedScan } from "@/lib/scanCache";
 import type { CreditBalance } from "@/components/AccountProvider";
 import ProfileShell from "./ProfileShell";
@@ -193,8 +194,15 @@ export default function ProfileClient({
           <h2 className="mb-2.5 text-sm font-semibold text-neutral-100">Purchase history</h2>
           {purchases.length === 0 ? (
             <EmptyCard>
-              No purchases attached to this wallet. If you paid from a different one, connect that
-              wallet instead. Purchases follow the wallet that sent the payment.
+              No purchases attached to this wallet. Purchases follow the wallet that sent the
+              payment, so if you paid from a different one, connect that wallet instead.
+              {walletFamily(wallet) === "evm" && (
+                <>
+                  {" "}
+                  Payment is in SOL or USDC on Solana, so anything you bought before this account
+                  existed is attached to the Solana wallet that paid for it.
+                </>
+              )}
             </EmptyCard>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/40">

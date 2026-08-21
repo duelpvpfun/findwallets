@@ -77,15 +77,16 @@ references none of it, so `main` keeps working whether or not the branch merges.
 
 | File | Change | Why |
 |---|---|---|
+| `drizzle/0020_evm_accounts.sql` | `users.wallet_chain` (text, `'solana'` default, not null) | EVM wallets can hold an account. Every pre-existing row is a Solana account, which is what the default backfills, so it is safe to apply with live sessions. Applied 2026-08-21. |
 | `drizzle/0018_user_accounts.sql` | `users`, `auth_nonces`, `scan_results`; `scan_credits.user_id` + two indexes; `payment_intents.quantity` and `.user_id` | Entitlement lived only in a localStorage claim token, so clearing a browser lost a paid credit permanently. |
 | `drizzle/0017_qualified_flag.sql` | Added `qualified` + `disqualified_reason` to `wallet_tokens` and `wallet_positions` | **Superseded — do not apply to a fresh database.** Turned the quality bar from a write gate into a column so a per-wallet win rate could be computed. |
 | `drizzle/0019_revert_qualified_flag.sql` | Deletes sub-bar rows, then drops both columns and their indexes | Reverts `0017` at the owner's direction. `wallet_tokens` is a curated alpha-wallet database, not a log of every wallet a scan returned. |
 
 `0017` and `0019` cancel out, so **a fresh database should skip both** and apply
-only `0018`:
+`0018` then `0020`:
 
 ```bash
-npm run db:migrate -- 0018_user_accounts
+npm run db:migrate -- 0018_user_accounts 0020_evm_accounts
 ```
 
 They are kept in the tree rather than deleted because `0017` ran against

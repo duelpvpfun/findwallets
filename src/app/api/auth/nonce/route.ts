@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSolanaPubkey } from "@/lib/chains";
+import { normalizeWallet } from "@/lib/auth/wallet";
 import { isDbConfigured } from "@/lib/db";
 import { createAuthNonce, NONCE_TTL_MS } from "@/lib/db/users";
 import { buildSignInMessage } from "@/lib/auth/message";
@@ -8,8 +8,10 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 
 /**
- * Step 1 of Sign-In With Solana: hand out a single-use challenge bound to one
- * wallet, plus the exact message to sign.
+ * Step 1 of sign-in: hand out a single-use challenge bound to one wallet, plus
+ * the exact message to sign. Solana and EVM wallets both come through here; the
+ * address format is what decides which, and the challenge is identical either
+ * way.
  *
  * The message is returned for display only. Verification rebuilds it
  * server-side from the stored nonce, so nothing here is trusted on the way back.
@@ -36,9 +38,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
-  if (!isSolanaPubkey(wallet)) {
-    return NextResponse.json({ error: "That isn't a Solana wallet address." }, { status: 400 });
+  // Normalized before it is stored, because the signed message contains this
+  // string: the verify step rebuilds the message from the stored nonce, and a
+  // checksummed EVM address here against a lowercased one there would produce a
+  // different message than the wallet actually signed.
+  const wallet = normalizeWallet(typeof body.wallet === "string" ? body.wallet : "");
+  if (!wallet) {
+    return NextResponse.json(
+      { error: "That isn't a Solana or EVM wallet address." },
+      { status: 400 }
+    );
   }
 
   try {

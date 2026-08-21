@@ -22,6 +22,8 @@
  */
 import { generateKeyPairSync, sign as edSign } from "node:crypto";
 import bs58 from "bs58";
+import { secp256k1 } from "@noble/curves/secp256k1";
+import { keccak_256 } from "@noble/hashes/sha3";
 import postgres from "postgres";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
@@ -51,6 +53,25 @@ const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const rawPublicKey = publicKey.export({ format: "der", type: "spki" }).subarray(12);
 const WALLET = bs58.encode(rawPublicKey);
 const signMessage = (message) => bs58.encode(edSign(null, Buffer.from(message, "utf8"), privateKey));
+
+/* An EVM identity too, for the secp256k1 half of sign-in. keccak256 and the
+   recovery-capable signer come from the same @noble packages the server uses. */
+const evmPriv = secp256k1.utils.randomPrivateKey();
+const evmAddress = `0x${Buffer.from(
+  keccak_256(secp256k1.getPublicKey(evmPriv, false).subarray(1)).subarray(12)
+).toString("hex")}`;
+
+/** A `personal_sign` signature: EIP-191 digest, then r+s+v with v as 27/28. */
+const signEvmMessage = (message) => {
+  const body = Buffer.from(message, "utf8");
+  const digest = keccak_256(
+    Buffer.concat([Buffer.from(`\u0019Ethereum Signed Message:\n${body.length}`, "utf8"), body])
+  );
+  const sig = secp256k1.sign(digest, evmPriv);
+  return `0x${Buffer.from(sig.toCompactRawBytes()).toString("hex")}${(27 + sig.recovery).toString(
+    16
+  )}`;
+};
 
 /** Mirror of src/lib/auth/message.ts. Keep in sync. */
 const buildSignInMessage = (wallet, nonce) =>
@@ -123,6 +144,8 @@ const cleanup = async () => {
   await sql`delete from scan_credits where payment_id like ${PAYMENT_PREFIX + "%"}`;
   await sql`delete from auth_nonces where wallet = ${WALLET}`;
   await sql`delete from users where wallet = ${WALLET}`;
+  await sql`delete from auth_nonces where wallet = ${evmAddress}`;
+  await sql`delete from users where wallet = ${evmAddress}`;
 };
 
 /* -- the run -------------------------------------------------------------- */
@@ -268,6 +291,66 @@ try {
   check("logout status", out.status, 200);
   const afterOut = await fetch(`${BASE}/api/auth/me`, { headers: { cookie: "aw_user=" } });
   check("me is signed out", (await afterOut.json()).user, null);
+
+  // Deliberately last: it replaces the session cookie, so everything above has
+  // finished with the Solana account by the time this runs.
+  console.log("\nR. an EVM wallet signs in with personal_sign");
+  const evmNonceRes = await post("/api/auth/nonce", { wallet: evmAddress });
+  check("evm nonce status", evmNonceRes.status, 200);
+  check(
+    "evm server message matches the one we sign",
+    evmNonceRes.body.message,
+    buildSignInMessage(evmAddress, evmNonceRes.body.nonce)
+  );
+  const evmNonce = evmNonceRes.body.nonce;
+  const evmVerify = await post("/api/auth/verify", {
+    wallet: evmAddress,
+    nonce: evmNonce,
+    signature: signEvmMessage(buildSignInMessage(evmAddress, evmNonce)),
+  });
+  check("evm verify status", evmVerify.status, 200);
+  check("evm wallet on the session", evmVerify.body.user?.wallet, evmAddress);
+  const [evmRow] = await sql`select wallet_chain from users where wallet = ${evmAddress}`;
+  check("account recorded as evm", evmRow?.wallet_chain, "evm");
+
+  console.log("\nS. a checksummed address is the same account, not a second one");
+  const mixedCase = `0x${evmAddress.slice(2).toUpperCase()}`;
+  const mixedNonce = (await post("/api/auth/nonce", { wallet: mixedCase })).body.nonce;
+  const mixedVerify = await post("/api/auth/verify", {
+    wallet: mixedCase,
+    nonce: mixedNonce,
+    // Signed over the NORMALIZED address, which is what the server rebuilds.
+    signature: signEvmMessage(buildSignInMessage(evmAddress, mixedNonce)),
+  });
+  check("mixed-case verify status", mixedVerify.status, 200);
+  const dupes = await sql`select count(*)::int as n from users where lower(wallet) = ${evmAddress}`;
+  check("still one account", dupes[0].n, 1);
+
+  console.log("\nT. an EVM signature from a different key is refused");
+  const strayNonce = (await post("/api/auth/nonce", { wallet: evmAddress })).body.nonce;
+  const strayPriv = secp256k1.utils.randomPrivateKey();
+  const strayDigestMessage = buildSignInMessage(evmAddress, strayNonce);
+  const strayBody = Buffer.from(strayDigestMessage, "utf8");
+  const strayDigest = keccak_256(
+    Buffer.concat([
+      Buffer.from(`\u0019Ethereum Signed Message:\n${strayBody.length}`, "utf8"),
+      strayBody,
+    ])
+  );
+  const straySig = secp256k1.sign(strayDigest, strayPriv);
+  check(
+    "stray evm signature status",
+    (
+      await post("/api/auth/verify", {
+        wallet: evmAddress,
+        nonce: strayNonce,
+        signature: `0x${Buffer.from(straySig.toCompactRawBytes()).toString("hex")}${(
+          27 + straySig.recovery
+        ).toString(16)}`,
+      })
+    ).status,
+    401
+  );
 } finally {
   await cleanup();
   await sql.end();

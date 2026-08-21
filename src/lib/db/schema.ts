@@ -347,8 +347,16 @@ export const users = pgTable(
   "users",
   {
     id: serial("id").primaryKey(),
-    /** Base58 Solana public key, exactly as the wallet reports it. */
+    /**
+     * The wallet that owns this account: a base58 Solana public key exactly as
+     * the wallet reports it, or a lowercased `0x` EVM address. The two formats
+     * are disjoint, so one unique column safely holds both.
+     */
     wallet: text("wallet").notNull(),
+    /** Derivable from the address format; stored so the UI and analytics don't
+     * have to re-derive it, and so a future second-wallet link has somewhere to
+     * record what it linked. */
+    walletChain: text("wallet_chain").notNull().default("solana"),
     displayName: text("display_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),

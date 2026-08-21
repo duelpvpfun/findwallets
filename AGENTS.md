@@ -119,9 +119,20 @@ out of access logs and Referer headers. Keep it that way.
 Wallet sign-in is **additive and never required**. Nobody has to sign in to scan or to pay, and the
 anonymous claim-token flow is unchanged. Do not let that slip.
 
-- **Sign-In With Solana, not a transaction.** `/api/auth/nonce` issues a single-use challenge;
-  the client calls `provider.signMessage(...)`. **Never `signAndSendTransaction`** — signing in must
-  cost zero lamports.
+- **Solana *and* EVM wallets can hold an account.** The address format decides which, and nothing
+  a caller claims does: `normalizeWallet` / `walletFamily` (`src/lib/auth/wallet.ts`) are shared by
+  client and server precisely because the signed message contains the address, so the two sides must
+  agree on its canonical form to the character. **EVM addresses are stored lowercased** — they are
+  case-insensitive, and without normalizing, `users_wallet_idx` would hold two accounts for one
+  person and split their credits. Solana keys are stored exactly as the wallet reports them.
+- **Sign a message, never a transaction.** `/api/auth/nonce` issues a single-use challenge; the
+  client calls `provider.signMessage(...)` on Solana and `personal_sign` on EVM. **Never
+  `signAndSendTransaction` or `eth_sendTransaction`** — signing in must cost nothing.
+- **EVM accounts get no retroactive backfill, and that is correct.** Payment is in SOL or USDC, so
+  `scan_credits.payer_wallet` is always base58. An EVM account starts empty and fills from purchases
+  made while signed in (`pay/init` records the session on the intent); anyone recovering an older
+  anonymous purchase signs in with the Solana wallet that paid. `/profile` says so when the account
+  is EVM and has no purchases.
 - **The signed message is rebuilt server-side** from the stored nonce (`buildSignInMessage`). Never
   verify against a message body the client supplied, or a caller can have a wallet sign anything at
   all and present it as a sign-in.
@@ -129,6 +140,14 @@ anonymous claim-token flow is unchanged. Do not let that slip.
   checked, so a wrong guess burns the challenge rather than allowing another attempt.
 - Ed25519 verification uses `node:crypto` (a raw 32-byte key wrapped in the fixed Ed25519 SPKI DER
   prefix), not `tweetnacl`. `bs58` is a direct dependency for decoding the 64-byte signature.
+- EVM verification is by **recovery**, not comparison: an address is a hash of a public key, so
+  `verifyEvmSignedMessage` recovers the signer from the EIP-191 digest and checks it matches.
+  `node:crypto` exposes no secp256k1 recovery and no keccak-256, so this uses `@noble/curves` and
+  `@noble/hashes` — already in the tree via `@solana/web3.js`, now **direct** dependencies for the
+  same reason `bs58` is. The length in the EIP-191 prefix is the **byte** length, not
+  `message.length`; any non-ASCII character in the message breaks verification if that is wrong.
+  Smart-contract wallets (EIP-1271) are not supported: there is no key to recover, and a Safe cannot
+  pay us in SOL anyway.
 - The session is an HMAC cookie (`aw_user`), same pattern as `src/lib/adminAuth.ts`, signed with
   `AUTH_SESSION_SECRET` or a value derived from `OWNER_ACCESS_KEY`. 30-day TTL, sliding: `/api/auth/me`
   re-issues it once it is inside five days of expiring.
