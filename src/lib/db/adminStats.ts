@@ -22,6 +22,9 @@ export type PaymentRow = {
   /** True when this is the earliest payment on record for that payer wallet,
    * i.e. the buyer's first purchase. Always false when the payer is unknown. */
   isNewCustomer: boolean;
+  /** Lifetime purchases by that payer wallet, counting a multi-credit order
+   * once. 0 when the payer is unknown, so the badge can be hidden. */
+  payerPurchases: number;
   createdAt: string;
   consumedAt: string | null;
   consumedChain: string | null;
@@ -125,7 +128,24 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
 
   // Case-insensitive address join: EVM addresses are stored checksummed in
   // `tokens` but arrive lowercased on the credit, so `=` misses them.
+  //
+  // `buyers` aggregates the whole table, not the 100 rows on the page, so the
+  // first-purchase flag and the lifetime count stay right once a wallet's
+  // earlier payments have scrolled off. Purchases are counted per signature
+  // rather than per row: createCredits mints one row per credit for a bulk
+  // order (`<sig>`, `<sig>#1`, ...), and that is one purchase, not three.
+  // Exact-match grouping, no lower(): payers are Solana base58 addresses and
+  // that is how users.ts attributes them too.
   const payments = await db.execute<PaymentRow>(sql`
+    with buyers as (
+      select
+        payer_wallet,
+        count(distinct split_part(payment_id, '#', 1))::int as purchases,
+        min(created_at) as first_at
+      from scan_credits
+      where payer_wallet is not null
+      group by payer_wallet
+    )
     select
       c.payment_id as "paymentId",
       c.method,
@@ -134,18 +154,15 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
         when 50 then 1.99 when 100 then 2.99
         when 250 then 4.45 when 500 then 5.99 else 0 end)::float8 as "amountUsd",
       c.payer_wallet as "payerWallet",
-      -- First-purchase flag. The window runs over the whole table before the
-      -- limit, so it stays correct even once a wallet's earlier payments have
-      -- scrolled off this page. Exact-match partition, no lower(): payers are
-      -- Solana base58 addresses and that is how users.ts matches them too.
-      (c.payer_wallet is not null
-        and c.created_at = min(c.created_at) over (partition by c.payer_wallet)) as "isNewCustomer",
+      (b.first_at is not null and c.created_at = b.first_at) as "isNewCustomer",
+      coalesce(b.purchases, 0) as "payerPurchases",
       c.created_at as "createdAt",
       c.consumed_at as "consumedAt",
       c.consumed_chain as "consumedChain",
       c.consumed_token_address as "consumedTokenAddress",
       t.symbol as "consumedTokenSymbol"
     from scan_credits c
+    left join buyers b on b.payer_wallet = c.payer_wallet
     left join tokens t
       on t.chain = c.consumed_chain
      and lower(t.address) = lower(c.consumed_token_address)
