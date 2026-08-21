@@ -69,6 +69,19 @@ both places:
 | `MIN_WALLET_MULTIPLE_X`, `MIN_WALLET_PNL_USD` (`quality.ts`) | `scripts/enrich-wallets.mjs` | The worker and the app disagree about what counts as a win |
 | `formatWinBadge` (`format.ts`) | `scripts/enrich-wallets.mjs` | Badges rendered two different ways |
 | `buildSignInMessage` (`auth/message.ts`) | `scripts/account-lifecycle.mjs` | Step B of that script fails loudly — which is the point |
+| `normalizeAddress` (`chains.ts`) | `scripts/import-export.mjs` | A second `tokens` row for one contract, splitting its history |
+
+**EVM addresses are stored lowercased; Solana is stored exactly as given.** Every `(chain, address)`
+unique index in the schema is case-sensitive, but an EVM address is not — Birdeye returns them
+checksummed and a buyer pastes whatever they copied. The same contract in two casings therefore
+minted two `tokens` rows, each accumulating its own `wallet_tokens` history; three BNB Chain tokens
+had already split this way, including the `showcase` one. `normalizeAddress` in `src/lib/chains.ts`
+is the choke point — call it on anything reaching a `(chain, address)` key. **Never apply it to
+Solana:** base58 is case-sensitive and lowercasing a mint yields a different, wrong address. Reads
+that take a user-supplied address compare with `lower()` on both sides (`tokenMeta.ts`,
+`showcase.ts`, `identities.ts`), which is why display was never affected by the split — only storage.
+`scripts/merge-duplicate-tokens.mjs` repairs existing splits and must run **after** the normalizing
+code is deployed, or the next scan re-creates one.
 
 **A `Date` interpolated into a raw `sql` fragment does not work.** `sql\`${col} > ${aDate}\`` skips
 drizzle's type mapper, so `postgres.js` is handed a bare `Date` and the query dies at bind time with

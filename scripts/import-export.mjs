@@ -16,7 +16,13 @@ import postgres from "postgres";
 const args = process.argv.slice(2);
 const file = args[0];
 const chain = valueOf("--chain");
-const tokenAddress = valueOf("--token");
+// Lowercased for EVM, mirroring `normalizeAddress` in src/lib/chains.ts, which
+// this cannot import across the server-only boundary. Keep the two in step: a
+// checksummed address here mints a second `tokens` row and splits the token's
+// trade history in half. Solana is left alone — base58 is case-sensitive.
+const rawTokenAddress = valueOf("--token");
+const tokenAddress =
+  chain === "solana" ? rawTokenAddress : rawTokenAddress?.toLowerCase();
 const commit = args.includes("--commit");
 
 function valueOf(flag) {

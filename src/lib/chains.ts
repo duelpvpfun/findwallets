@@ -20,6 +20,23 @@ export function isValidAddressForChain(chain: Chain, address: string): boolean {
 }
 
 /**
+ * The form an address is stored and compared in.
+ *
+ * EVM addresses are case-insensitive on chain, but nobody agrees on a casing:
+ * Birdeye returns them checksummed and a buyer pastes whatever they copied. The
+ * `(chain, address)` unique keys are case-sensitive, so the same token arriving
+ * in two casings minted two `tokens` rows and split its trade history between
+ * them — three BNB Chain tokens had done exactly that, including the one serving
+ * the free sample.
+ *
+ * Solana is returned untouched. Base58 is genuinely case-sensitive and
+ * lowercasing a mint address yields a different, wrong address.
+ */
+export function normalizeAddress(chain: Chain, address: string): string {
+  return chain === "solana" ? address : address.toLowerCase();
+}
+
+/**
  * Shape check for a Solana public key: base58, 32-44 characters. Covers every
  * real key without pulling in web3.js to validate a string.
  *
