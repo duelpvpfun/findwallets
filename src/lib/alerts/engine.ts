@@ -227,17 +227,21 @@ async function evaluateToken(
     const message = buildAlertMessage({
       tier,
       spanSeconds: Math.round((lastBuy - firstBuy) / 1000),
+      chain: CHAIN,
       tokenAddress,
       tokenSymbol: snapshot.symbol,
       tokenName: snapshot.name,
       mcapUsd: snapshot.mcapUsd,
       wallets: snapshots.slice(0, MAX_MESSAGE_WALLETS),
-      avgMultipleX: mean(snapshots.map((s) => s.multipleX)),
-      avgPnlUsd: mean(snapshots.map((s) => s.pnlUsd)),
+      // Averaged over the WHOLE window, not just the wallets listed. Trimming
+      // the list to six must not quietly change the headline statistic.
+      avgMultipleX: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgMultipleX ?? null)),
+      avgPnlUsd: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgPnlUsd ?? null)),
       totalBoughtUsd: buyers.reduce((sum, b) => sum + b.boughtUsd, 0),
       exitedCount: buyers.filter((b) => b.exited).length,
+      walletCount: buyers.length,
     });
-    const result = await sendAlertMessage(message, buildAlertButtons(tokenAddress));
+    const result = await sendAlertMessage(message, buildAlertButtons(CHAIN, tokenAddress));
     await markDelivered(claimed.id, result.ok ? null : result.error);
   }
 

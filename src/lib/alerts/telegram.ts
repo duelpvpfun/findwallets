@@ -1,7 +1,8 @@
 import "server-only";
 import { SITE_URL } from "../siteUrl";
 import { formatUsd } from "../format";
-import { dexScreenerUrl, TRADE_LINKS, type AlertTier } from "./config";
+import { dexScreenerUrl, tradeLinksFor, type AlertTier } from "./config";
+import type { Chain } from "../types";
 import type { AlertWalletSnapshot } from "../db/schema";
 
 /**
@@ -46,16 +47,31 @@ function formatMultiple(value: number | null): string {
   return value >= 100 ? `${Math.round(value)}x` : `${value.toFixed(1)}x`;
 }
 
-/** Escalation reads at a glance in a busy channel. */
-function tierEmoji(tier: AlertTier): string {
-  if (tier.kind === "accumulation") return "🔴";
-  if (tier.kind === "cluster") return "🟠";
-  return "🟢";
+/**
+ * Escalation you can read without reading.
+ *
+ * One pip per wallet, coloured by how the confluence formed — green for a
+ * two-minute burst, orange for an hour-long cluster, red once it is a crowd.
+ * In a channel someone is scrolling past, the LENGTH of this string carries the
+ * count before a single word is parsed, which is the only thing that has to
+ * land in the first quarter second. Capped so a 20-wallet alert does not wrap.
+ */
+const KIND_PIP: Record<AlertTier["kind"], string> = {
+  burst: "🟢",
+  cluster: "🟠",
+  accumulation: "🔴",
+};
+
+const MAX_PIPS = 6;
+
+function tierPips(tier: AlertTier, count: number): string {
+  return KIND_PIP[tier.kind].repeat(Math.min(Math.max(count, 2), MAX_PIPS));
 }
 
 export interface AlertMessageInput {
   tier: AlertTier;
   spanSeconds: number;
+  chain: Chain;
   tokenAddress: string;
   tokenSymbol: string | null;
   tokenName: string | null;
@@ -65,64 +81,114 @@ export interface AlertMessageInput {
   avgPnlUsd: number | null;
   totalBoughtUsd: number;
   exitedCount: number;
+  /** Total wallets in the window, which can exceed the wallets listed. */
+  walletCount: number;
 }
 
 /**
- * The message body.
+ * The message.
  *
- * The second line is the entire reason this product is worth subscribing to:
- * `avg 5.75x · avg $50K PNL` comes from our own curated history of what these
- * wallets have already done, not from the trade that just happened. Anyone can
- * scrape a mempool and say "a wallet bought". Nobody else can say whose wallet.
+ * Ordered by what a reader decides on, and nothing else gets a line:
  *
- * The elapsed time quoted is the REAL span between the first and last buy, not
- * the tier's configured window — "in the past 2 minutes" has to be true.
+ *   1. How many, and how tight — the pips and the headline.
+ *   2. The three numbers that size the opportunity, on one line.
+ *   3. **Who these wallets are.** This is the entire moat. `avg 5.8x ·
+ *      $50.2K per win` comes from our own curated history of what these
+ *      wallets have already done, not from the trade that just happened.
+ *      Anyone can scrape a mempool and say a wallet bought; nobody else can
+ *      say whose wallet it was and what it has done before.
+ *   4. The roster, in a quote block so it reads as evidence rather than body
+ *      text, and collapses on mobile when it is long.
+ *   5. The contract, last, in `<code>` — one tap to copy is how somebody
+ *      actually buys, so it must be the easiest thing on screen to hit.
+ *
+ * The elapsed time is the REAL span between the first and last buy, never the
+ * tier's configured window. "in the past 2 minutes" has to be true.
  */
 export function buildAlertMessage(input: AlertMessageInput): string {
   const symbol = escapeHtml((input.tokenSymbol || "?").replace(/^\$+/, ""));
-  const count = input.wallets.length;
-  const lines: string[] = [];
+  const count = input.walletCount;
+  const out: string[] = [];
 
-  lines.push(
-    `${tierEmoji(input.tier)} <b>${count} smart wallet${count === 1 ? "" : "s"} bought $${symbol}</b>` +
-      ` in the past ${humanSpan(input.spanSeconds)}`
+  out.push(
+    `${tierPips(input.tier, count)} <b>${count} SMART WALLET${count === 1 ? "" : "S"}</b> bought <b>$${symbol}</b>`
   );
-  if (input.tokenName && input.tokenName !== input.tokenSymbol) {
-    lines.push(`<i>${escapeHtml(input.tokenName)}</i>`);
+  if (input.tokenName && input.tokenName.toLowerCase() !== (input.tokenSymbol ?? "").toLowerCase()) {
+    out.push(`<i>${escapeHtml(input.tokenName)}</i>`);
   }
-  lines.push("");
+  out.push("");
+
+  // Three facts, one line. Three separate labelled lines was more readable on a
+  // desktop and worse where it matters, which is a phone in a busy channel.
+  const facts = [`⏱ <b>${humanSpan(input.spanSeconds)}</b> apart`];
+  facts.push(`💵 <b>${formatUsd(input.totalBoughtUsd)}</b> in`);
+  if (input.mcapUsd && input.mcapUsd > 0) facts.push(`📊 <b>${formatUsd(input.mcapUsd)}</b> MC`);
+  out.push(facts.join("  ·  "));
 
   const record: string[] = [];
-  if (input.avgMultipleX !== null) record.push(`avg ${formatMultiple(input.avgMultipleX)}`);
-  if (input.avgPnlUsd !== null) record.push(`avg ${formatUsd(input.avgPnlUsd)} PNL`);
-  if (record.length > 0) lines.push(`📈 Track record   ${record.join("  ·  ")}`);
-  if (input.mcapUsd && input.mcapUsd > 0) {
-    lines.push(`💰 Market cap     ${formatUsd(input.mcapUsd)}`);
-  }
-  lines.push(`💵 Bought now     ${formatUsd(input.totalBoughtUsd)}`);
+  if (input.avgMultipleX !== null) record.push(`avg <b>${formatMultiple(input.avgMultipleX)}</b>`);
+  if (input.avgPnlUsd !== null) record.push(`<b>${formatUsd(input.avgPnlUsd)}</b> per win`);
+  if (record.length > 0) out.push(`🏆 <b>Their record:</b> ${record.join(" · ")}`);
+
+  // One concrete win beats any average for making a stranger believe the
+  // average. A named trader with a 27x on something recognisable is the single
+  // most persuasive line in the message.
+  const standout = bestWin(input.wallets);
+  if (standout) out.push(`⭐ ${standout}`);
+
+  out.push("");
+  out.push(walletBlock(input.wallets));
+
   if (input.exitedCount > 0) {
-    // Counted toward the tier regardless — but a reader chasing an entry that
-    // one of these wallets has already sold deserves to know before they buy.
-    lines.push(
-      `⚠️ ${input.exitedCount} of ${count} already sold some back`
-    );
-  }
-  lines.push("");
-
-  for (const wallet of input.wallets) {
-    const name = wallet.label ? escapeHtml(wallet.label) : `<code>${shorten(wallet.address)}</code>`;
-    const parts = [formatMultiple(wallet.multipleX)];
-    if (wallet.pnlUsd !== null) parts.push(formatUsd(wallet.pnlUsd));
-    const suffix = wallet.exited ? "  ↩ sold" : "";
-    lines.push(
-      `• ${name} — ${parts.join(" · ")} avg · ${formatUsd(wallet.boughtUsd)} in${suffix}`
+    // Counted toward the tier regardless — the entry is the signal — but
+    // burying this would be selling somebody an exit as an entry.
+    out.push("");
+    out.push(
+      `⚠️ <i>${input.exitedCount} of ${count} already sold some back</i>`
     );
   }
 
-  lines.push("");
-  lines.push(`<code>${escapeHtml(input.tokenAddress)}</code>`);
+  out.push("");
+  out.push(`<code>${escapeHtml(input.tokenAddress)}</code>`);
 
-  return lines.join("\n");
+  return out.join("\n");
+}
+
+/** The loudest single credential in the group, e.g. "cupsey · 27x on $PNUT". */
+function bestWin(wallets: AlertWalletSnapshot[]): string | null {
+  let best: AlertWalletSnapshot | null = null;
+  for (const wallet of wallets) {
+    if (wallet.bestMultipleX === null || !wallet.bestSymbol) continue;
+    if (best === null || wallet.bestMultipleX > (best.bestMultipleX ?? 0)) best = wallet;
+  }
+  if (!best || (best.bestMultipleX ?? 0) < 5) return null;
+
+  const who = best.label ? escapeHtml(best.label) : shorten(best.address);
+  const ticker = escapeHtml(best.bestSymbol!.replace(/^\$+/, ""));
+  return `<b>${who}</b> once did <b>${formatMultiple(best.bestMultipleX!)}</b> on $${ticker}`;
+}
+
+/**
+ * The roster, as an expandable quote.
+ *
+ * `expandable` collapses it past a few lines on mobile, which is what keeps a
+ * 20-wallet accumulation alert from burying every other message in the channel
+ * while still letting anyone who cares open it.
+ */
+function walletBlock(wallets: AlertWalletSnapshot[]): string {
+  const lines = wallets.map((wallet) => {
+    const who = wallet.label
+      ? `<b>${escapeHtml(wallet.label)}</b>`
+      : `<code>${shorten(wallet.address)}</code>`;
+    const parts: string[] = [];
+    if (wallet.multipleX !== null) parts.push(`${formatMultiple(wallet.multipleX)} avg`);
+    parts.push(`${formatUsd(wallet.boughtUsd)} in`);
+    const flag = wallet.exited ? " · <i>sold</i>" : "";
+    return `${who} — ${parts.join(" · ")}${flag}`;
+  });
+
+  const tag = lines.length > 4 ? "<blockquote expandable>" : "<blockquote>";
+  return `${tag}${lines.join("\n")}</blockquote>`;
 }
 
 interface InlineButton {
@@ -131,26 +197,31 @@ interface InlineButton {
 }
 
 /**
- * The referral row. Every alert is a revenue opportunity rather than a cost
- * centre, which is what lets the channel stay free.
+ * The referral row, plus the two links that make the alert useful rather than
+ * merely monetised.
  *
  * A missing referral code falls back to the plain link: an unset env var should
- * cost commission, never break the message.
+ * cost commission, never dead-end a buyer.
  */
-export function buildAlertButtons(tokenAddress: string): InlineButton[][] {
-  const trade = TRADE_LINKS.map((link) => {
+export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineButton[][] {
+  const trade = tradeLinksFor(chain).map((link) => {
     const ref = process.env[link.refEnv];
-    return { text: link.name, url: ref ? link.withRef(tokenAddress, ref) : link.plain(tokenAddress) };
+    return {
+      text: link.name,
+      url: ref ? link.withRef(chain, tokenAddress, ref) : link.plain(chain, tokenAddress),
+    };
   });
 
-  return [
-    trade.slice(0, 2),
-    trade.slice(2, 4),
-    [
-      { text: "📊 Chart", url: dexScreenerUrl(tokenAddress) },
-      { text: "🔎 Full feed", url: new URL("/alerts", SITE_URL).toString() },
-    ],
-  ].filter((row) => row.length > 0);
+  const rows: InlineButton[][] = [];
+  // Two per row. Telegram shrinks the label to fit, and three buttons wide
+  // stops being tappable on a small phone.
+  for (let i = 0; i < trade.length; i += 2) rows.push(trade.slice(i, i + 2));
+
+  rows.push([
+    { text: "📈 Chart", url: dexScreenerUrl(chain, tokenAddress) },
+    { text: "🔎 All alerts", url: new URL("/alerts", SITE_URL).toString() },
+  ]);
+  return rows;
 }
 
 export interface SendResult {

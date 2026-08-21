@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { formatMultiple, formatUsd, shortenAddress } from "@/lib/format";
-import { dexScreenerUrl, TRADE_LINKS, tierFor } from "@/lib/alerts/config";
+import { dexScreenerUrl, tradeLinksFor, tierFor } from "@/lib/alerts/config";
+import type { Chain } from "@/lib/types";
 import type { AlertFeedRow } from "@/lib/db/alerts";
 import McapSparkline from "./McapSparkline";
 
@@ -83,7 +84,7 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
 
         <div className="min-w-0">
           <a
-            href={dexScreenerUrl(alert.tokenAddress)}
+            href={dexScreenerUrl(alert.chain as Chain, alert.tokenAddress)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm font-semibold text-neutral-50 transition-colors hover:text-blue-300"
@@ -193,10 +194,10 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
       ) : null}
 
       <footer className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-neutral-800/60 pt-3">
-        {TRADE_LINKS.map((link) => (
+        {tradeLinksFor(alert.chain as Chain).map((link) => (
           <a
             key={link.name}
-            href={link.plain(alert.tokenAddress)}
+            href={link.plain(alert.chain as Chain, alert.tokenAddress)}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"

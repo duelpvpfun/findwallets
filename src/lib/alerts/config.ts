@@ -1,3 +1,4 @@
+import type { Chain } from "../types";
 /**
  * Every tunable the alert engine has. No `server-only` marker: the /alerts page
  * renders the same tier labels the Telegram message uses, and duplicating them
@@ -127,46 +128,82 @@ export const IGNORED_SUBJECT_MINTS = new Set([
 ]);
 
 /**
- * Referral destinations rendered under every alert. Each is a `{mint}`
- * template; the ref-code placeholders resolve from env at send time and the
- * button falls back to the plain link when a code isn't set, so a missing env
- * var costs revenue rather than breaking the message.
+ * Referral destinations rendered under every alert.
+ *
+ * Every alert is a revenue opportunity rather than a cost centre, which is what
+ * lets the public channel and the /alerts feed stay free.
+ *
+ * Two rules:
+ *
+ *  - **A missing ref code falls back to the plain link.** An unset env var
+ *    should cost commission, never break the message or dead-end a buyer.
+ *  - **Scoped by chain.** The stream is Solana-only today, but the BNB Chain
+ *    and Base destinations are configured here rather than in a note somewhere,
+ *    so adding those chains is a routing change and not a research task.
+ *
+ * The deep-link formats for Axiom and GMGN could not be verified automatically
+ * — both sit behind Cloudflare, which 403s a plain request even for a URL that
+ * is definitely valid. They are the widely-used formats; confirm the ref
+ * actually attaches by tapping each button once on a real alert.
  */
 export interface TradeLink {
   name: string;
+  chains: Chain[];
   /** Env var holding the referral code. */
   refEnv: string;
-  withRef: (mint: string, ref: string) => string;
-  plain: (mint: string) => string;
+  /** The chain is passed in rather than inferred from the address. Inferring it
+   * cost a real bug: `0x` is true of both EVM chains, so a Base alert linked to
+   * GMGN's BNB Chain page for the same address — a live page, for a different
+   * token. Nothing here may guess a chain it is already being told. */
+  withRef: (chain: Chain, address: string, ref: string) => string;
+  plain: (chain: Chain, address: string) => string;
 }
 
 export const TRADE_LINKS: TradeLink[] = [
   {
     name: "Axiom",
+    chains: ["solana"],
     refEnv: "ALERTS_REF_AXIOM",
-    withRef: (mint, ref) => `https://axiom.trade/t/${mint}/@${ref}`,
-    plain: (mint) => `https://axiom.trade/t/${mint}`,
-  },
-  {
-    name: "Photon",
-    refEnv: "ALERTS_REF_PHOTON",
-    withRef: (mint, ref) => `https://photon-sol.tinyastro.io/en/lp/${mint}?handle=${ref}`,
-    plain: (mint) => `https://photon-sol.tinyastro.io/en/lp/${mint}`,
-  },
-  {
-    name: "BullX",
-    refEnv: "ALERTS_REF_BULLX",
-    withRef: (mint, ref) => `https://neo.bullx.io/terminal?chainId=1399811149&address=${mint}&r=${ref}`,
-    plain: (mint) => `https://neo.bullx.io/terminal?chainId=1399811149&address=${mint}`,
+    withRef: (_chain, mint, ref) => `https://axiom.trade/t/${mint}/@${ref}`,
+    plain: (_chain, mint) => `https://axiom.trade/t/${mint}`,
   },
   {
     name: "Trojan",
+    chains: ["solana"],
     refEnv: "ALERTS_REF_TROJAN",
-    withRef: (mint, ref) => `https://t.me/solana_trojanbot?start=r-${ref}-${mint}`,
-    plain: (mint) => `https://t.me/solana_trojanbot?start=${mint}`,
+    withRef: (_chain, mint, ref) => `https://t.me/solana_trojanbot?start=r-${ref}-${mint}`,
+    plain: (_chain, mint) => `https://t.me/solana_trojanbot?start=${mint}`,
+  },
+  {
+    // GMGN covers all three chains off one referral code, which is why it is
+    // the chart link rather than Dexscreener on the paid rows.
+    name: "GMGN",
+    chains: ["solana", "bsc", "base"],
+    refEnv: "ALERTS_REF_GMGN",
+    withRef: (chain, address, ref) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${ref}_${address}`,
+    plain: (chain, address) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${address}`,
+  },
+  {
+    // No per-token deep link is published, so both forms are the referral
+    // landing page. A buyer arriving there still has to paste the contract,
+    // which the alert puts one tap away.
+    name: "BasedBot",
+    chains: ["base"],
+    refEnv: "ALERTS_REF_BASEDBOT",
+    withRef: (_chain, _address, ref) => `https://basedbot.app/r/${ref}`,
+    plain: () => `https://basedbot.app`,
   },
 ];
 
-export function dexScreenerUrl(mint: string): string {
-  return `https://dexscreener.com/solana/${mint}`;
+const GMGN_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
+
+/** The buttons for one chain, in display order. */
+export function tradeLinksFor(chain: Chain): TradeLink[] {
+  return TRADE_LINKS.filter((link) => link.chains.includes(chain));
+}
+
+const DEXSCREENER_SLUG: Record<Chain, string> = { solana: "solana", bsc: "bsc", base: "base" };
+
+export function dexScreenerUrl(chain: Chain, address: string): string {
+  return `https://dexscreener.com/${DEXSCREENER_SLUG[chain]}/${address}`;
 }
