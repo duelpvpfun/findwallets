@@ -42,5 +42,7 @@ next-env.d.ts
 
 # Local data exports and screenshots
 highpnl*.json
+# Pre-change dumps written by scripts/merge-duplicate-tokens.mjs — archive data, keep local
+backup-merge-tokens-*.json
 *.png
 .keys/
