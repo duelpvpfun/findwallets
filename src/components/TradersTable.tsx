@@ -90,6 +90,12 @@ interface Filters {
   maxPnlPercent: string;
   minPnlUsd: string;
   maxPnlUsd: string;
+  /** Average entry market cap, in thousands of USD. */
+  minEntryK: string;
+  maxEntryK: string;
+  /** Total USD spent buying, in thousands. */
+  minBoughtK: string;
+  maxBoughtK: string;
   holdingOnly: boolean;
   provenOnly: boolean;
 }
@@ -102,9 +108,18 @@ const EMPTY_FILTERS: Filters = {
   maxPnlPercent: "",
   minPnlUsd: "",
   maxPnlUsd: "",
+  minEntryK: "",
+  maxEntryK: "",
+  minBoughtK: "",
+  maxBoughtK: "",
   holdingOnly: false,
   provenOnly: false,
 };
+
+/** Thousands to dollars. NaN when the box is empty, which reads as "no bound". */
+function thousands(value: string): number {
+  return parseFloat(value) * 1000;
+}
 
 export default function TradersTable({
   token,
@@ -169,6 +184,10 @@ export default function TradersTable({
     const maxPnlPercent = parseFloat(filters.maxPnlPercent);
     const minPnlUsd = parseFloat(filters.minPnlUsd);
     const maxPnlUsd = parseFloat(filters.maxPnlUsd);
+    const minEntry = thousands(filters.minEntryK);
+    const maxEntry = thousands(filters.maxEntryK);
+    const minBought = thousands(filters.minBoughtK);
+    const maxBought = thousands(filters.maxBoughtK);
     const query = filters.query.trim().toLowerCase();
     return rows.filter((t) => {
       if (
@@ -184,6 +203,12 @@ export default function TradersTable({
       if (!Number.isNaN(maxPnlPercent) && t.pnlPercent > maxPnlPercent) return false;
       if (!Number.isNaN(minPnlUsd) && t.pnlUsd < minPnlUsd) return false;
       if (!Number.isNaN(maxPnlUsd) && t.pnlUsd > maxPnlUsd) return false;
+      // Entry is filtered on market cap, whatever the Mcap/Price toggle is
+      // showing: "bought under 50K" is how the entry is talked about.
+      if (!Number.isNaN(minEntry) && t.avgBuyMcapUsd < minEntry) return false;
+      if (!Number.isNaN(maxEntry) && t.avgBuyMcapUsd > maxEntry) return false;
+      if (!Number.isNaN(minBought) && t.boughtUsd < minBought) return false;
+      if (!Number.isNaN(maxBought) && t.boughtUsd > maxBought) return false;
       if (filters.holdingOnly && t.isHolding !== true) return false;
       if (filters.provenOnly && !hasTrackRecord(histories[t.address])) return false;
       return true;
@@ -194,20 +219,27 @@ export default function TradersTable({
   // list keeps the upstream ranking order, except under Total — upstream ranks on
   // realized alone, which would leave the biggest number partway down the table.
   const filteredTraders = useMemo(() => {
-    if (!sort) {
-      if (basis !== "total") return matchingTraders;
-      return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
-    }
-    const factor = sort.dir === "desc" ? -1 : 1;
-    // Rows with no measurable multiple sort last in either direction rather than
-    // being treated as 0x.
-    return [...matchingTraders].sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return (av - bv) * factor;
-    });
+    const ordered = (() => {
+      if (!sort) {
+        if (basis !== "total") return matchingTraders;
+        return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
+      }
+      const factor = sort.dir === "desc" ? -1 : 1;
+      // Rows with no measurable multiple sort last in either direction rather
+      // than being treated as 0x.
+      return [...matchingTraders].sort((a, b) => {
+        const av = a[sort.key];
+        const bv = b[sort.key];
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return (av - bv) * factor;
+      });
+    })();
+    // #1 is the top row of the list in front of you. The provider numbers its
+    // rows by realized PNL, so under any other order the table opened on "#3"
+    // and read as broken. Rows already numbered correctly keep their identity,
+    // which is the common case and preserves the row memo.
+    return ordered.map((t, i) => (t.rank === i + 1 ? t : { ...t, rank: i + 1 }));
   }, [matchingTraders, sort, basis]);
 
   const toggleSort = useCallback((key: SortKey) => {
@@ -312,6 +344,10 @@ export default function TradersTable({
     (filters.maxPnlPercent !== "" ? 1 : 0) +
     (filters.minPnlUsd !== "" ? 1 : 0) +
     (filters.maxPnlUsd !== "" ? 1 : 0) +
+    (filters.minEntryK !== "" ? 1 : 0) +
+    (filters.maxEntryK !== "" ? 1 : 0) +
+    (filters.minBoughtK !== "" ? 1 : 0) +
+    (filters.maxBoughtK !== "" ? 1 : 0) +
     (filters.holdingOnly ? 1 : 0) +
     (filters.provenOnly ? 1 : 0);
 
@@ -445,7 +481,7 @@ export default function TradersTable({
               <div className="flex overflow-hidden rounded-lg border border-neutral-800 text-xs font-medium">
                 <button
                   onClick={() => setPnlBasis("total")}
-                  title="Realized profit plus the paper value of tokens still held"
+                  title="Realized profit plus the paper value of tokens still held. The wallets in this scan were selected by the provider on realized PNL; switching the basis re-ranks those wallets."
                   className={`px-2.5 py-1.5 transition-colors ${
                     pnlBasis === "total"
                       ? "bg-blue-500/20 text-blue-300"
@@ -466,9 +502,6 @@ export default function TradersTable({
                   Realized
                 </button>
               </div>
-              <span className="text-[10px] text-rose-400/90">
-                *Traders are ranked by realized PNL
-              </span>
             </div>
           )}
 
@@ -524,6 +557,24 @@ export default function TradersTable({
               minPlaceholder="0"
               maxPlaceholder="∞"
             />
+            <FilterRangeInput
+              label="Entry mcap ($K)"
+              minValue={filters.minEntryK}
+              maxValue={filters.maxEntryK}
+              onMinChange={(v) => updateFilter("minEntryK", v)}
+              onMaxChange={(v) => updateFilter("maxEntryK", v)}
+              minPlaceholder="0"
+              maxPlaceholder="∞"
+            />
+            <FilterRangeInput
+              label="Bought ($K)"
+              minValue={filters.minBoughtK}
+              maxValue={filters.maxBoughtK}
+              onMinChange={(v) => updateFilter("minBoughtK", v)}
+              onMaxChange={(v) => updateFilter("maxBoughtK", v)}
+              minPlaceholder="0"
+              maxPlaceholder="∞"
+            />
             {hasHoldingData && (
               <label className="flex items-center gap-1.5 pb-1.5 text-xs text-neutral-400">
                 <input
@@ -559,31 +610,6 @@ export default function TradersTable({
         )}
       </div>
 
-      <details className="group border-b border-neutral-800/80 bg-neutral-950/30">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-2 text-[11px] text-neutral-500 hover:text-neutral-300 sm:px-5">
-          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-400">
-            ?
-          </span>
-          Why Avg X isn&apos;t Exit ÷ Entry
-        </summary>
-        <p className="px-4 pb-2.5 text-[11px] leading-relaxed text-neutral-500 sm:px-5">
-          Avg X is {basis === "total" ? "total" : "realized"} profit ÷ the cost of the tokens it
-          applies to — the ones actually sold{basis === "total" ? ", plus those still held" : ""}.
-          Avg Entry averages every token bought, so it can include tokens the wallet never sold —
-          which is why Exit ÷ Entry doesn&apos;t match.
-          {hasUnrealizedData && (
-            <>
-              {" "}
-              Wallets often receive or send tokens outside of trades, so bought and sold amounts
-              don&apos;t have to match. <strong className="font-medium text-neutral-400">Total</strong>{" "}
-              PNL adds the current paper value of whatever is still held;{" "}
-              <strong className="font-medium text-neutral-400">Realized</strong> counts only closed
-              trades.
-            </>
-          )}
-        </p>
-      </details>
-
       {filteredTraders.length === 0 && (
         <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-600">
@@ -592,7 +618,7 @@ export default function TradersTable({
           <div>
             <p className="text-sm font-medium text-neutral-300">No wallets match these filters</p>
             <p className="tnum mt-1 text-xs text-neutral-500">
-              All {traders.length} wallets from this scan are still here — the filters are just
+              All {traders.length} wallets from this scan are still here. The filters are only
               hiding them.
             </p>
           </div>
@@ -1394,9 +1420,13 @@ function TokenAmounts({
   );
 }
 
+// One line, always. Two wide figures (a six-figure mcap pair, or two long
+// fractional prices) used to wrap, which pushed the row taller than its
+// neighbours and broke the alignment down the column. A slightly smaller
+// figure fits the widest real pair inside the column instead.
 function ArrowPair({ from, to }: { from: string; to: string }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+    <div className="flex items-baseline gap-x-1.5 whitespace-nowrap text-[12px]">
       <span className="text-neutral-400">{from}</span>
       <span className="text-neutral-600">→</span>
       <span className="text-neutral-200">{to}</span>
