@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { fetchCachedScan, isShowcaseToken } from "@/lib/db/showcase";
+import { withWalletIdentities } from "@/lib/db/identities";
 import { isValidAddressForChain, isChain } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
@@ -49,10 +50,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No cached results for that token." }, { status: 404 });
     }
 
+    // The cached rows resolve an identity by wallet id, which misses a curated
+    // one held under a different address casing — the free sample should name the
+    // same wallets a paid scan does.
+    const traders = await withWalletIdentities(chain, cached.traders);
+
     return NextResponse.json(
       {
         token: cached.token,
-        traders: cached.traders,
+        traders,
         isDemoData: false,
         isPreview: true,
         previewLimit: PREVIEW_LIMIT,

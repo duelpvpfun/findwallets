@@ -49,6 +49,11 @@ export const wallets = pgTable(
     address: text("address").notNull(),
     identityName: text("identity_name"),
     twitter: text("twitter"),
+    /** Provenance of `identityName` / `twitter`: "fomo" for a curated import,
+     * null when the name came off a scan (or is unknown). A curated row is a
+     * directory entry with no trades of its own yet, so `purge-noncompliant`
+     * has to be able to tell it apart from a scan leftover. */
+    identitySource: text("identity_source"),
     tags: text("tags").array().notNull().default([]),
     isBot: boolean("is_bot").notNull().default(false),
     // Lifetime figures across ALL tokens — the guard against survivorship bias.

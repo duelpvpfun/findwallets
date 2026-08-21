@@ -105,8 +105,11 @@ if (posBad[0].rows > 0) {
 /* -- wallets that would be left with nothing ------------------------------- */
 
 // Counted BEFORE deleting, by asking which wallets have no compliant row in
-// either table. `win_badges` is the reprieve: a wallet with proven wins on
-// tokens nobody scanned here is still alpha.
+// either table. There are two reprieves: `win_badges`, because a wallet with
+// proven wins on tokens nobody scanned here is still alpha; and
+// `identity_source`, because a curated identity row (`import-kol-wallets.mjs`)
+// is a directory entry that never claimed to have a trade in the first place.
+// Without the second one, every import would be undone by the next purge.
 const orphans = await sql`
   with compliant as (
     select wallet_id from wallet_tokens
@@ -116,15 +119,18 @@ const orphans = await sql`
     where multiple_x >= ${MIN_MULTIPLE_X} and total_pnl_usd >= ${MIN_PNL_USD}
   )
   select count(*)::int as total,
-         count(*) filter (where array_length(w.win_badges, 1) > 0)::int as with_badges
+         count(*) filter (where array_length(w.win_badges, 1) > 0)::int as with_badges,
+         count(*) filter (where array_length(w.win_badges, 1) is null
+                            and w.identity_source is not null)::int as curated
   from wallets w
   where w.id not in (select wallet_id from compliant)`;
 
-const deletable = orphans[0].total - orphans[0].with_badges;
+const deletable = orphans[0].total - orphans[0].with_badges - orphans[0].curated;
 const walletTotal = await sql`select count(*)::int as n from wallets`;
 console.log(`\nwallets — ${walletTotal[0].n} total`);
 console.log(`  ${orphans[0].total} would have no compliant trade left`);
 console.log(`  ${orphans[0].with_badges} of those keep GMGN win badges -> KEPT`);
+console.log(`  ${orphans[0].curated} of those are curated identities -> KEPT`);
 console.log(`  ${deletable} to delete`);
 
 /* -- apply ----------------------------------------------------------------- */
@@ -155,6 +161,7 @@ const result = await sql.begin(async (tx) => {
   const wal = await tx`
     delete from wallets w
     where array_length(w.win_badges, 1) is null
+      and w.identity_source is null
       and not exists (select 1 from wallet_tokens wt where wt.wallet_id = w.id)
       and not exists (select 1 from wallet_positions wp where wp.wallet_id = w.id)
     returning w.id`;

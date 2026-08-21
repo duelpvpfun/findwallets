@@ -1464,10 +1464,15 @@ function WalletCell({
     <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       {trader.tags.includes("kol") && <span title="KOL">⭐</span>}
       {trader.tags.includes("bot") && <span title="Bot">🤖</span>}
-      <span className="font-mono text-xs text-neutral-200">{shortenAddress(trader.address)}</span>
+      {/* A wallet we can name is called by its name, ahead of its address: the
+          name is what the buyer recognises, and it is what the export writes. */}
       {trader.nickname && (
-        <span className="truncate text-xs text-neutral-500">({trader.nickname})</span>
+        <span className="truncate text-xs font-semibold text-amber-300" title={trader.nickname}>
+          {trader.nickname}
+        </span>
       )}
+      <XProfileLink twitter={trader.twitter} name={trader.nickname} />
+      <span className="font-mono text-xs text-neutral-200">{shortenAddress(trader.address)}</span>
       <HistoryBadge history={history} />
       <button
         onClick={() => onShare(trader)}
@@ -1601,6 +1606,40 @@ function CardField({ label, value }: { label: string; value: React.ReactNode }) 
       <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
       <div className="mt-0.5 tabular-nums">{value}</div>
     </div>
+  );
+}
+
+/**
+ * X's own logo rather than a generic link glyph: the point is that this wallet
+ * belongs to a person the buyer can go and read, and anything else reads as one
+ * more action button in a row that already has two.
+ *
+ * Renders nothing without a handle, so callers don't each repeat the check.
+ */
+function XProfileLink({ twitter, name }: { twitter: string | null; name: string | null }) {
+  // Handles are stored as `@name` by scans and by the curated import, but the
+  // column has held bare handles too — the link has to survive both.
+  const handle = twitter?.trim().replace(/^@/, "");
+  if (!handle) return null;
+  return (
+    <a
+      href={`https://x.com/${handle}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`@${handle} on X`}
+      aria-label={`${name ?? handle} on X`}
+      className="shrink-0 rounded-md p-0.5 text-neutral-500 transition-colors hover:text-amber-300"
+    >
+      <XIcon />
+    </a>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
   );
 }
 
