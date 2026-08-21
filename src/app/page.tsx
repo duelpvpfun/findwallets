@@ -1,21 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { Chain } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
-import TableSkeleton from "@/components/TableSkeleton";
+import ScanProgress from "@/components/ScanProgress";
 import PaywallDialog from "@/components/PaywallDialog";
 import WalletTicker from "@/components/WalletTicker";
-import ProductPreview from "@/components/ProductPreview";
+import RadarSweep from "@/components/RadarSweep";
+import OnboardingCarousel, {
+  shouldShowOnboarding,
+  markOnboardingSeen,
+} from "@/components/OnboardingCarousel";
+import WalletConnectButton from "@/components/WalletConnectButton";
+import { useAccount } from "@/components/AccountProvider";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 import { detectAddressFamily } from "@/lib/chains";
 import { clearScan, loadScan, saveScan, type CachedScan } from "@/lib/scanCache";
 import { consumeScanStream } from "@/lib/scanStream";
-import {
-  CLAIM_STORAGE_KEY,
-  OWNER_STORAGE_KEY,
-  PREVIEW_DISMISSED_KEY,
-  TIER_OPTIONS,
-} from "@/lib/tiers";
+import { CLAIM_STORAGE_KEY, OWNER_STORAGE_KEY, TIER_OPTIONS } from "@/lib/tiers";
 
 const LIMIT_OPTIONS = [100, 250, 500] as const;
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
@@ -41,7 +44,13 @@ const PLACEHOLDERS: Record<Chain, string> = {
   base: "Paste Base token contract address (0x…)…",
 };
 
+/** Pacing for a replayed sample: the cached rows arrive in one response, so the
+ * counter is stepped through them at roughly the rate a real scan pages. */
+const PREVIEW_REVEAL_PAGES = 8;
+const PREVIEW_REVEAL_STEP_MS = 200;
+
 export default function Home() {
+  const { user, balance, refresh: refreshAccount } = useAccount();
   const [chain, setChain] = useState<Chain>("solana");
   const [address, setAddress] = useState("");
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
@@ -54,18 +63,16 @@ export default function Home() {
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [autoChain, setAutoChain] = useState<Chain | null>(null);
   const [samples, setSamples] = useState<ShowcaseToken[]>([]);
-  // Greet first-time visitors with the export preview unless they opted out.
+  // Greet first-time visitors with the walkthrough unless they opted out.
   // Closed during SSR and the first client render so hydration matches; the
   // localStorage read happens in a frame callback, after paint.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const addressRef = useRef<HTMLInputElement>(null);
+  // Bumped whenever a sample reveal should be abandoned (a new scan, or Back).
+  const previewRun = useRef(0);
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      try {
-        setWelcomeOpen(!localStorage.getItem(PREVIEW_DISMISSED_KEY));
-      } catch {
-        // localStorage unavailable (private mode) — skip the greeting rather than throw.
-      }
-    });
+    const id = requestAnimationFrame(() => setWelcomeOpen(shouldShowOnboarding()));
     return () => cancelAnimationFrame(id);
   }, []);
 
@@ -122,9 +129,44 @@ export default function Home() {
     };
   }, []);
 
+  /**
+   * Folds a browser-held claim token into the signed-in account.
+   *
+   * localStorage is cleared only AFTER the server confirms, so a failed request
+   * can never leave a buyer with neither a local token nor an account credit.
+   * `safeToForget` also covers a token that turns out to be spent or unknown —
+   * in both cases the browser copy is worthless and keeping it just strands the
+   * user at a paywall holding a purchase they can't name.
+   */
+  useEffect(() => {
+    if (!user || !claim) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/absorb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claimToken: claim.token }),
+        });
+        const data = await res.json().catch(() => null);
+        if (cancelled || !res.ok || !data?.safeToForget) return;
+        localStorage.removeItem(CLAIM_STORAGE_KEY);
+        setClaim(null);
+        await refreshAccount();
+      } catch {
+        // Keep the local token for the next visit rather than risk losing it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, claim, refreshAccount]);
+
   const runSearch = useCallback(
     async (ca: string, searchChain: Chain, searchLimit: number, claimToken?: string | null) => {
       if (!ca.trim()) return;
+      // A real scan supersedes any sample reveal still stepping its counter.
+      previewRun.current += 1;
       setLoading(true);
       setProgress(null);
       setError(null);
@@ -163,11 +205,14 @@ export default function Home() {
           setResult(null);
           return;
         }
-        // The credit is spent once the scan returns wallets.
-        if (claimToken && data.traders.length > 0) {
+        // Only the purchase the SERVER says it spent. A signed-in buyer's
+        // account balance is tried first, so a claim token still in the browser
+        // may be completely untouched — forgetting it here would destroy it.
+        if (data.creditSource === "claim_token" && claimToken) {
           localStorage.removeItem(CLAIM_STORAGE_KEY);
           setClaim(null);
         }
+        if (data.creditSource === "account") void refreshAccount();
         // A valid address on the wrong chain returns nothing; the credit is
         // untouched, so tell the user rather than leaving them guessing.
         if (data.note) setError(data.note);
@@ -181,7 +226,7 @@ export default function Home() {
         setProgress(null);
       }
     },
-    [ownerKey]
+    [ownerKey, refreshAccount]
   );
 
   // A buyer who reloads, or whose tab the browser discarded, gets their scan
@@ -217,37 +262,70 @@ export default function Home() {
    * Replays a cached scan. Never touches a credit or a paid upstream API, so
    * visitors can see the real product before deciding to buy.
    */
-  const runPreview = useCallback(async (sample: ShowcaseToken) => {
-    setLoading(true);
-    setError(null);
-    setChain(sample.chain);
-    setAddress(sample.address);
-    try {
-      const qs = new URLSearchParams({ chain: sample.chain, address: sample.address });
-      const res = await fetch(`/api/preview?${qs}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Preview unavailable.");
-        setResult(null);
-        return;
+  const runPreview = useCallback(
+    async (sample: ShowcaseToken) => {
+      setLoading(true);
+      setError(null);
+      setProgress(null);
+      setChain(sample.chain);
+      setAddress(sample.address);
+      const run = ++previewRun.current;
+      try {
+        const qs = new URLSearchParams({ chain: sample.chain, address: sample.address });
+        const res = await fetch(`/api/preview?${qs}`);
+        const data = await res.json();
+        if (run !== previewRun.current) return;
+        if (!res.ok) {
+          setError(data.error ?? "Preview unavailable.");
+          setResult(null);
+          return;
+        }
+        // A sample comes back from our own database in one shot, so without this
+        // the scan panel flashes for a frame and the free run feels like nothing
+        // happened. Paced through the same counter a real scan drives, which is
+        // the experience the sample is there to demonstrate.
+        const total: number = Array.isArray(data.traders) ? data.traders.length : 0;
+        if (!reducedMotion && total > 0) {
+          for (let page = 1; page <= PREVIEW_REVEAL_PAGES; page += 1) {
+            setProgress({
+              found: Math.round((page / PREVIEW_REVEAL_PAGES) * total),
+              requested: total,
+            });
+            await new Promise((resolve) => setTimeout(resolve, PREVIEW_REVEAL_STEP_MS));
+            // Back to the search screen, or another scan started: drop this one
+            // rather than dumping a stale table on top of what they did next.
+            if (run !== previewRun.current) return;
+          }
+        }
+        setResult(data);
+      } catch {
+        if (run === previewRun.current) setError("Failed to reach the server.");
+      } finally {
+        if (run === previewRun.current) setLoading(false);
       }
-      setResult(data);
-    } catch {
-      setError("Failed to reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [reducedMotion]
+  );
 
-  /** Owners scan free; everyone else needs an unspent credit covering the size. */
+  /** True when the signed-in account already holds a credit for this size. */
+  const accountCovers = (size: number) => (balance?.bestTier ?? 0) >= size;
+
+  /**
+   * Owners scan free; everyone else needs an unspent credit covering the size,
+   * from their account or from a claim token. Entitlement is still decided
+   * server-side — this only decides whether to show the paywall first.
+   */
   function startSearch(ca: string, searchChain: Chain) {
     if (!ca.trim()) return;
     if (!PAYMENTS_ENABLED || ownerKey) {
       void runSearch(ca, searchChain, limit);
       return;
     }
-    if (claim && claim.tier >= limit) {
-      void runSearch(ca, searchChain, limit, claim.token);
+    // The account balance is passed nothing: resolveAccess reserves from it.
+    // The claim token is still sent when one exists, as the fallback the server
+    // uses if the balance has nothing big enough.
+    if (accountCovers(limit) || (claim && claim.tier >= limit)) {
+      void runSearch(ca, searchChain, limit, claim?.token ?? null);
       return;
     }
     setPaywallOpen(true);
@@ -257,6 +335,8 @@ export default function Home() {
     localStorage.setItem(CLAIM_STORAGE_KEY, JSON.stringify({ token: claimToken, tier }));
     setClaim({ token: claimToken, tier });
     setPaywallOpen(false);
+    // A multi-scan purchase puts the spares straight onto the account.
+    void refreshAccount();
     const paidLimit = (LIMIT_OPTIONS.find((o) => o === tier) ?? limit) as (typeof LIMIT_OPTIONS)[number];
     setLimit(paidLimit);
     void runSearch(address, chain, paidLimit, claimToken);
@@ -292,9 +372,12 @@ export default function Home() {
 
   /** Clears the current scan so the search screen is reachable again. */
   function resetToHome() {
+    previewRun.current += 1;
     setResult(null);
     setAddress("");
     setError(null);
+    setLoading(false);
+    setProgress(null);
     clearScan();
   }
 
@@ -306,7 +389,10 @@ export default function Home() {
         <div className="absolute top-96 right-0 h-[400px] w-[500px] rounded-full bg-emerald-500/5 blur-3xl" />
       </div>
 
-      <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
+      {/* z-40: `backdrop-blur` makes this a stacking context, so without an
+          explicit layer the wallet dropdown inside it paints *under* <main>
+          and the hero heading covers it. Below every modal (z-50 and up). */}
+      <header className="relative z-40 border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={resetToHome}
@@ -317,32 +403,75 @@ export default function Home() {
               α
             </span>
             <div>
-              <h1 className="text-sm font-semibold leading-tight text-neutral-50">Alpha Wallet Finder</h1>
-              <p className="text-[11px] leading-tight text-neutral-500">Multichain top-trader lookup</p>
+              <h1 className="text-sm font-semibold leading-tight text-neutral-50">
+                Alpha Wallet Finder
+              </h1>
+              <p className="hidden text-[11px] leading-tight text-neutral-500 sm:block">
+                Multichain top-trader lookup
+              </p>
             </div>
           </button>
-          <a
-            href="https://x.com/crypce0"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden items-center gap-1.5 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 sm:flex"
-          >
-            Built by @crypce0
-          </a>
+          <div className="flex items-center gap-2">
+            <WalletConnectButton />
+            {/* Only once there is an account to look at: signed out the page is
+                just a sign-in prompt, which the Connect button already is. */}
+            {user && (
+            <Link
+              href="/profile"
+              title="Your purchases and saved results"
+              className="flex items-center gap-1.5 rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="8" r="3.5" />
+                <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
+              </svg>
+              <span className="hidden sm:inline">Profile</span>
+            </Link>
+            )}
+            {/* Persistent way back into the walkthrough — the modal only ever
+                greets someone once, so this is how anyone re-opens it. */}
+            <button
+              onClick={() => setWelcomeOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9.5" />
+                <path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.4" strokeLinecap="round" />
+                <path d="M12 17h.01" strokeLinecap="round" />
+              </svg>
+              <span className="hidden sm:inline">How it works</span>
+            </button>
+            <a
+              href="https://x.com/crypce0"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-1.5 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 sm:flex"
+            >
+              Built by @crypce0
+            </a>
+          </div>
         </div>
       </header>
 
       <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {!result && (
-          <div className="mx-auto mb-6 max-w-2xl text-center sm:mb-8">
-            <h2 className="text-xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
+          <div className="relative mx-auto mb-6 max-w-2xl text-center sm:mb-8">
+            {/* The only decorative sweep on the page, behind text at very low
+                opacity — and hidden while a scan runs, so the sweep on the
+                progress panel is never competing with a second one. */}
+            {!loading && (
+              <div className="pointer-events-none absolute inset-0 hidden items-center justify-center opacity-[0.18] sm:flex">
+                <RadarSweep size={340} />
+              </div>
+            )}
+            <h2 className="relative text-xl font-semibold tracking-tight text-neutral-50 sm:text-3xl">
               Find the wallets behind every winning trade
             </h2>
-            <p className="mt-2 text-sm text-neutral-400 sm:text-base">
+            <p className="relative mt-2 text-sm text-neutral-400 sm:text-base">
               Paste any memecoin contract address and instantly rank its top 100 to 500 traders by
               realized PNL.
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <div className="relative mt-4 flex flex-wrap items-center justify-center gap-2">
               <span className="text-xs text-neutral-500">Supported chains:</span>
               {CHAINS.map((c) => (
                 <span
@@ -385,11 +514,15 @@ export default function Home() {
           <div className="relative flex-1">
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
             <input
+              ref={addressRef}
               value={address}
               onChange={(e) => handleAddressChange(e.target.value)}
               placeholder={PLACEHOLDERS[chain]}
               spellCheck={false}
-              className="w-full truncate rounded-xl border border-neutral-800 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none transition-colors placeholder:font-sans placeholder:text-xs focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 sm:placeholder:text-sm"
+              // Blue at rest, not only on focus. This is the one thing on the
+              // page we want someone to use, and it was the same grey as
+              // everything around it.
+              className="w-full truncate rounded-xl border border-blue-500/40 bg-neutral-950 py-3 pl-10 pr-3 font-mono text-sm text-neutral-100 outline-none ring-2 ring-blue-500/10 transition-colors placeholder:font-sans placeholder:text-xs focus:border-blue-500/70 focus:ring-blue-500/25 sm:placeholder:text-sm"
             />
           </div>
           <div className="flex gap-2">
@@ -420,7 +553,10 @@ export default function Home() {
                   <Spinner />
                   Scanning…
                 </>
-              ) : PAYMENTS_ENABLED && !ownerKey && !(claim && claim.tier >= limit) ? (
+              ) : PAYMENTS_ENABLED &&
+                !ownerKey &&
+                !accountCovers(limit) &&
+                !(claim && claim.tier >= limit) ? (
                 `Unlock Top ${limit}`
               ) : (
                 "Find Wallets"
@@ -449,10 +585,14 @@ export default function Home() {
           </div>
         )}
 
-        {(ownerKey || claim) && (
-          <div className="mt-3 flex items-center gap-2 text-xs">
+        {(ownerKey || claim || (balance?.total ?? 0) > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-emerald-900/60 bg-emerald-950/30 px-3 py-1 font-medium text-emerald-300">
-              {ownerKey ? "Owner access · unlimited free scans" : `Credit ready · Top ${claim!.tier}`}
+              {ownerKey
+                ? "Owner access · unlimited free scans"
+                : balance && balance.total > 0
+                ? `${balance.total} scan${balance.total === 1 ? "" : "s"} on your account · up to Top ${balance.bestTier}`
+                : `Credit ready · Top ${claim!.tier}`}
             </span>
             {ownerKey && (
               <button
@@ -500,9 +640,28 @@ export default function Home() {
         )}
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-900/60 bg-rose-950/30 px-4 py-3 text-sm text-rose-300 animate-fade-in">
-            <AlertIcon className="h-4 w-4 shrink-0" />
-            {error}
+          <div
+            role="alert"
+            className="animate-fade-in mt-4 flex items-start gap-3 rounded-xl border border-rose-900/60 bg-rose-950/25 px-4 py-3.5"
+          >
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm leading-relaxed text-rose-200">{error}</p>
+              {/* A failed scan never spends the credit, and saying so is the
+                  difference between an annoyance and a support message. */}
+              <p className="mt-1 text-[11px] text-rose-300/60">
+                Nothing was charged for a scan that returned nothing.
+              </p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              aria-label="Dismiss"
+              className="-mr-1 -mt-1 shrink-0 rounded-md p-1.5 text-rose-400/60 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -539,15 +698,7 @@ export default function Home() {
             </div>
           ) : (
             loading ? (
-              <TableSkeleton
-                note={
-                  progress
-                    ? `Found ${progress.found} of ${progress.requested} wallets…`
-                    : chain !== "solana" && limit > 100
-                    ? `Large ${CHAINS.find((c) => c.value === chain)?.label} lookups are paginated 10 at a time. This usually takes a few seconds, longer if the provider is slow.`
-                    : "Fetching top traders…"
-                }
-              />
+              <ScanProgress progress={progress} chain={chain} limit={limit} />
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
@@ -559,7 +710,7 @@ export default function Home() {
                   <FeatureCard
                     icon={<ChartIcon />}
                     title="Real PNL ranking"
-                    description="Ranked by realized profit — not just holdings or activity."
+                    description="Ranked by realized profit, not holdings or activity."
                   />
                   <FeatureCard
                     icon={<ExportIcon />}
@@ -591,11 +742,30 @@ export default function Home() {
         </div>
       </footer>
 
-      {welcomeOpen && <ProductPreview onClose={() => setWelcomeOpen(false)} />}
+      {welcomeOpen && (
+        <OnboardingCarousel
+          samples={samples}
+          onClose={() => setWelcomeOpen(false)}
+          onRunSample={(sample) => {
+            setWelcomeOpen(false);
+            void runPreview(sample);
+          }}
+          onUseAddress={(value) => {
+            setWelcomeOpen(false);
+            markOnboardingSeen();
+            handleAddressChange(value);
+            // Deliberately not auto-submitted: on a token of their own the next
+            // step is the paywall, and springing that on someone who just asked
+            // to "load it in" is not the same thing they asked for.
+            requestAnimationFrame(() => addressRef.current?.focus());
+          }}
+        />
+      )}
 
       {paywallOpen && (
         <PaywallDialog
           initialLimit={limit}
+          signedIn={Boolean(user)}
           onClose={() => setPaywallOpen(false)}
           onPaid={handlePaid}
         />

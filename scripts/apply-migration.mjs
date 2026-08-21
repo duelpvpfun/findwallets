@@ -11,29 +11,40 @@ if (!url) {
 }
 
 const dir = "drizzle";
-const file = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().pop();
-if (!file) {
+// Named files, in the order given; otherwise the newest one. Applying several in
+// sequence is what a multi-migration branch needs, and `.pop()` alone silently
+// skipped everything but the last.
+const args = process.argv.slice(2);
+const files = args.length > 0
+  ? args.map((a) => (a.endsWith(".sql") ? a.replace(/^drizzle\//, "") : `${a}.sql`))
+  : fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().slice(-1);
+if (files.length === 0) {
   console.error("No .sql migration found in drizzle/.");
   process.exit(1);
 }
 
 const sql = postgres(url, { prepare: false });
-const ddl = fs.readFileSync(path.join(dir, file), "utf8");
 
 let applied = 0;
 let skipped = 0;
-for (const raw of ddl.split("--> statement-breakpoint")) {
-  const stmt = raw.trim();
-  if (!stmt) continue;
-  try {
-    await sql.unsafe(stmt);
-    applied++;
-  } catch (err) {
-    if (String(err.message).includes("already exists")) skipped++;
-    else {
-      console.error("FAILED:", err.message);
-      await sql.end();
-      process.exit(1);
+for (const file of files) {
+  console.log(`-- ${file}`);
+  const ddl = fs.readFileSync(path.join(dir, file), "utf8");
+  for (const raw of ddl.split("--> statement-breakpoint")) {
+    const stmt = raw.trim();
+    if (!stmt) continue;
+    try {
+      await sql.unsafe(stmt);
+      applied++;
+    } catch (err) {
+      // `IF NOT EXISTS` covers most re-runs; this catches the rest (e.g. a
+      // duplicate constraint), so a partially-applied migration can be retried.
+      if (String(err.message).includes("already exists")) skipped++;
+      else {
+        console.error("FAILED:", err.message);
+        await sql.end();
+        process.exit(1);
+      }
     }
   }
 }

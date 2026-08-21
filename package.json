@@ -15,7 +15,10 @@
     "enrich": "env -u DATABASE_URL node --env-file=.env.local scripts/enrich-wallets.mjs",
     "enrich:stats": "env -u DATABASE_URL node --env-file=.env.local scripts/enrich-stats.mjs",
     "db:health": "env -u DATABASE_URL node --env-file=.env.local scripts/db-health.mjs",
-    "db:prune": "env -u DATABASE_URL node --env-file=.env.local scripts/db-prune.mjs"
+    "db:prune": "env -u DATABASE_URL node --env-file=.env.local scripts/db-prune.mjs",
+    "test:credits": "env -u DATABASE_URL node --env-file=.env.local scripts/credit-lifecycle.mjs",
+    "test:accounts": "env -u DATABASE_URL node --env-file=.env.local scripts/account-lifecycle.mjs",
+    "db:migrate": "env -u DATABASE_URL node --env-file=.env.local scripts/apply-migration.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.70.0",
@@ -25,6 +28,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
     "@vercel/functions": "^3.9.3",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "drizzle-orm": "^0.45.2",
     "framer-motion": "^13.1.0",

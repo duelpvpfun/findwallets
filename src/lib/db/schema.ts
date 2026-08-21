@@ -177,6 +177,14 @@ export const scanCredits = pgTable(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     email: text("email"),
     payerWallet: text("payer_wallet"),
+    /**
+     * The account this credit belongs to, once one exists.
+     *
+     * Nullable on purpose and forever: an anonymous purchase has no user until
+     * its payer signs in with the wallet they paid from, and a buyer who never
+     * signs in must keep redeeming by claim token exactly as before.
+     */
+    userId: integer("user_id"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     consumedChain: text("consumed_chain"),
     consumedTokenAddress: text("consumed_token_address"),
@@ -191,6 +199,11 @@ export const scanCredits = pgTable(
     uniqueIndex("scan_credits_claim_token_idx").on(t.claimToken),
     index("scan_credits_claim_nonce_hash_idx").on(t.claimNonceHash),
     index("scan_credits_reserved_at_idx").on(t.reservedAt),
+    // Covers both the balance read and the "oldest unconsumed credit at or
+    // above this tier" pick that reserves one.
+    index("scan_credits_user_idx").on(t.userId, t.consumedAt, t.tier),
+    // Retroactive attachment on sign-in reads this.
+    index("scan_credits_payer_wallet_idx").on(t.payerWallet),
   ]
 );
 
@@ -231,6 +244,13 @@ export const paymentIntents = pgTable(
     amount: bigint("amount", { mode: "number" }).notNull(),
     /** Token mint for "usdc"; null for native SOL. */
     mint: text("mint"),
+    /** How many credits this one payment buys. The quoted `amount` is already
+     * multiplied by it, so on-chain verification is unchanged. */
+    quantity: integer("quantity").notNull().default(1),
+    /** Account the credits should land on, bound at quote time rather than read
+     * from the cookie at confirm time — the session may have changed in between,
+     * and multi-credit purchases would otherwise be orphaned. */
+    userId: integer("user_id"),
     status: text("status").notNull().default("pending"),
     /** Filled in once a matching transaction is confirmed on-chain. */
     signature: text("signature"),
@@ -315,3 +335,76 @@ export const statsSnapshot = pgTable("stats_snapshot", {
   payload: jsonb("payload").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A wallet account. Created the first time someone proves ownership of a Solana
+ * address by signing a message — never by paying, and never required to pay.
+ *
+ * The address is the identity: there is no password, no email, and nothing to
+ * reset. Signing in costs zero lamports (a signature, not a transaction).
+ */
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    /** Base58 Solana public key, exactly as the wallet reports it. */
+    wallet: text("wallet").notNull(),
+    displayName: text("display_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("users_wallet_idx").on(t.wallet)]
+);
+
+/**
+ * One-shot sign-in challenge. The message the user signs is REBUILT server-side
+ * from `wallet` + `nonce` at verify time, so the signature is never checked
+ * against a message body the client supplied — otherwise a caller could sign
+ * anything and present it as a sign-in.
+ */
+export const authNonces = pgTable(
+  "auth_nonces",
+  {
+    nonce: text("nonce").primaryKey(),
+    wallet: text("wallet").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Set by the same atomic UPDATE that claims it, so a replay finds it used. */
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("auth_nonces_created_at_idx").on(t.createdAt)]
+);
+
+/**
+ * A paid scan's full result, kept for 7 days so a buyer can re-download it
+ * without re-running (and re-paying for) the scan.
+ *
+ * Its own table rather than a column on `scanCredits`: a payload of a few hundred
+ * KB sitting on the credits row would be pulled into every balance query.
+ * Measured cost is ~930 bytes per trader — see `src/lib/db/scanResults.ts`.
+ */
+export const scanResults = pgTable(
+  "scan_results",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id"),
+    /** The purchase this result was delivered for; null for owner/free scans. */
+    creditId: integer("credit_id"),
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    tokenSymbol: text("token_symbol"),
+    traderCount: integer("trader_count").notNull().default(0),
+    requestedCount: integer("requested_count"),
+    /** The COMPLETE payload, unfiltered. A receipt that hands back only the
+     * wallets clearing the quality bar is not what the buyer paid for. */
+    payload: jsonb("payload").notNull(),
+    /** Pinned results ignore `expiresAt` — the purge skips them. */
+    pinned: boolean("pinned").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("scan_results_user_created_idx").on(t.userId, sql`${t.createdAt} desc`),
+    index("scan_results_credit_idx").on(t.creditId),
+    index("scan_results_expires_at_idx").on(t.expiresAt),
+  ]
+);

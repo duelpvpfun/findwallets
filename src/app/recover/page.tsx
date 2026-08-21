@@ -80,7 +80,7 @@ export default function RecoverPage() {
 
         {status.kind === "recovered" && (
           <div className="mt-4 rounded-xl border border-emerald-900/60 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-300">
-            Credit restored — Top {status.tier}. It&apos;s loaded in this browser.
+            Credit restored. Top {status.tier} is loaded in this browser.
             <button
               onClick={() => router.push("/")}
               className="mt-2 block font-medium underline underline-offset-2 hover:text-emerald-200"

@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TIER_OPTIONS, type TierInfo } from "@/lib/tiers";
+import { getProvider, openWalletInstall, walletErrorMessage } from "@/lib/phantom";
+import { useAccount } from "./AccountProvider";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 /** Confirmation normally lands in a few seconds once the transaction is sent;
  * this is the outer bound before we offer a manual retry rather than leaving
@@ -13,19 +16,9 @@ const SUCCESS_HOLD_MS = 1400;
 
 type PayMethod = "sol" | "usdc";
 
-interface SolanaProvider {
-  isPhantom?: boolean;
-  publicKey?: { toString(): string } | null;
-  connect(opts?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toString(): string } }>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  signAndSendTransaction(transaction: any): Promise<{ signature: string }>;
-}
-
-function getProvider(): SolanaProvider | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { phantom?: { solana?: SolanaProvider }; solana?: SolanaProvider };
-  return w.phantom?.solana ?? w.solana ?? null;
-}
+/** Most anyone can buy at once. Mirrors MAX_CREDIT_QUANTITY on the server, which
+ * is the figure that actually enforces it. */
+const MAX_QUANTITY = 10;
 
 async function ensureBufferPolyfill() {
   const g = globalThis as unknown as { Buffer?: unknown };
@@ -40,6 +33,7 @@ interface Quote {
   amount: number;
   method: PayMethod;
   transaction: string;
+  quantity: number;
 }
 
 interface PaywallDialogProps {
@@ -47,9 +41,17 @@ interface PaywallDialogProps {
   onPaid: (claimToken: string, tier: number) => void;
   /** Tier the user already picked in the search bar, preselected for them. */
   initialLimit?: number;
+  /** Whether an account exists to hold more than one credit. */
+  signedIn?: boolean;
 }
 
-export default function PaywallDialog({ onClose, onPaid, initialLimit }: PaywallDialogProps) {
+export default function PaywallDialog({
+  onClose,
+  onPaid,
+  initialLimit,
+  signedIn = false,
+}: PaywallDialogProps) {
+  const { signIn, busy: signingIn } = useAccount();
   const [tier, setTier] = useState<TierInfo | null>(
     () => TIER_OPTIONS.find((t) => t.limit === initialLimit) ?? null
   );
@@ -67,6 +69,11 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const [quoting, setQuoting] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirmingIntentId, setConfirmingIntentId] = useState<string | null>(null);
+  // Buying several at once needs somewhere to keep the spares, and that is the
+  // account. An anonymous buyer holds exactly one claim token in one browser.
+  const [quantity, setQuantity] = useState(1);
+  const effectiveQuantity = signedIn ? quantity : 1;
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // A secret only this browser knows, required to redeem the purchase. Without
   // it the public transaction signature would be enough for anyone watching
@@ -78,6 +85,8 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
   const requestClose = useCallback(() => {
     if (!locked) onClose();
   }, [locked, onClose]);
+
+  useFocusTrap(dialogRef);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -103,7 +112,13 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
         const res = await fetch("/api/pay/init", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tier: tier.limit, method, nonce, payer: walletPk }),
+          body: JSON.stringify({
+            tier: tier.limit,
+            method,
+            nonce,
+            payer: walletPk,
+            quantity: effectiveQuantity,
+          }),
         });
         const data = await res.json();
         if (cancelled) return;
@@ -111,7 +126,13 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
           setWalletError(data?.error || "Could not prepare this payment.");
           return;
         }
-        setQuote({ intentId: data.intentId, amount: data.amount, method: data.method, transaction: data.transaction });
+        setQuote({
+          intentId: data.intentId,
+          amount: data.amount,
+          method: data.method,
+          transaction: data.transaction,
+          quantity: data.quantity ?? 1,
+        });
       } catch {
         if (!cancelled) setWalletError("Could not reach the payment server.");
       } finally {
@@ -121,7 +142,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
     return () => {
       cancelled = true;
     };
-  }, [tier, walletPk, method, nonce]);
+  }, [tier, walletPk, method, nonce, effectiveQuantity]);
 
   // Confirmation is verified server-side directly against Solana (via Helius),
   // never trusted from the wallet's own success callback.
@@ -160,7 +181,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
 
       setStatus("error");
       setMessage(
-        "Your payment may have gone through, but our confirmation is still catching up. Retry below — or send us the transaction id and we'll unlock it manually."
+        "Your payment may have gone through while our confirmation catches up. Retry below, or send us the transaction id and we'll unlock it manually."
       );
     },
     [nonce, onPaid]
@@ -170,7 +191,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
     setWalletError(null);
     const provider = getProvider();
     if (!provider) {
-      window.open("https://phantom.app/download", "_blank", "noopener,noreferrer");
+      openWalletInstall();
       setWalletError("No Solana wallet found. Install Phantom, then try again.");
       return;
     }
@@ -202,11 +223,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
       const { signature } = await provider.signAndSendTransaction(tx);
       void confirmPayment(signature, quote.intentId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
       setWalletError(
-        msg.toLowerCase().includes("reject") || msg.toLowerCase().includes("cancel")
-          ? "Payment was cancelled and you weren't charged."
-          : "The payment didn't go through and you weren't charged. Try again."
+        walletErrorMessage(err, "Payment was cancelled and you weren't charged.") ??
+          "The payment didn't go through and you weren't charged. Try again."
       );
     } finally {
       setSending(false);
@@ -229,7 +248,9 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
       aria-label="Unlock a scan"
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-[0_0_60px_-15px_rgba(59,130,246,0.35)]"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-[0_0_60px_-15px_rgba(59,130,246,0.35)] outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-neutral-800/80 bg-gradient-to-b from-neutral-900 to-neutral-950 px-6 py-5">
@@ -240,7 +261,7 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
               </h3>
               <p className="mt-0.5 text-xs text-neutral-500">
                 {status === "confirming"
-                  ? "Hang tight — don't close this window"
+                  ? "Do not close this window"
                   : "One payment, one full scan. No subscription."}
               </p>
             </div>
@@ -341,13 +362,20 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
               <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-3">
                 <div>
                   <div className="text-sm font-medium text-neutral-100">{tier.label}</div>
-                  <div className="text-[11px] text-neutral-500">{tier.limit} wallets</div>
+                  <div className="tnum text-[11px] text-neutral-500">
+                    {tier.limit} wallets
+                    {effectiveQuantity > 1 ? ` × ${effectiveQuantity} scans` : ""}
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <span className="text-base font-semibold text-neutral-50">{tier.price}</span>
+                    <span className="tnum text-base font-semibold text-neutral-50">
+                      {formatUsdPrice(tier.priceUsd * effectiveQuantity)}
+                    </span>
                     {walletPk && quote && (
-                      <div className="text-[11px] text-neutral-500">≈ {formatAmount(quote.amount, quote.method)}</div>
+                      <div className="tnum text-[11px] text-neutral-500">
+                        ≈ {formatAmount(quote.amount, quote.method)}
+                      </div>
                     )}
                   </div>
                   <button
@@ -358,6 +386,54 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                   </button>
                 </div>
               </div>
+
+              {/* Quantity. The current model forces a wallet round-trip per
+                  scan, which is friction sitting directly on revenue — but the
+                  spares need an account to live on, so this only appears once
+                  there is one. */}
+              {signedIn ? (
+                <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-2.5">
+                  <div>
+                    <div className="text-[13px] font-medium text-neutral-200">Number of scans</div>
+                    <div className="text-[11px] text-neutral-500">
+                      Spares wait on your account. No expiry.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <StepButton
+                      label="Fewer scans"
+                      disabled={quantity <= 1}
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    >
+                      −
+                    </StepButton>
+                    <span className="tnum w-8 text-center text-sm font-semibold text-neutral-100">
+                      {quantity}
+                    </span>
+                    <StepButton
+                      label="More scans"
+                      disabled={quantity >= MAX_QUANTITY}
+                      onClick={() => setQuantity((q) => Math.min(MAX_QUANTITY, q + 1))}
+                    >
+                      +
+                    </StepButton>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => void signIn()}
+                  disabled={signingIn}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-2.5 text-left transition-colors hover:border-neutral-700 disabled:opacity-60"
+                >
+                  <div className="text-[13px] font-medium text-neutral-200">
+                    {signingIn ? "Check your wallet…" : "Connect your wallet first (free)"}
+                  </div>
+                  <div className="text-[11px] leading-relaxed text-neutral-500">
+                    Keeps your purchases if you clear your browser, and lets you buy several scans
+                    at once. Signs a message, never a transaction.
+                  </div>
+                </button>
+              )}
 
               <div className="flex overflow-hidden rounded-xl border border-neutral-800">
                 {((["sol", "usdc"] as const)).map((m) => (
@@ -400,7 +476,10 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
                       ? "Confirm in wallet…"
                       : quoting || !quote
                       ? "Preparing…"
-                      : `Pay ${tier.price} · ${formatAmount(quote.amount, quote.method)}`}
+                      : `Pay ${formatUsdPrice(tier.priceUsd * effectiveQuantity)} · ${formatAmount(
+                          quote.amount,
+                          quote.method
+                        )}`}
                   </button>
                 </div>
               )}
@@ -411,6 +490,35 @@ export default function PaywallDialog({ onClose, onPaid, initialLimit }: Paywall
         </div>
       </div>
     </div>
+  );
+}
+
+/** Prices are quoted to the cent, so a bare toFixed(2) is exact here. */
+function formatUsdPrice(usd: number): string {
+  return `$${usd.toFixed(2)}`;
+}
+
+function StepButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-700 text-sm font-semibold text-neutral-200 transition-colors hover:border-neutral-600 hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -440,7 +548,7 @@ function PaymentSuccess({ tier }: { tier: number | null }) {
       <div className="animate-fade-in">
         <p className="text-sm font-semibold text-emerald-300">Payment confirmed</p>
         <p className="mt-1 text-xs text-neutral-400">
-          {tier ? `Top ${tier} unlocked — starting your scan…` : "Starting your scan…"}
+          {tier ? `Top ${tier} unlocked. Starting your scan…` : "Starting your scan…"}
         </p>
       </div>
     </div>
@@ -461,7 +569,7 @@ function Confirming({ elapsed }: { elapsed: number }) {
         </p>
         <p className="mt-1 text-xs text-neutral-500">
           {slow
-            ? "The network is busy. Your payment is safe — keep this open."
+            ? "The network is busy. Your payment is safe. Keep this open."
             : "Usually done in a few seconds."}
         </p>
       </div>

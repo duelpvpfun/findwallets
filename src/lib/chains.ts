@@ -19,6 +19,19 @@ export function isValidAddressForChain(chain: Chain, address: string): boolean {
   return chain === "solana" ? SOLANA_ADDRESS_RE.test(address) : EVM_ADDRESS_RE.test(address);
 }
 
+/**
+ * Shape check for a Solana public key: base58, 32-44 characters. Covers every
+ * real key without pulling in web3.js to validate a string.
+ *
+ * A wallet address and a token mint are the same shape, so payment quoting and
+ * sign-in share this rather than each carrying its own copy of the regex.
+ * A shape check is not a curve check — the signature verification in
+ * `src/lib/auth/signature.ts` is what proves a key is real.
+ */
+export function isSolanaPubkey(value: string): boolean {
+  return SOLANA_ADDRESS_RE.test(value);
+}
+
 /** Which chain family an address *looks* like, regardless of what was selected. */
 export function detectAddressFamily(address: string): "solana" | "evm" | null {
   if (EVM_ADDRESS_RE.test(address)) return "evm";

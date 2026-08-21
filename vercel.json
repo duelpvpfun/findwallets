@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/refresh-stats",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/purge-scan-results",
+      "schedule": "17 4 * * *"
     }
   ]
 }

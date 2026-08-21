@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import AccountProvider from "@/components/AccountProvider";
 import VisitBeacon from "@/components/VisitBeacon";
 import { SITE_URL } from "@/lib/siteUrl";
 
@@ -14,9 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const TITLE = "Alpha Wallet Finder — top memecoin traders by realized PNL";
+// Wallet extensions show the page title next to the domain on their approve
+// prompt, so it leads with the product name rather than a keyword phrase.
+const TITLE = "Alpha Wallet Finder: top memecoin traders by PNL";
 const DESCRIPTION =
-  "Paste any Solana, BNB Chain or Base memecoin contract address to surface its top 500 trading wallets, their entry/exit prices, and realized PNL — exportable straight to your tracking bot.";
+  "Paste any Solana, BNB Chain or Base memecoin contract address to surface its top 500 trading wallets, their entry and exit prices, and realized PNL. Exportable straight to your tracking bot.";
 
 export const metadata: Metadata = {
   metadataBase: SITE_URL,
@@ -45,7 +48,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-neutral-950">
-        {children}
+        {/* Wallet session, shared by the header, the paywall and /profile. One
+            /api/auth/me call per page load rather than one per component. */}
+        <AccountProvider>{children}</AccountProvider>
         <VisitBeacon />
       </body>
     </html>

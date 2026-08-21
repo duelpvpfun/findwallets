@@ -215,6 +215,32 @@ const TokenCell = memo(function TokenCell({ payment }: { payment: PaymentRow }) 
   );
 });
 
+/** Loyalty tiers for the lifetime-purchase badge. Ordered high to low so the
+ * first match wins; the hue climbs with the count so a whale is spottable in a
+ * column of grey ones. Deliberately not amber — that reads as the NEW badge. */
+const LOYALTY_TIERS = [
+  { min: 50, className: "bg-fuchsia-500/20 text-fuchsia-300 ring-1 ring-fuchsia-400/30" },
+  { min: 20, className: "bg-violet-500/15 text-violet-300" },
+  { min: 10, className: "bg-emerald-500/15 text-emerald-300" },
+  { min: 5, className: "bg-sky-500/15 text-sky-300" },
+  { min: 1, className: "bg-neutral-700/50 text-neutral-400" },
+];
+
+/** Lifetime purchase count for a payer we have on record. Renders nothing when
+ * the payer is unknown, since 0 there means "not stored", not "never bought". */
+const LoyaltyBadge = memo(function LoyaltyBadge({ purchases }: { purchases: number }) {
+  const tier = LOYALTY_TIERS.find((t) => purchases >= t.min);
+  if (!tier) return null;
+  return (
+    <span
+      title={`${purchases} purchase${purchases === 1 ? "" : "s"} from this wallet`}
+      className={`tnum rounded-md px-1.5 py-0.5 font-sans text-[9px] font-semibold ${tier.className}`}
+    >
+      {purchases}×
+    </span>
+  );
+});
+
 const PaymentsTable = memo(function PaymentsTable({
   payments,
   now,
@@ -249,7 +275,18 @@ const PaymentsTable = memo(function PaymentsTable({
               <td className="px-3 py-2">Top {p.tier}</td>
               <td className="px-3 py-2 uppercase text-neutral-400">{p.method ?? "—"}</td>
               <td className="px-3 py-2 font-mono text-[11px] text-neutral-400">
-                {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
+                <span className="inline-flex items-center gap-1.5">
+                  {p.payerWallet ? shortenAddress(p.payerWallet, 4) : "—"}
+                  <LoyaltyBadge purchases={p.payerPurchases} />
+                  {p.isNewCustomer && (
+                    <span
+                      title="First purchase from this wallet"
+                      className="rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[9px] font-semibold uppercase tracking-wide text-amber-400"
+                    >
+                      New
+                    </span>
+                  )}
+                </span>
               </td>
               <td className="px-3 py-2">
                 <TokenCell payment={p} />

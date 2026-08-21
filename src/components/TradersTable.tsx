@@ -90,6 +90,12 @@ interface Filters {
   maxPnlPercent: string;
   minPnlUsd: string;
   maxPnlUsd: string;
+  /** Average entry market cap, in thousands of USD. */
+  minEntryK: string;
+  maxEntryK: string;
+  /** Total USD spent buying, in thousands. */
+  minBoughtK: string;
+  maxBoughtK: string;
   holdingOnly: boolean;
   provenOnly: boolean;
 }
@@ -102,9 +108,18 @@ const EMPTY_FILTERS: Filters = {
   maxPnlPercent: "",
   minPnlUsd: "",
   maxPnlUsd: "",
+  minEntryK: "",
+  maxEntryK: "",
+  minBoughtK: "",
+  maxBoughtK: "",
   holdingOnly: false,
   provenOnly: false,
 };
+
+/** Thousands to dollars. NaN when the box is empty, which reads as "no bound". */
+function thousands(value: string): number {
+  return parseFloat(value) * 1000;
+}
 
 export default function TradersTable({
   token,
@@ -169,6 +184,10 @@ export default function TradersTable({
     const maxPnlPercent = parseFloat(filters.maxPnlPercent);
     const minPnlUsd = parseFloat(filters.minPnlUsd);
     const maxPnlUsd = parseFloat(filters.maxPnlUsd);
+    const minEntry = thousands(filters.minEntryK);
+    const maxEntry = thousands(filters.maxEntryK);
+    const minBought = thousands(filters.minBoughtK);
+    const maxBought = thousands(filters.maxBoughtK);
     const query = filters.query.trim().toLowerCase();
     return rows.filter((t) => {
       if (
@@ -184,6 +203,12 @@ export default function TradersTable({
       if (!Number.isNaN(maxPnlPercent) && t.pnlPercent > maxPnlPercent) return false;
       if (!Number.isNaN(minPnlUsd) && t.pnlUsd < minPnlUsd) return false;
       if (!Number.isNaN(maxPnlUsd) && t.pnlUsd > maxPnlUsd) return false;
+      // Entry is filtered on market cap, whatever the Mcap/Price toggle is
+      // showing: "bought under 50K" is how the entry is talked about.
+      if (!Number.isNaN(minEntry) && t.avgBuyMcapUsd < minEntry) return false;
+      if (!Number.isNaN(maxEntry) && t.avgBuyMcapUsd > maxEntry) return false;
+      if (!Number.isNaN(minBought) && t.boughtUsd < minBought) return false;
+      if (!Number.isNaN(maxBought) && t.boughtUsd > maxBought) return false;
       if (filters.holdingOnly && t.isHolding !== true) return false;
       if (filters.provenOnly && !hasTrackRecord(histories[t.address])) return false;
       return true;
@@ -194,21 +219,33 @@ export default function TradersTable({
   // list keeps the upstream ranking order, except under Total — upstream ranks on
   // realized alone, which would leave the biggest number partway down the table.
   const filteredTraders = useMemo(() => {
-    if (!sort) {
-      if (basis !== "total") return matchingTraders;
-      return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
-    }
-    const factor = sort.dir === "desc" ? -1 : 1;
-    // Rows with no measurable multiple sort last in either direction rather than
-    // being treated as 0x.
-    return [...matchingTraders].sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return (av - bv) * factor;
-    });
+    const ordered = (() => {
+      if (!sort) {
+        if (basis !== "total") return matchingTraders;
+        return [...matchingTraders].sort((a, b) => b.pnlUsd - a.pnlUsd);
+      }
+      const factor = sort.dir === "desc" ? -1 : 1;
+      // Rows with no measurable multiple sort last in either direction rather
+      // than being treated as 0x.
+      return [...matchingTraders].sort((a, b) => {
+        const av = a[sort.key];
+        const bv = b[sort.key];
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return (av - bv) * factor;
+      });
+    })();
+    // #1 is the top row of the list in front of you. The provider numbers its
+    // rows by realized PNL, so under any other order the table opened on "#3"
+    // and read as broken. Rows already numbered correctly keep their identity,
+    // which is the common case and preserves the row memo.
+    return ordered.map((t, i) => (t.rank === i + 1 ? t : { ...t, rank: i + 1 }));
   }, [matchingTraders, sort, basis]);
+
+  // The medal accent means "top of a ranking". Sorted ascending the top row is
+  // the *worst* wallet, so the emphasis is dropped rather than handing the last
+  // place a gold bar.
+  const bestFirst = !sort || sort.dir === "desc";
 
   const toggleSort = useCallback((key: SortKey) => {
     setSort((prev) => {
@@ -312,6 +349,10 @@ export default function TradersTable({
     (filters.maxPnlPercent !== "" ? 1 : 0) +
     (filters.minPnlUsd !== "" ? 1 : 0) +
     (filters.maxPnlUsd !== "" ? 1 : 0) +
+    (filters.minEntryK !== "" ? 1 : 0) +
+    (filters.maxEntryK !== "" ? 1 : 0) +
+    (filters.minBoughtK !== "" ? 1 : 0) +
+    (filters.maxBoughtK !== "" ? 1 : 0) +
     (filters.holdingOnly ? 1 : 0) +
     (filters.provenOnly ? 1 : 0);
 
@@ -356,13 +397,13 @@ export default function TradersTable({
               {token.rankingWindow !== "all_time" && (
                 <Badge tone="neutral">Ranked over last {token.rankingWindow}, not all-time</Badge>
               )}
-              {isDemoData && <Badge tone="yellow">Demo data — API key not configured for this chain</Badge>}
+              {isDemoData && <Badge tone="yellow">Demo data: no API key for this chain</Badge>}
             </div>
           </div>
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <span className="hidden text-xs text-neutral-500 sm:inline">
+          <span className="tnum hidden text-xs text-neutral-500 sm:inline">
             {selected.size > 0 ? `${selected.size} selected` : `${traders.length} wallets`}
           </span>
           <CopyJsonButton
@@ -389,7 +430,7 @@ export default function TradersTable({
           <span className="text-sm text-neutral-300">
             The data provider was slow, so this scan stopped at {traders.length}
             {requestedCount ? ` of ${requestedCount}` : ""} wallets. These rows are yours to keep and
-            export. A fresh scan needs a new purchase — if you think this one under-delivered,{" "}
+            export. A fresh scan needs a new purchase. If you think this one under-delivered,{" "}
             <a href="/recover" className="font-medium text-amber-400 underline hover:text-amber-300">
               recover your purchase
             </a>{" "}
@@ -398,12 +439,14 @@ export default function TradersTable({
         </div>
       )}
 
-      {/* Quick stats strip */}
+      {/* Quick stats strip. The combined PNL is the headline figure and is sized
+          for it; three identically-weighted numbers made the reader pick. */}
       <div className="grid grid-cols-3 divide-x divide-neutral-800/80 border-b border-neutral-800/80 bg-neutral-950/40">
         <StatCell
           label={basis === "total" ? "Combined Total PNL" : "Combined Realized PNL"}
           value={formatUsd(summary.totalPnl)}
           positive={summary.totalPnl >= 0}
+          primary
         />
         <StatCell label="Winning Wallets" value={`${summary.winners} / ${traders.length}`} />
         <StatCell label="Avg Multiple" value={formatMultiple(summary.avgX)} />
@@ -433,7 +476,7 @@ export default function TradersTable({
               </span>
             )}
           </button>
-          <span className="text-xs text-neutral-600">
+          <span className="tnum text-xs text-neutral-500">
             {filteredTraders.length} / {traders.length} shown
           </span>
 
@@ -443,7 +486,7 @@ export default function TradersTable({
               <div className="flex overflow-hidden rounded-lg border border-neutral-800 text-xs font-medium">
                 <button
                   onClick={() => setPnlBasis("total")}
-                  title="Realized profit plus the paper value of tokens still held"
+                  title="Realized profit plus the paper value of tokens still held. The wallets in this scan were selected by the provider on realized PNL; switching the basis re-ranks those wallets."
                   className={`px-2.5 py-1.5 transition-colors ${
                     pnlBasis === "total"
                       ? "bg-blue-500/20 text-blue-300"
@@ -464,9 +507,6 @@ export default function TradersTable({
                   Realized
                 </button>
               </div>
-              <span className="text-[10px] text-rose-400/90">
-                *Traders are ranked by realized PNL
-              </span>
             </div>
           )}
 
@@ -522,6 +562,24 @@ export default function TradersTable({
               minPlaceholder="0"
               maxPlaceholder="∞"
             />
+            <FilterRangeInput
+              label="Entry mcap ($K)"
+              minValue={filters.minEntryK}
+              maxValue={filters.maxEntryK}
+              onMinChange={(v) => updateFilter("minEntryK", v)}
+              onMaxChange={(v) => updateFilter("maxEntryK", v)}
+              minPlaceholder="0"
+              maxPlaceholder="∞"
+            />
+            <FilterRangeInput
+              label="Bought ($K)"
+              minValue={filters.minBoughtK}
+              maxValue={filters.maxBoughtK}
+              onMinChange={(v) => updateFilter("minBoughtK", v)}
+              onMaxChange={(v) => updateFilter("maxBoughtK", v)}
+              minPlaceholder="0"
+              maxPlaceholder="∞"
+            />
             {hasHoldingData && (
               <label className="flex items-center gap-1.5 pb-1.5 text-xs text-neutral-400">
                 <input
@@ -557,34 +615,26 @@ export default function TradersTable({
         )}
       </div>
 
-      <details className="group border-b border-neutral-800/80 bg-neutral-950/30">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-2 text-[11px] text-neutral-500 hover:text-neutral-300 sm:px-5">
-          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[9px] font-bold text-neutral-400">
-            ?
-          </span>
-          Why Avg X isn&apos;t Exit ÷ Entry
-        </summary>
-        <p className="px-4 pb-2.5 text-[11px] leading-relaxed text-neutral-500 sm:px-5">
-          Avg X is {basis === "total" ? "total" : "realized"} profit ÷ the cost of the tokens it
-          applies to — the ones actually sold{basis === "total" ? ", plus those still held" : ""}.
-          Avg Entry averages every token bought, so it can include tokens the wallet never sold —
-          which is why Exit ÷ Entry doesn&apos;t match.
-          {hasUnrealizedData && (
-            <>
-              {" "}
-              Wallets often receive or send tokens outside of trades, so bought and sold amounts
-              don&apos;t have to match. <strong className="font-medium text-neutral-400">Total</strong>{" "}
-              PNL adds the current paper value of whatever is still held;{" "}
-              <strong className="font-medium text-neutral-400">Realized</strong> counts only closed
-              trades.
-            </>
-          )}
-        </p>
-      </details>
-
       {filteredTraders.length === 0 && (
-        <div className="py-12 text-center text-sm text-neutral-500">
-          No traders match the current filters.
+        <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-600">
+            <FilterIcon />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-neutral-300">No wallets match these filters</p>
+            <p className="tnum mt-1 text-xs text-neutral-500">
+              All {traders.length} wallets from this scan are still here. The filters are only
+              hiding them.
+            </p>
+          </div>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => setFilters(EMPTY_FILTERS)}
+              className="mt-1 rounded-lg border border-neutral-700 px-3.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:border-neutral-600 hover:bg-neutral-800"
+            >
+              Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+            </button>
+          )}
         </div>
       )}
 
@@ -605,6 +655,7 @@ export default function TradersTable({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
             sort={sort}
             onSort={toggleSort}
           />
@@ -619,6 +670,7 @@ export default function TradersTable({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
           />
         ))}
 
@@ -671,7 +723,7 @@ function CopyJsonButton({
       ref={ref}
       onClick={handleCopy}
       disabled={state === "working"}
-      title="Copy the export JSON to your clipboard (c) — no download needed"
+      title="Copy the export JSON to your clipboard (c). No download needed."
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:flex-none ${
         state === "copied"
           ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
@@ -702,6 +754,8 @@ interface ListProps {
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  /** False while the user has sorted ascending, i.e. worst-first. */
+  bestFirst: boolean;
 }
 
 const ROW_ESTIMATE_PX = 84;
@@ -719,6 +773,7 @@ function DesktopTable({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
   sort,
   onSort,
 }: ListProps & {
@@ -829,6 +884,7 @@ function DesktopTable({
                     showMcap={showMcap}
                     basis={basis}
                     hasHoldingData={hasHoldingData}
+                    bestFirst={bestFirst}
                   />
                 );
               })}
@@ -855,6 +911,7 @@ function DesktopTable({
                 showMcap={showMcap}
                 basis={basis}
                 hasHoldingData={hasHoldingData}
+                bestFirst={bestFirst}
               />
             ))
           )}
@@ -874,6 +931,7 @@ interface RowProps {
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  bestFirst: boolean;
 }
 
 const TableRow = memo(function TableRow({
@@ -888,17 +946,36 @@ const TableRow = memo(function TableRow({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
 }: RowProps & {
   ref?: (node: HTMLTableRowElement | null) => void;
   dataIndex?: number;
 }) {
+  // Weight and colour before badges: the top three should read as obviously
+  // best at a glance, and the accent bar does that without adding chrome to
+  // every row below them.
+  const isTop = bestFirst && t.rank <= 3;
   return (
     <tr
       ref={ref}
       data-index={dataIndex}
-      className="border-b border-neutral-900/70 transition-colors hover:bg-neutral-800/20"
+      className={`border-b border-neutral-900/70 transition-colors duration-150 ${
+        selected ? "bg-blue-500/[0.07]" : "hover:bg-neutral-800/25"
+      }`}
     >
-      <td className="py-3 pl-4 align-top xl:pl-5">
+      <td className="relative py-3 pl-4 align-top xl:pl-5">
+        {isTop && (
+          <span
+            aria-hidden
+            className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full ${
+              t.rank === 1
+                ? "bg-amber-400/70"
+                : t.rank === 2
+                ? "bg-neutral-400/50"
+                : "bg-orange-500/50"
+            }`}
+          />
+        )}
         <input
           type="checkbox"
           checked={selected}
@@ -912,7 +989,7 @@ const TableRow = memo(function TableRow({
       <td className="py-3 align-top">
         <WalletCell trader={t} history={history} onShare={onShare} />
       </td>
-      <td className="py-3 align-top tabular-nums font-medium text-neutral-200">
+      <td className="py-3 align-top tabular-nums font-medium text-blue-300">
         <span
           title={t.multipleX === null ? NO_MULTIPLE_REASON : avgXBasis(basis)}
           className="cursor-help border-b border-dotted border-neutral-700"
@@ -925,7 +1002,11 @@ const TableRow = memo(function TableRow({
         </span>
       </td>
       <td className="py-3 align-top tabular-nums">
-        <div className={`font-semibold ${t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+        <div
+          className={`${isTop ? "text-[15px] font-bold" : "font-semibold"} ${
+            t.pnlUsd >= 0 ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
           {formatUsd(t.pnlUsd)}
         </div>
         <div
@@ -967,6 +1048,7 @@ function CardList({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
 }: ListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualize = rows.length > VIRTUALIZE_THRESHOLD;
@@ -989,6 +1071,7 @@ function CardList({
             showMcap={showMcap}
             basis={basis}
             hasHoldingData={hasHoldingData}
+            bestFirst={bestFirst}
             selected={selected.has(t.address)}
             onToggle={onToggle}
             onShare={onShare}
@@ -1018,6 +1101,7 @@ function CardList({
                 showMcap={showMcap}
                 basis={basis}
                 hasHoldingData={hasHoldingData}
+                bestFirst={bestFirst}
                 selected={selected.has(t.address)}
                 onToggle={onToggle}
                 onShare={onShare}
@@ -1030,12 +1114,23 @@ function CardList({
   );
 }
 
-function StatCell({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+function StatCell({
+  label,
+  value,
+  positive,
+  primary,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+  /** The one figure worth reading first. */
+  primary?: boolean;
+}) {
   return (
     <div className="px-3 py-3 sm:px-5">
       <div className="text-[10px] leading-tight text-neutral-500 sm:text-[11px]">{label}</div>
       <div
-        className={`mt-0.5 text-sm font-semibold tabular-nums ${
+        className={`tnum mt-0.5 font-semibold ${primary ? "text-base sm:text-lg" : "text-sm"} ${
           positive === undefined ? "text-neutral-100" : positive ? "text-emerald-400" : "text-rose-400"
         }`}
       >
@@ -1276,10 +1371,10 @@ function SortableHeader({
 }
 
 function RankBadge({ rank }: { rank: number }) {
-  if (rank > 3) return <span className="text-sm">{rank}</span>;
+  if (rank > 3) return <span className="tnum text-sm">{rank}</span>;
   return (
     <span
-      className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
+      className={`tnum inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-bold ${
         rank === 1
           ? "bg-amber-400/20 text-amber-300"
           : rank === 2
@@ -1297,7 +1392,7 @@ function RankBadge({ rank }: { rank: number }) {
 function PnlSplit({ row, basis }: { row: Row; basis: PnlBasis }) {
   if (basis !== "total" || row.unsoldPnlUsd === 0) return null;
   return (
-    <div className="mt-0.5 text-[10px] leading-tight text-neutral-500">
+    <div className="tnum mt-0.5 text-[10px] leading-tight text-neutral-400">
       {formatUsd(row.realizedPnlUsd)} sold
       <span className="text-neutral-600"> + </span>
       {formatUsd(row.unsoldPnlUsd)} held
@@ -1322,16 +1417,16 @@ function TokenAmounts({
       : 0;
   const movedOut = trader.transferredOutPercent ?? 0;
   return (
-    <div className={`text-neutral-500 ${className}`}>
+    <div className={`text-neutral-400 ${className}`}>
       {formatCompactNumber(trader.boughtTokenAmount)} → {formatCompactNumber(trader.soldTokenAmount)}{" "}
       {symbol}
       {/* Without this a wallet that sold 4% of its bag and moved the rest out
           looks like it dumped everything for a fraction of what it paid. */}
       {trader.boughtTokenAmount > 0 && soldShare < 99 && (
-        <div className="text-neutral-600">
+        <div className="text-neutral-500">
           sold {soldShare.toFixed(soldShare < 10 ? 1 : 0)}% of bag
           {movedOut >= 1 && (
-            <span title="Left the wallet without being sold — common for wallets that split a position across addresses">
+            <span title="Left the wallet without being sold. Common when a position is split across several addresses.">
               {" "}
               · {movedOut.toFixed(0)}% moved out
             </span>
@@ -1342,9 +1437,13 @@ function TokenAmounts({
   );
 }
 
+// One line, always. Two wide figures (a six-figure mcap pair, or two long
+// fractional prices) used to wrap, which pushed the row taller than its
+// neighbours and broke the alignment down the column. A slightly smaller
+// figure fits the widest real pair inside the column instead.
 function ArrowPair({ from, to }: { from: string; to: string }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+    <div className="flex items-baseline gap-x-1.5 whitespace-nowrap text-[12px]">
       <span className="text-neutral-400">{from}</span>
       <span className="text-neutral-600">→</span>
       <span className="text-neutral-200">{to}</span>
@@ -1389,6 +1488,7 @@ const TraderCard = memo(function TraderCard({
   showMcap,
   basis,
   hasHoldingData,
+  bestFirst,
   selected,
   onToggle,
   onShare,
@@ -1399,13 +1499,31 @@ const TraderCard = memo(function TraderCard({
   showMcap: boolean;
   basis: PnlBasis;
   hasHoldingData: boolean;
+  bestFirst: boolean;
   selected: boolean;
   onToggle: (address: string) => void;
   onShare: (trader: WalletTrader) => void;
 }) {
   const positive = trader.pnlUsd >= 0;
+  const isTop = bestFirst && trader.rank <= 3;
   return (
-    <div className={`px-4 py-3.5 transition-colors ${selected ? "bg-blue-500/5" : ""}`}>
+    <div
+      className={`relative px-4 py-3.5 transition-colors duration-150 ${
+        selected ? "bg-blue-500/[0.07]" : ""
+      }`}
+    >
+      {isTop && (
+        <span
+          aria-hidden
+          className={`absolute left-0 top-2.5 bottom-2.5 w-[2px] rounded-full ${
+            trader.rank === 1
+              ? "bg-amber-400/70"
+              : trader.rank === 2
+              ? "bg-neutral-400/50"
+              : "bg-orange-500/50"
+          }`}
+        />
+      )}
       <div className="flex items-start gap-2.5">
         <input
           type="checkbox"
@@ -1420,7 +1538,11 @@ const TraderCard = memo(function TraderCard({
           <WalletCell trader={trader} history={history} onShare={onShare} />
         </div>
         <div className="shrink-0 text-right tabular-nums">
-          <div className={`text-base font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+          <div
+            className={`${isTop ? "text-lg" : "text-base"} font-bold ${
+              positive ? "text-emerald-400" : "text-rose-400"
+            }`}
+          >
             {formatUsd(trader.pnlUsd)}
           </div>
           <div className="flex items-center justify-end gap-1.5 text-[11px]">
@@ -1476,7 +1598,7 @@ const TraderCard = memo(function TraderCard({
 function CardField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
       <div className="mt-0.5 tabular-nums">{value}</div>
     </div>
   );

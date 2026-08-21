@@ -19,8 +19,9 @@ stays off — except `CRON_SECRET`, which the crons need to run at all.
 | `SENTRY_PROJECT` | optional | Same. |
 | `SENTRY_AUTH_TOKEN` | optional | Same. |
 | `NEXT_PUBLIC_SITE_URL` | recommended | Canonical URLs, OG tags, `robots.txt` and `sitemap.xml` fall back to `https://www.alphawallets.fun` (see `src/lib/siteUrl.ts`). |
+| `AUTH_SESSION_SECRET` | recommended | Nothing breaks: the session cookie falls back to a key derived from `OWNER_ACCESS_KEY` (`sha256("auth-session:" + key)`), exactly as `SCAN_SESSION_SECRET` does. Setting it explicitly means rotating the owner key doesn't sign every user out. **If `OWNER_ACCESS_KEY` is also unset, sign-in is unavailable** — `getSessionUser` returns null rather than throwing, so the app degrades to anonymous-only. |
 
-Generate `CRON_SECRET` with:
+Generate `CRON_SECRET` and `AUTH_SESSION_SECRET` with:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
@@ -43,9 +44,10 @@ in `src/lib/db/index.ts`.
 
 ## 2. Database migrations
 
-Three migrations were added. **All three are already applied to the live Supabase
-database** (verified against production on 2026-08-20: both columns, the table and
-both indexes are present).
+The hardening pass added three. **All three are already applied to the live
+Supabase database** (verified against production on 2026-08-20: both columns, the
+table and both indexes are present). The profiles-and-polish branch added two
+more — see the subsection below.
 
 | File | Change | Why |
 |---|---|---|
@@ -68,20 +70,53 @@ psql "$POSTGRES_URL_NON_POOLING" -f drizzle/0016_token_supply.sql
 as far as `0001`, so it would try to recreate the whole schema. Hand-write
 migrations and apply them directly, which is what the existing files do.
 
+### The profiles-and-polish branch added three
+
+All three are **applied to the live Supabase database** (2026-08-20). `main`
+references none of it, so `main` keeps working whether or not the branch merges.
+
+| File | Change | Why |
+|---|---|---|
+| `drizzle/0018_user_accounts.sql` | `users`, `auth_nonces`, `scan_results`; `scan_credits.user_id` + two indexes; `payment_intents.quantity` and `.user_id` | Entitlement lived only in a localStorage claim token, so clearing a browser lost a paid credit permanently. |
+| `drizzle/0017_qualified_flag.sql` | Added `qualified` + `disqualified_reason` to `wallet_tokens` and `wallet_positions` | **Superseded — do not apply to a fresh database.** Turned the quality bar from a write gate into a column so a per-wallet win rate could be computed. |
+| `drizzle/0019_revert_qualified_flag.sql` | Deletes sub-bar rows, then drops both columns and their indexes | Reverts `0017` at the owner's direction. `wallet_tokens` is a curated alpha-wallet database, not a log of every wallet a scan returned. |
+
+`0017` and `0019` cancel out, so **a fresh database should skip both** and apply
+only `0018`:
+
+```bash
+npm run db:migrate -- 0018_user_accounts
+```
+
+They are kept in the tree rather than deleted because `0017` ran against
+production and `0019` is what undid it; a fresh database that applied `0019`
+without `0017` would fail on the `DELETE ... WHERE qualified = false`.
+
+`scripts/apply-migration.mjs` now takes named files in order. It previously
+applied only the newest `.sql` and silently skipped everything else, which is
+wrong on any branch adding more than one.
+
+### The 2x / $1,000 rule is a write gate
+
+`meetsQualityBar` in `src/lib/quality.ts` decides what earns a row in
+`wallet_tokens`. It has never applied to the scan response — buyers see every
+trader the upstream provider returned. Do not conflate the two.
+
 `stats_snapshot` starts empty. That is fine: `/api/admin/stats` computes the
 figures inline whenever the snapshot is missing or older than ten minutes, and
 the cron fills it in within a minute of the first deploy.
 
 ## 3. Cron jobs
 
-Both are declared in `vercel.json` and register automatically on deploy. Vercel
-sends `Authorization: Bearer $CRON_SECRET`, which `src/lib/cronAuth.ts` checks in
-constant time.
+All three are declared in `vercel.json` and register automatically on deploy.
+Vercel sends `Authorization: Bearer $CRON_SECRET`, which `src/lib/cronAuth.ts`
+checks in constant time.
 
 | Path | Schedule | Purpose |
 |---|---|---|
 | `/api/cron/release-stale-credits` | `*/5 * * * *` | Releases any credit still holding `reserved_at` after 10 minutes. The safety net for every timeout, crash or deploy that interrupts a scan after the credit was reserved. |
 | `/api/cron/refresh-stats` | `* * * * *` | Recomputes the admin dashboard snapshot. Takes ~0.3s. |
+| `/api/cron/purge-scan-results` | `17 4 * * *` | Deletes stored scan results past their 7-day window (pinned ones are kept) and sign-in nonces older than 24h. Without it, retention is a promise nobody keeps and `auth_nonces` becomes an append-only log of every sign-in attempt. |
 
 Cron jobs on Vercel run against **production** only. Verify after deploying:
 
@@ -104,7 +139,18 @@ history and serialisation. If the plan ever changes, lower the budget to stay
 inside the platform ceiling — a scan that gets killed after the credit is
 reserved is the failure mode all of this exists to prevent.
 
-## 5. Post-deploy checklist
+## 5. Storage cost of 7-day retention
+
+Measured against production rather than estimated: a stored payload is **~930
+bytes of JSON per trader**, so a Top 500 receipt is **~450KB**. TOAST holds it out
+of line but compresses it poorly — the bulk is base58 addresses and floats.
+
+At a thousand scans a month that is ~450MB written monthly, but only about a
+week of it is ever resident: roughly **100MB against 8GB available**. Retention is
+therefore a product decision, not a capacity one. If seven days ever needs to
+become thirty, the database is not the reason to say no.
+
+## 6. Post-deploy checklist
 
 - [ ] `CRON_SECRET` set; both cron URLs return 200 with the bearer and 401 without it.
 - [ ] `/admin` loads and `ADMIN_PASSWORD` is set (without it the login route returns 503).
@@ -114,3 +160,13 @@ reserved is the failure mode all of this exists to prevent.
 - [ ] `select count(*) from scan_credits where reserved_at < now() - interval '10 minutes';`
       stays at 0 — anything else means the sweeper is not running.
 - [ ] `/robots.txt`, `/sitemap.xml` and the OG image resolve against the real domain.
+- [ ] `curl -s -H "authorization: Bearer $CRON_SECRET" https://<domain>/api/cron/purge-scan-results`
+      returns `{"results":N,"nonces":M}`, and without the bearer returns 401.
+- [ ] Sign in with a wallet that has paid before: `/profile` shows those purchases.
+      `select count(*) from scan_credits where user_id is not null;` goes up.
+- [ ] An unspent pre-existing claim token still redeems (`npm run test:credits`).
+- [ ] `npm run test:accounts` passes end to end against the deployed URL
+      (`BASE_URL=https://<domain> npm run test:accounts`). It creates and deletes
+      only `TESTONLY-` rows and a throwaway wallet, but it does run real scans.
+- [ ] `select count(*) from scan_results where expires_at < now() and not pinned;`
+      stays at 0 the day after deploy — anything else means the purge isn't running.

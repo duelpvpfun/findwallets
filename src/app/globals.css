@@ -45,6 +45,24 @@ body {
   background: rgba(59, 130, 246, 0.35);
 }
 
+/* One visible focus ring for every interactive element, rather than per-component
+   `focus:` classes that were only ever added to the inputs. `:focus-visible`
+   means a mouse click never draws it — only keyboard navigation does, which is
+   the only place it was missing. */
+:focus-visible {
+  outline: 2px solid rgb(96 165 250 / 0.85);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inputs already carry their own ring; a second outline on top of it reads as a
+   rendering bug. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -115,6 +133,117 @@ body {
   animation: successCheck 0.45s cubic-bezier(0.65, 0, 0.45, 1) 0.15s both;
 }
 
+
+/* ---------------------------------------------------------------------------
+   Motion primitives.
+
+   Everything below animates `transform` and `opacity` only, so nothing lands on
+   the compositor's critical path — this app renders 500 rows on phones and a
+   layout-thrashing animation is what turns a scan into a frozen tab.
+
+   Every one of them is disabled under `prefers-reduced-motion` at the bottom of
+   this file. Adding an animation here means adding it there too.
+--------------------------------------------------------------------------- */
+
+/* Numbers must not change width as they tick. A PNL column that reflows while
+   results stream in is the single clearest "this is amateur" tell. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* A row arriving: lifts into place rather than appearing. Deliberately short —
+   this fires up to 500 times. */
+@keyframes rowLand {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-row-land {
+  animation: rowLand 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The scanning metaphor, made literal: a conic gradient rotating behind the
+   empty state and the scan progress. One element, one transform, GPU-only. */
+@keyframes radarSweep {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.radar-sweep {
+  animation: radarSweep 3.6s linear infinite;
+  will-change: transform;
+}
+
+/* Concentric rings pushing outward under the sweep. Staggered by the callers. */
+@keyframes radarPing {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.radar-ping {
+  animation: radarPing 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+/* Progress bar that reads as "working" rather than "stalled" while we page an
+   upstream whose total we don't know yet. */
+@keyframes progressDrift {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-progress-drift {
+  animation: progressDrift 1.6s ease-in-out infinite;
+}
+
+/* Carousel panels: cross-fade with a short slide in the travel direction. */
+@keyframes panelInRight {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panelInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-panel-right {
+  animation: panelInRight 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-panel-left {
+  animation: panelInLeft 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .alpha-glow {
     animation: none;
@@ -131,5 +260,25 @@ body {
   .animate-success-check {
     animation: none;
     stroke-dasharray: none;
+  }
+
+  /* Reduced motion means no movement, not no information: every one of these
+     resolves to its finished state rather than disappearing. */
+  .animate-fade-in,
+  .animate-row-land,
+  .animate-panel-right,
+  .animate-panel-left {
+    animation: none;
+  }
+
+  .radar-sweep,
+  .radar-ping,
+  .animate-progress-drift {
+    animation: none;
+  }
+
+  .radar-ping {
+    opacity: 0.18;
+    transform: scale(1);
   }
 }
