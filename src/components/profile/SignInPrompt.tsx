@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAccount } from "@/components/AccountProvider";
+import { WALLET_FAMILY_LABELS, type WalletFamily } from "@/lib/auth/wallet";
 import ProfileShell from "./ProfileShell";
 
 /**
@@ -11,6 +12,8 @@ import ProfileShell from "./ProfileShell";
  * token gets their whole history the moment they sign in, because the payer
  * wallet was recorded on every confirmed payment.
  */
+const FAMILIES: WalletFamily[] = ["solana", "evm"];
+
 export default function SignInPrompt({ configured }: { configured: boolean }) {
   const { signIn, busy, error } = useAccount();
 
@@ -21,9 +24,9 @@ export default function SignInPrompt({ configured }: { configured: boolean }) {
           Connect your wallet
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-400">
-          Your purchases are attached to the wallet you paid from. Connect it and
-          every scan you have ever bought shows up here, including ones from
-          before accounts existed.
+          Solana or Ethereum, either works. Your purchases are attached to the
+          wallet you paid from, so connecting it shows every scan you have ever
+          bought, including ones from before accounts existed.
         </p>
 
         <ul className="mx-auto mt-5 max-w-sm space-y-2 text-left text-[13px] text-neutral-400">
@@ -33,13 +36,26 @@ export default function SignInPrompt({ configured }: { configured: boolean }) {
         </ul>
 
         {configured ? (
-          <button
-            onClick={() => void signIn()}
-            disabled={busy}
-            className="mt-6 w-full rounded-xl bg-neutral-100 px-4 py-3 text-sm font-semibold text-neutral-950 transition-colors hover:bg-white disabled:opacity-60 sm:w-auto sm:px-8"
-          >
-            {busy ? "Check your wallet…" : "Connect wallet"}
-          </button>
+          // Both offered outright rather than detected. This is the page whose
+          // whole job is to explain that an account exists, so saying which
+          // wallets can hold one is the point; signIn() sends anyone without
+          // that wallet to its install page.
+          <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
+            {FAMILIES.map((family, i) => (
+              <button
+                key={family}
+                onClick={() => void signIn(family)}
+                disabled={busy}
+                className={`w-full rounded-xl px-4 py-3 text-sm font-semibold transition-colors disabled:opacity-60 sm:w-auto sm:px-7 ${
+                  i === 0
+                    ? "bg-neutral-100 text-neutral-950 hover:bg-white"
+                    : "border border-neutral-700 text-neutral-100 hover:border-neutral-600 hover:bg-neutral-800"
+                }`}
+              >
+                {busy ? "Check your wallet…" : `Connect ${WALLET_FAMILY_LABELS[family]}`}
+              </button>
+            ))}
+          </div>
         ) : (
           <p className="mt-6 rounded-xl border border-amber-900/50 bg-amber-950/25 px-4 py-3 text-xs text-amber-200">
             Accounts aren&apos;t available on this deployment.

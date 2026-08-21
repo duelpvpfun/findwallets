@@ -21,6 +21,8 @@
     "db:migrate": "env -u DATABASE_URL node --env-file=.env.local scripts/apply-migration.mjs"
   },
   "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
     "@sentry/nextjs": "^10.70.0",
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",

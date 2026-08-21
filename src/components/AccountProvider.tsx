@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { buildSignInMessage } from "@/lib/auth/message";
+import { normalizeWallet, type WalletFamily } from "@/lib/auth/wallet";
 import { encodeSignature, getProvider, openWalletInstall, walletErrorMessage } from "@/lib/phantom";
+import { connectEvm, EVM_INSTALL_URL, getEvmProvider, signEvmMessage } from "@/lib/evmWallet";
 
 /**
  * The signed-in account, shared by the header, the paywall and the profile.
@@ -15,6 +17,10 @@ import { encodeSignature, getProvider, openWalletInstall, walletErrorMessage } f
  *
  * Signing in is never required. Everything here is additive: with no session the
  * app behaves exactly as it did before accounts existed.
+ *
+ * Both wallet families can hold an account. Solana signs with `signMessage` and
+ * Ed25519; EVM signs with `personal_sign` and is verified by secp256k1 recovery.
+ * Neither costs the user anything, and neither is a transaction.
  */
 
 export interface CreditBalance {
@@ -32,7 +38,11 @@ interface AccountState {
   /** A wallet prompt is open, or verification is in flight. */
   busy: boolean;
   error: string | null;
-  signIn: () => Promise<boolean>;
+  /** Omit the family to use whichever wallet is installed. */
+  signIn: (family?: WalletFamily) => Promise<boolean>;
+  /** Which wallet families are injected right now, read at call time because
+   * extensions inject late. */
+  detectWallets: () => WalletFamily[];
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
@@ -99,62 +109,114 @@ export default function AccountProvider({ children }: { children: React.ReactNod
     };
   }, []);
 
-  const signIn = useCallback(async (): Promise<boolean> => {
-    setError(null);
-    const provider = getProvider();
-    if (!provider) {
-      openWalletInstall();
-      setError("No Solana wallet found. Install Phantom, then try again.");
-      return false;
-    }
+  const detectWallets = useCallback((): WalletFamily[] => {
+    const found: WalletFamily[] = [];
+    if (getProvider()) found.push("solana");
+    if (getEvmProvider()) found.push("evm");
+    return found;
+  }, []);
 
-    setBusy(true);
-    try {
-      const connected = await provider.connect();
-      const wallet = connected.publicKey.toString();
+  const signIn = useCallback(
+    async (family?: WalletFamily): Promise<boolean> => {
+      setError(null);
+      const available = detectWallets();
+      const target = family ?? available[0];
 
-      const nonceRes = await fetch("/api/auth/nonce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet }),
-      });
-      const nonceData = await nonceRes.json();
-      if (!nonceRes.ok) {
-        setError(nonceData?.error ?? "Could not start sign-in.");
+      if (!target) {
+        openWalletInstall();
+        setError("No wallet found. Install Phantom or MetaMask, then try again.");
+        return false;
+      }
+      // Held in locals rather than re-fetched later, so the rest of this
+      // function needs no assertion that the provider is still there.
+      const solanaProvider = target === "solana" ? getProvider() : null;
+      const evmProvider = target === "evm" ? getEvmProvider() : null;
+      if (!solanaProvider && !evmProvider) {
+        if (target === "evm") window.open(EVM_INSTALL_URL, "_blank", "noopener,noreferrer");
+        else openWalletInstall();
+        setError(
+          target === "evm"
+            ? "No EVM wallet found. Install MetaMask, then try again."
+            : "No Solana wallet found. Install Phantom, then try again."
+        );
         return false;
       }
 
-      // Rebuilt locally from the same shared function the server verifies
-      // against, rather than signing whatever text the response happened to
-      // contain. `signMessage`, never `signAndSendTransaction`: this is a
-      // signature, and it costs zero lamports.
-      const message = buildSignInMessage(wallet, nonceData.nonce);
-      const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
-      const signature = await encodeSignature(signed.signature);
+      setBusy(true);
+      try {
+        // Connect, then normalize. The normalized address is what goes into the
+        // signed message, because that is what the server rebuilds it from: an
+        // EVM wallet that reports a checksummed address would otherwise sign a
+        // different string than the one being verified.
+        const reported = solanaProvider
+          ? (await solanaProvider.connect()).publicKey.toString()
+          : evmProvider
+          ? await connectEvm(evmProvider)
+          : null;
+        const wallet = reported ? normalizeWallet(reported) : null;
+        if (!wallet) {
+          setError("That wallet did not return a usable address.");
+          return false;
+        }
 
-      const verifyRes = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, nonce: nonceData.nonce, signature }),
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) {
-        setError(verifyData?.error ?? "Sign-in could not be verified.");
+        const nonceRes = await fetch("/api/auth/nonce", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet }),
+        });
+        const nonceData = await nonceRes.json();
+        if (!nonceRes.ok) {
+          setError(nonceData?.error ?? "Could not start sign-in.");
+          return false;
+        }
+
+        // Rebuilt locally from the same shared function the server verifies
+        // against, rather than signing whatever text the response happened to
+        // contain. A message-signing call in both cases, never a transaction:
+        // this costs the user nothing on either chain.
+        const message = buildSignInMessage(wallet, nonceData.nonce);
+        let signature: string | null = null;
+        if (solanaProvider) {
+          const signed = await solanaProvider.signMessage(
+            new TextEncoder().encode(message),
+            "utf8"
+          );
+          signature = await encodeSignature(signed.signature);
+        } else if (evmProvider) {
+          signature = await signEvmMessage(evmProvider, wallet, message);
+        }
+        if (!signature) {
+          setError("That wallet did not return a signature.");
+          return false;
+        }
+
+        const verifyRes = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet, nonce: nonceData.nonce, signature }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) {
+          setError(verifyData?.error ?? "Sign-in could not be verified.");
+          return false;
+        }
+
+        await refresh();
+        return true;
+      } catch (err) {
+        setError(
+          walletErrorMessage(
+            err,
+            "Sign-in was cancelled. Nothing was signed and nothing was spent."
+          ) ?? "Sign-in failed. Try again."
+        );
         return false;
+      } finally {
+        setBusy(false);
       }
-
-      await refresh();
-      return true;
-    } catch (err) {
-      setError(
-        walletErrorMessage(err, "Sign-in was cancelled. Nothing was signed and nothing was spent.") ??
-          "Sign-in failed. Try again."
-      );
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }, [refresh]);
+    },
+    [detectWallets, refresh]
+  );
 
   const signOut = useCallback(async () => {
     try {
@@ -174,11 +236,12 @@ export default function AccountProvider({ children }: { children: React.ReactNod
       busy,
       error,
       signIn,
+      detectWallets,
       signOut,
       refresh,
       clearError: () => setError(null),
     }),
-    [user, balance, loading, busy, error, signIn, signOut, refresh]
+    [user, balance, loading, busy, error, signIn, detectWallets, signOut, refresh]
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

@@ -3,6 +3,7 @@ import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./index";
 import { authNonces, scanCredits, scanResults, users } from "./schema";
+import type { WalletFamily } from "../auth/wallet";
 
 /** A challenge older than this is refused, used or not. */
 export const NONCE_TTL_MS = 5 * 60 * 1000;
@@ -99,15 +100,20 @@ export async function consumeAuthNonce(
  * history the moment they sign in. `user_id IS NULL` scopes it, so a credit
  * already attached to an account is never moved.
  */
-export async function upsertUserAndClaimHistory(wallet: string): Promise<AuthUser | null> {
+export async function upsertUserAndClaimHistory(
+  wallet: string,
+  walletChain: WalletFamily
+): Promise<AuthUser | null> {
   const db = getDb();
   if (!db) return null;
 
   const [row] = await db
     .insert(users)
-    .values({ wallet })
+    .values({ wallet, walletChain })
     .onConflictDoUpdate({
       target: users.wallet,
+      // walletChain is not updated: it is a property of the address, and the
+      // address is the conflict target, so it cannot have changed.
       set: { lastSeenAt: new Date() },
     })
     .returning({ id: users.id, wallet: users.wallet, displayName: users.displayName });
@@ -116,6 +122,13 @@ export async function upsertUserAndClaimHistory(wallet: string): Promise<AuthUse
 
   // Sequential, never Promise.all: postgres.js pipelines concurrent queries and
   // a fan-out wider than the pool hangs against Supabase's pooler.
+  //
+  // For an EVM account this matches nothing, and that is correct rather than a
+  // bug: payment is in SOL or USDC on Solana, so `payer_wallet` is always a
+  // base58 key. An EVM account therefore starts empty and fills from the
+  // purchases made while signed in (pay/init records the session on the intent).
+  // Anyone recovering an older anonymous purchase still signs in with the Solana
+  // wallet that paid for it.
   await db
     .update(scanCredits)
     .set({ userId: row.id })

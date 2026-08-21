@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "./AccountProvider";
+import { shortenWallet, WALLET_FAMILY_LABELS, walletFamily, type WalletFamily } from "@/lib/auth/wallet";
 
 /**
  * Header control: "Connect" when signed out, a truncated address with a dropdown
@@ -12,18 +13,31 @@ import { useAccount } from "./AccountProvider";
  * the prelude to signing a transaction, so the button says what it costs before
  * the wallet prompt appears rather than after.
  */
+const WALLET_CHOICES: Array<{ family: WalletFamily; label: string; hint: string; dot: string }> = [
+  { family: "solana", label: "Solana wallet", hint: "Phantom", dot: "bg-violet-400" },
+  { family: "evm", label: "Ethereum wallet", hint: "MetaMask", dot: "bg-blue-400" },
+];
+
 export default function WalletConnectButton() {
-  const { user, balance, loading, busy, error, signIn, signOut, clearError } = useAccount();
+  const { user, balance, loading, busy, error, signIn, detectWallets, signOut, clearError } =
+    useAccount();
   const [open, setOpen] = useState(false);
+  // Only shown when both a Solana and an EVM wallet are injected. With one
+  // installed there is nothing to choose, so the click signs in directly.
+  const [choosing, setChoosing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !choosing) return;
+    function dismiss() {
+      setOpen(false);
+      setChoosing(false);
+    }
     function onPointerDown(event: MouseEvent | TouchEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!menuRef.current?.contains(event.target as Node)) dismiss();
     }
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") dismiss();
     }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKey);
@@ -31,7 +45,7 @@ export default function WalletConnectButton() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, choosing]);
 
   // Nothing rendered until the session is known, so the button never flickers
   // from "Connect" to an address on every page load.
@@ -41,16 +55,44 @@ export default function WalletConnectButton() {
 
   if (!user) {
     return (
-      <div className="relative">
+      <div className="relative" ref={menuRef}>
         <button
-          onClick={() => void signIn()}
+          onClick={() => {
+            const found = detectWallets();
+            if (found.length > 1) setChoosing((v) => !v);
+            else void signIn(found[0]);
+          }}
           disabled={busy}
-          title="Free — signs a message, never a transaction"
+          title="Free. Signs a message, never a transaction."
           className="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-800 disabled:opacity-60"
         >
           <WalletIcon />
           {busy ? "Check your wallet…" : "Connect"}
         </button>
+        {choosing && !busy && (
+          <div
+            role="menu"
+            className="animate-fade-in absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/50"
+          >
+            <div className="border-b border-neutral-800/80 px-3.5 py-2 text-[10px] uppercase tracking-wider text-neutral-500">
+              Sign in with
+            </div>
+            {WALLET_CHOICES.map((choice) => (
+              <button
+                key={choice.family}
+                onClick={() => {
+                  setChoosing(false);
+                  void signIn(choice.family);
+                }}
+                className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-900"
+              >
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${choice.dot}`} />
+                {choice.label}
+                <span className="ml-auto text-[10px] text-neutral-500">{choice.hint}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {error && (
           <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-amber-900/60 bg-neutral-950 p-3 text-[11px] leading-relaxed text-amber-300 shadow-xl">
             {error}
@@ -66,7 +108,7 @@ export default function WalletConnectButton() {
     );
   }
 
-  const short = `${user.wallet.slice(0, 4)}…${user.wallet.slice(-4)}`;
+  const short = shortenWallet(user.wallet);
   const total = balance?.total ?? 0;
 
   return (
@@ -103,7 +145,9 @@ export default function WalletConnectButton() {
           className="animate-fade-in absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/50"
         >
           <div className="border-b border-neutral-800/80 px-3.5 py-3">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500">Wallet</div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+              {WALLET_FAMILY_LABELS[walletFamily(user.wallet) ?? "solana"]} wallet
+            </div>
             <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-300">
               {user.wallet}
             </div>
