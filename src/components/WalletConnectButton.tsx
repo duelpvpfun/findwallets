@@ -15,7 +15,7 @@ import { shortenWallet, WALLET_FAMILY_LABELS, walletFamily, type WalletFamily } 
  */
 const WALLET_CHOICES: Array<{ family: WalletFamily; label: string; hint: string; dot: string }> = [
   { family: "solana", label: "Solana wallet", hint: "Phantom", dot: "bg-violet-400" },
-  { family: "evm", label: "Ethereum wallet", hint: "MetaMask", dot: "bg-blue-400" },
+  { family: "evm", label: "EVM wallet", hint: "MetaMask", dot: "bg-blue-400" },
 ];
 
 export default function WalletConnectButton() {

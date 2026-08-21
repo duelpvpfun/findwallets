@@ -15,7 +15,7 @@ export type WalletFamily = "solana" | "evm";
 
 export const WALLET_FAMILY_LABELS: Record<WalletFamily, string> = {
   solana: "Solana",
-  evm: "Ethereum",
+  evm: "EVM",
 };
 
 export function walletFamily(wallet: string): WalletFamily | null {

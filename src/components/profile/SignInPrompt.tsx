@@ -24,7 +24,7 @@ export default function SignInPrompt({ configured }: { configured: boolean }) {
           Connect your wallet
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-400">
-          Solana or Ethereum, either works. Your purchases are attached to the
+          Solana or EVM, either works. Your purchases are attached to the
           wallet you paid from, so connecting it shows every scan you have ever
           bought, including ones from before accounts existed.
         </p>
