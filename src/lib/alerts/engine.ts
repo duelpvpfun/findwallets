@@ -5,6 +5,7 @@ import {
   countWindows,
   currentEpisode,
   fetchRoster,
+  fetchCallAnchorMessageId,
   fetchWindowBuyers,
   highestTierReached,
   insertEvents,
@@ -242,8 +243,14 @@ async function evaluateToken(
       exitedCount: buyers.filter((b) => b.exited).length,
       walletCount: buyers.length,
     });
-    const result = await sendAlertMessage(message, buildAlertButtons(CHAIN, tokenAddress));
-    await markDelivered(claimed.id, result.ok ? null : result.error);
+    // Thread under the first announced step of this call, if there is one.
+    const anchor = await fetchCallAnchorMessageId(CHAIN, tokenAddress, episode);
+    const result = await sendAlertMessage(
+      message,
+      buildAlertButtons(CHAIN, tokenAddress),
+      anchor
+    );
+    await markDelivered(claimed.id, result.ok ? null : result.error, result.messageId);
   }
 
   return { tokenAddress, tier: tier.wallets, wallets: buyers.length };

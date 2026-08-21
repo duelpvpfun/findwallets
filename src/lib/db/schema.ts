@@ -573,6 +573,10 @@ export const alertsFired = pgTable(
     superseded: boolean("superseded").notNull().default(false),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     deliveryError: text("delivery_error"),
+    /** Set on the first announced step of a call, so later escalations on the
+     * same token and episode reply to it rather than arriving as unrelated
+     * posts. See `drizzle/0023_alert_calls.sql`. */
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

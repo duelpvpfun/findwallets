@@ -262,12 +262,15 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
 export interface SendResult {
   ok: boolean;
   error: string | null;
+  /** Set on success. Stored so the next escalation on the same call can reply
+   * to this message instead of arriving as an unrelated post. */
+  messageId: number | null;
 }
 
 async function callTelegram(method: string, body: unknown): Promise<SendResult> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
-  if (!token || !chatId) return { ok: false, error: "telegram-not-configured" };
+  if (!token || !chatId) return { ok: false, error: "telegram-not-configured", messageId: null };
 
   try {
     const res = await fetch(`${API_BASE}/bot${token}/${method}`, {
@@ -280,18 +283,40 @@ async function callTelegram(method: string, body: unknown): Promise<SendResult> 
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      return { ok: false, error: `telegram-${res.status}: ${detail.slice(0, 200)}` };
+      return {
+        ok: false,
+        error: `telegram-${res.status}: ${detail.slice(0, 200)}`,
+        messageId: null,
+      };
     }
-    return { ok: true, error: null };
+    const payload = (await res.json().catch(() => null)) as
+      | { result?: { message_id?: number } }
+      | null;
+    return { ok: true, error: null, messageId: payload?.result?.message_id ?? null };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "telegram-failed" };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "telegram-failed",
+      messageId: null,
+    };
   }
 }
 
-/** Post an alert. Never throws — see the note at the top of this file. */
+/**
+ * Post an alert. Never throws — see the note at the top of this file.
+ *
+ * `replyToMessageId` threads an escalation under the first message of its own
+ * call, so 2 -> 3 -> 4 wallets on one token reads as one developing call rather
+ * than three separate tips on the same coin.
+ *
+ * `allow_sending_without_reply` matters: the anchor can be deleted, and a reply
+ * to a missing message is an error that would lose the whole alert over a
+ * cosmetic detail.
+ */
 export async function sendAlertMessage(
   text: string,
-  buttons: InlineButton[][]
+  buttons: InlineButton[][],
+  replyToMessageId?: number | null
 ): Promise<SendResult> {
   return callTelegram("sendMessage", {
     text,
@@ -299,6 +324,14 @@ export async function sendAlertMessage(
     // The alert is the message. A link preview card would push it off screen.
     link_preview_options: { is_disabled: true },
     reply_markup: { inline_keyboard: buttons },
+    ...(replyToMessageId
+      ? {
+          reply_parameters: {
+            message_id: replyToMessageId,
+            allow_sending_without_reply: true,
+          },
+        }
+      : {}),
   });
 }
 

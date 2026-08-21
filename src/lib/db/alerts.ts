@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   alertState,
@@ -434,12 +434,20 @@ export async function attachTokenSnapshot(
     .where(eq(alertsFired.id, alertId));
 }
 
-export async function markDelivered(alertId: number, error: string | null): Promise<void> {
+export async function markDelivered(
+  alertId: number,
+  error: string | null,
+  messageId?: number | null
+): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db
     .update(alertsFired)
-    .set({ deliveredAt: error ? null : new Date(), deliveryError: error })
+    .set({
+      deliveredAt: error ? null : new Date(),
+      deliveryError: error,
+      telegramMessageId: messageId ?? null,
+    })
     .where(eq(alertsFired.id, alertId));
 }
 
@@ -578,28 +586,10 @@ export async function secondsSinceLastEvent(chain: string): Promise<number | nul
  * masked (`abcd…wxyz`) and are not resolvable — see `maskAddress`. Anything
  * that needs a real address must read `alerts_fired.wallets` directly.
  */
-export interface AlertFeedRow {
-  id: number;
-  chain: string;
-  tokenAddress: string;
-  tokenSymbol: string | null;
-  tokenName: string | null;
-  tokenImageUrl: string | null;
-  tier: number;
-  windowSeconds: number;
-  spanSeconds: number;
-  walletCount: number;
-  exitedCount: number;
-  wallets: AlertWalletSnapshot[];
-  avgMultipleX: number | null;
-  avgPnlUsd: number | null;
-  totalBoughtUsd: number | null;
-  mcapAtAlertUsd: number | null;
-  athMcapUsd: number | null;
-  lastMcapUsd: number | null;
-  athAt: string | null;
-  samples: AlertMcapSample[];
-  createdAt: string;
+function num(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -621,6 +611,98 @@ function maskAddress(address: string): string {
   return address.length <= 12 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
+/** One escalation step inside a call. */
+export interface AlertStep {
+  tier: number;
+  walletCount: number;
+  spanSeconds: number;
+  windowSeconds: number;
+  mcapUsd: number | null;
+  at: string;
+}
+
+/**
+ * ONE CALL: a token, an episode, and every escalation step in it.
+ *
+ * A token that goes 2 -> 3 -> 4 wallets writes three `alerts_fired` rows,
+ * because each step has to fire exactly once and each has its own entry market
+ * cap. But it is one call, and showing it as three cards would triple-count our
+ * own record and read as three separate tips on the same coin.
+ *
+ * So the feed groups by `(token, episode)`. The numbers are chosen to describe
+ * the call honestly:
+ *
+ *  - `entryMcapUsd` comes from the FIRST step. That is the cap when we called
+ *    it, and it is the only defensible denominator for "how much did this call
+ *    make" — crediting ourselves with the 4-wallet entry after announcing at 2
+ *    would be marking our own homework.
+ *  - the roster, wallet count and averages come from the HIGHEST step, which is
+ *    a superset of the earlier ones.
+ *  - `athMcapUsd` is shared: every step of a token is sampled by the same cron
+ *    pass, so the peak is a property of the token, not of the step.
+ *
+ * The per-tier scoreboard still reads the ungrouped rows, because "would you
+ * have done better entering on the 2-wallet alert or the 4-wallet one" is a
+ * real question and only the individual steps can answer it.
+ */
+export interface AlertFeedRow {
+  id: number;
+  chain: string;
+  tokenAddress: string;
+  tokenSymbol: string | null;
+  tokenName: string | null;
+  tokenImageUrl: string | null;
+  episode: number;
+  /** The step we announced first, and the highest reached. */
+  firstTier: number;
+  peakTier: number;
+  steps: AlertStep[];
+  /** From the highest step. */
+  tier: number;
+  windowSeconds: number;
+  spanSeconds: number;
+  walletCount: number;
+  exitedCount: number;
+  wallets: AlertWalletSnapshot[];
+  avgMultipleX: number | null;
+  avgPnlUsd: number | null;
+  totalBoughtUsd: number | null;
+  /** From the FIRST step — where we called it. */
+  mcapAtAlertUsd: number | null;
+  athMcapUsd: number | null;
+  lastMcapUsd: number | null;
+  athAt: string | null;
+  samples: AlertMcapSample[];
+  createdAt: string;
+}
+
+interface CallRow extends Record<string, unknown> {
+  id: number;
+  chain: string;
+  token_address: string;
+  token_symbol: string | null;
+  token_name: string | null;
+  token_image_url: string | null;
+  episode: number;
+  first_tier: number;
+  peak_tier: number;
+  steps: AlertStep[] | null;
+  window_seconds: number;
+  span_seconds: number;
+  wallet_count: number;
+  exited_count: number;
+  wallets: AlertWalletSnapshot[] | null;
+  avg_multiple_x: number | null;
+  avg_pnl_usd: number | null;
+  total_bought_usd: number | null;
+  entry_mcap_usd: number | null;
+  ath_mcap_usd: number | null;
+  last_mcap_usd: number | null;
+  ath_at: string | null;
+  samples: AlertMcapSample[] | null;
+  created_at: string;
+}
+
 export async function fetchAlertFeed(
   chain: string,
   limit = 50,
@@ -629,48 +711,116 @@ export async function fetchAlertFeed(
   const db = getDb();
   if (!db) return [];
 
-  const rows = await db
-    .select({
-      id: alertsFired.id,
-      chain: alertsFired.chain,
-      tokenAddress: alertsFired.tokenAddress,
-      tokenSymbol: alertsFired.tokenSymbol,
-      tokenName: alertsFired.tokenName,
-      tokenImageUrl: alertsFired.tokenImageUrl,
-      tier: alertsFired.tier,
-      windowSeconds: alertsFired.windowSeconds,
-      spanSeconds: alertsFired.spanSeconds,
-      walletCount: alertsFired.walletCount,
-      exitedCount: alertsFired.exitedCount,
-      wallets: alertsFired.wallets,
-      avgMultipleX: alertsFired.avgMultipleX,
-      avgPnlUsd: alertsFired.avgPnlUsd,
-      totalBoughtUsd: alertsFired.totalBoughtUsd,
-      mcapAtAlertUsd: alertsFired.mcapAtAlertUsd,
-      athMcapUsd: alertsFired.athMcapUsd,
-      lastMcapUsd: alertsFired.lastMcapUsd,
-      athAt: alertsFired.athAt,
-      samples: alertsFired.samples,
-      createdAt: alertsFired.createdAt,
-    })
+  // `(array_agg(x order by tier desc))[1]` is "the value from the highest
+  // step"; `asc` is "from the first step". Doing this in SQL rather than
+  // grouping in JS is what keeps `limit` meaning "N calls" — grouping after a
+  // limit would split a call across a page boundary and show half of it.
+  const rows = await db.execute<CallRow>(sql`
+    select
+      min(${alertsFired.id})::int as id,
+      ${alertsFired.chain} as chain,
+      ${alertsFired.tokenAddress} as token_address,
+      ${alertsFired.episode} as episode,
+      min(${alertsFired.tier})::int as first_tier,
+      max(${alertsFired.tier})::int as peak_tier,
+      min(${alertsFired.createdAt}) as created_at,
+
+      (array_agg(${alertsFired.tokenSymbol} order by ${alertsFired.tier} desc))[1] as token_symbol,
+      (array_agg(${alertsFired.tokenName} order by ${alertsFired.tier} desc))[1] as token_name,
+      (array_agg(${alertsFired.tokenImageUrl} order by ${alertsFired.tier} desc))[1] as token_image_url,
+      (array_agg(${alertsFired.windowSeconds} order by ${alertsFired.tier} desc))[1]::int as window_seconds,
+      (array_agg(${alertsFired.spanSeconds} order by ${alertsFired.tier} desc))[1]::int as span_seconds,
+      (array_agg(${alertsFired.walletCount} order by ${alertsFired.tier} desc))[1]::int as wallet_count,
+      (array_agg(${alertsFired.exitedCount} order by ${alertsFired.tier} desc))[1]::int as exited_count,
+      (array_agg(${alertsFired.wallets} order by ${alertsFired.tier} desc))[1] as wallets,
+      (array_agg(${alertsFired.avgMultipleX} order by ${alertsFired.tier} desc))[1] as avg_multiple_x,
+      (array_agg(${alertsFired.avgPnlUsd} order by ${alertsFired.tier} desc))[1] as avg_pnl_usd,
+      (array_agg(${alertsFired.totalBoughtUsd} order by ${alertsFired.tier} desc))[1] as total_bought_usd,
+      (array_agg(${alertsFired.samples} order by ${alertsFired.tier} desc))[1] as samples,
+
+      -- Entry is the FIRST step's cap: where we actually called it.
+      (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry_mcap_usd,
+
+      -- Peak is a property of the token, shared by every step of the call.
+      max(${alertsFired.athMcapUsd}) as ath_mcap_usd,
+      max(${alertsFired.lastMcapUsd}) as last_mcap_usd,
+      max(${alertsFired.athAt}) as ath_at,
+
+      jsonb_agg(
+        jsonb_build_object(
+          'tier', ${alertsFired.tier},
+          'walletCount', ${alertsFired.walletCount},
+          'spanSeconds', ${alertsFired.spanSeconds},
+          'windowSeconds', ${alertsFired.windowSeconds},
+          'mcapUsd', ${alertsFired.mcapAtAlertUsd},
+          'at', ${alertsFired.createdAt}
+        ) order by ${alertsFired.tier}
+      ) as steps
+    from ${alertsFired}
+    where ${alertsFired.chain} = ${chain}
+      and ${alertsFired.superseded} = false
+    group by ${alertsFired.chain}, ${alertsFired.tokenAddress}, ${alertsFired.episode}
+    ${beforeId ? sql`having min(${alertsFired.id}) < ${beforeId}` : sql``}
+    order by min(${alertsFired.id}) desc
+    limit ${Math.min(limit, 100)}
+  `);
+
+  return rows.map((r) => ({
+    id: Number(r.id),
+    chain: r.chain,
+    tokenAddress: r.token_address,
+    tokenSymbol: r.token_symbol,
+    tokenName: r.token_name,
+    tokenImageUrl: r.token_image_url,
+    episode: Number(r.episode),
+    firstTier: Number(r.first_tier),
+    peakTier: Number(r.peak_tier),
+    steps: r.steps ?? [],
+    tier: Number(r.peak_tier),
+    windowSeconds: Number(r.window_seconds),
+    spanSeconds: Number(r.span_seconds),
+    walletCount: Number(r.wallet_count),
+    exitedCount: Number(r.exited_count),
+    // Masked here, at the read that serves the public endpoint.
+    wallets: (r.wallets ?? []).map((w) => ({ ...w, address: maskAddress(w.address) })),
+    avgMultipleX: num(r.avg_multiple_x),
+    avgPnlUsd: num(r.avg_pnl_usd),
+    totalBoughtUsd: num(r.total_bought_usd),
+    mcapAtAlertUsd: num(r.entry_mcap_usd),
+    athMcapUsd: num(r.ath_mcap_usd),
+    lastMcapUsd: num(r.last_mcap_usd),
+    athAt: r.ath_at ? new Date(r.ath_at).toISOString() : null,
+    samples: r.samples ?? [],
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
+/**
+ * The Telegram message id of the first announced step of a call, so a later
+ * escalation replies to it instead of arriving as an unrelated post.
+ */
+export async function fetchCallAnchorMessageId(
+  chain: string,
+  tokenAddress: string,
+  episode: number
+): Promise<number | null> {
+  const db = getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({ messageId: alertsFired.telegramMessageId })
     .from(alertsFired)
     .where(
       and(
         eq(alertsFired.chain, chain),
+        eq(alertsFired.tokenAddress, tokenAddress),
+        eq(alertsFired.episode, episode),
         eq(alertsFired.superseded, false),
-        beforeId ? lt(alertsFired.id, beforeId) : undefined
+        isNotNull(alertsFired.telegramMessageId)
       )
     )
-    .orderBy(desc(alertsFired.id))
-    .limit(Math.min(limit, 100));
-
-  return rows.map((r) => ({
-    ...r,
-    wallets: (r.wallets ?? []).map((w) => ({ ...w, address: maskAddress(w.address) })),
-    samples: r.samples ?? [],
-    athAt: r.athAt ? r.athAt.toISOString() : null,
-    createdAt: r.createdAt.toISOString(),
-  }));
+    .orderBy(asc(alertsFired.tier))
+    .limit(1);
+  return row?.messageId ?? null;
 }
 
 /**
@@ -696,12 +846,6 @@ export interface TierScore {
   hitRate2x: number | null;
   /** Share still above where it fired. */
   greenRate: number | null;
-}
-
-function num(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
 }
 
 export async function fetchTierScoreboard(chain: string, days = 30): Promise<TierScore[]> {

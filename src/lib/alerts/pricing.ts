@@ -19,23 +19,42 @@ import { fetchSolPriceUsd, fetchTokenMeta, fetchTokenSupply } from "../solanaTra
  * before it gives up, and why giving up is logged loudly.
  */
 
-const SOL_PRICE_TTL_MS = 120_000;
+/**
+ * How long a SOL price is good enough to size a trade against a $50 floor.
+ *
+ * Ten minutes, not two. This is called on EVERY webhook delivery, and the
+ * module cache is per serverless instance: at a two-minute TTL a handful of
+ * warm instances would spend ~100k Solana Tracker requests a month re-reading a
+ * number that moves fractions of a percent — over half the plan, to decide
+ * whether a $52 buy is really $51.
+ */
+const SOL_PRICE_TTL_MS = 10 * 60 * 1000;
+
+/** Wrapped SOL, which doubles as the row the shared price is cached on. */
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 interface CachedPrice {
   value: number;
   at: number;
 }
 
-// Module scope: a warm serverless instance handles many deliveries, and the
-// SOL price does not move enough in two minutes to matter to a $50 floor.
+// Per-instance, and deliberately backed by the database below: a cold start
+// would otherwise pay for its own first read, and cold starts are frequent.
 let cachedSolPrice: CachedPrice | null = null;
 
 /**
- * SOL/USD, at most one upstream call every two minutes per warm instance.
+ * SOL/USD, cheaply.
  *
- * Falls back to the most recent price any scan recorded before it returns 0.
- * `tokens.native_price_usd` is written on every scan, so in practice this is
- * hours old at worst — far better than pricing every trade at nothing.
+ * Three layers, cheapest first: module memory, then the shared `tokens` row for
+ * WSOL, then upstream. The middle layer is what makes the cost independent of
+ * how many serverless instances happen to be warm — they all read and refresh
+ * the same row, so the whole fleet costs about six upstream requests an hour
+ * rather than six per instance.
+ *
+ * Returns `stale: true` when it fell back to a value it could not refresh. The
+ * caller must treat that as an outage worth logging: if this ever returned 0,
+ * every SOL-quoted buy would price at nothing, fall under the floor, and the
+ * system would report a very quiet day instead of a broken one.
  */
 export async function solPriceUsd(): Promise<{ price: number; stale: boolean }> {
   const now = Date.now();
@@ -43,20 +62,36 @@ export async function solPriceUsd(): Promise<{ price: number; stale: boolean }> 
     return { price: cachedSolPrice.value, stale: false };
   }
 
+  const db = getDb();
+
+  // Shared cache. One indexed read, and we are already making DB calls on this
+  // path, so it costs nothing extra in round trips that matter.
+  if (db) {
+    const [row] = await db
+      .select({ price: tokens.priceUsd, at: tokens.lastScannedAt })
+      .from(tokens)
+      .where(and(eq(tokens.chain, "solana"), eq(tokens.address, WSOL_MINT)))
+      .limit(1);
+    if (row?.price && row.price > 0 && now - row.at.getTime() < SOL_PRICE_TTL_MS) {
+      cachedSolPrice = { value: row.price, at: now };
+      return { price: row.price, stale: false };
+    }
+  }
+
   try {
     const price = await fetchSolPriceUsd();
     if (price > 0) {
       cachedSolPrice = { value: price, at: now };
+      await persistSolPrice(price);
       return { price, stale: false };
     }
   } catch (err) {
     console.error("[alerts/pricing] SOL price fetch failed:", err);
   }
 
-  // A previously good value beats the database, and both beat zero.
+  // A previously good value beats anything else, and both beat zero.
   if (cachedSolPrice) return { price: cachedSolPrice.value, stale: true };
 
-  const db = getDb();
   if (db) {
     const [row] = await db
       .select({ price: tokens.nativePriceUsd })
@@ -72,6 +107,32 @@ export async function solPriceUsd(): Promise<{ price: number; stale: boolean }> 
 
   console.error("[alerts/pricing] no SOL price available from any source");
   return { price: 0, stale: true };
+}
+
+/** Write the shared price back. Best-effort: a failure here costs one extra
+ * upstream read later, never the delivery being processed. */
+async function persistSolPrice(price: number): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  try {
+    await db
+      .insert(tokens)
+      .values({
+        chain: "solana",
+        address: WSOL_MINT,
+        symbol: "SOL",
+        name: "Wrapped SOL",
+        priceUsd: price,
+        nativePriceUsd: price,
+        scanCount: 0,
+      })
+      .onConflictDoUpdate({
+        target: [tokens.chain, tokens.address],
+        set: { priceUsd: price, nativePriceUsd: price, lastScannedAt: new Date() },
+      });
+  } catch (err) {
+    console.error("[alerts/pricing] could not cache SOL price:", err);
+  }
 }
 
 export interface TokenSnapshot {

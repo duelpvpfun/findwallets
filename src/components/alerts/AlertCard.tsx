@@ -113,8 +113,19 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
             TIER_STYLES[tier?.kind ?? "burst"]
           }`}
         >
-          {alert.tier} in {humanSpan(alert.windowSeconds)}
+          {alert.peakTier} in {humanSpan(alert.windowSeconds)}
         </span>
+
+        {/* One call, not one card per escalation. The chain of steps shows how
+            it developed, and which step we actually called it on. */}
+        {alert.steps.length > 1 ? (
+          <span
+            className="tnum text-[11px] text-neutral-500"
+            title={`Called at ${alert.firstTier} wallets, escalated to ${alert.peakTier}`}
+          >
+            {alert.steps.map((s) => s.tier).join(" → ")}
+          </span>
+        ) : null}
 
         {alert.tokenImageUrl ? (
           /* Arbitrary remote token art from a live feed. Running every memecoin
@@ -202,7 +213,10 @@ export default function AlertCard({ alert }: { alert: AlertFeedRow }) {
       {/* Performance. `peak` is why the whole hourly tracker exists, so it gets
           the emphasis; `now` is the honest counterweight beside it. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-neutral-800/60 bg-neutral-950/50 px-3 py-2.5">
-        <Figure label="At alert" value={base ? formatUsd(base) : "—"} />
+        <Figure
+          label={alert.steps.length > 1 ? `Called (${alert.firstTier}w)` : "At alert"}
+          value={base ? formatUsd(base) : "—"}
+        />
         <Figure
           label="Peak"
           value={alert.athMcapUsd ? formatUsd(alert.athMcapUsd) : "—"}

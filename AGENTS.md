@@ -222,6 +222,14 @@ supply change cannot masquerade as a market-cap move. `greatest()` means the pea
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
+**One token escalating 2 -> 3 -> 4 is ONE call, and the feed groups it as one.** Each step still
+writes its own `alerts_fired` row — that is what makes each fire exactly once, and what lets the
+tier scoreboard answer "would you have done better entering on the 2-wallet alert or the 4-wallet
+one". But `fetchAlertFeed` groups by `(token, episode)`: **entry market cap comes from the FIRST
+step** (crediting ourselves with the 4-wallet entry after announcing at 2 would be marking our own
+homework), the roster and averages come from the highest, and the peak is shared because it is a
+property of the token. In Telegram each escalation replies to the first message of its own call.
+
 **`/alerts` is owner-only until `ALERTS_PUBLIC=1`.** The page renders exactly as it will in
 public and is reached with the `/admin` cookie, so what gets reviewed is the real page rather than
 a preview of it, and shipping is an env var rather than a diff. **The gate covers the page, the
