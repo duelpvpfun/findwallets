@@ -109,7 +109,14 @@ export default function FeedTerminal({ initialAlerts, trackedWallets, podiumSeed
 
   useEffect(() => {
     if (!live) return;
-    const timer = setInterval(refresh, POLL_MS);
+    // A backgrounded tab is nobody watching. Browsers throttle timers in hidden
+    // tabs but they do not stop them, and a few thousand abandoned tabs polling
+    // forever is real load serving zero readers. The visibility handler below
+    // refreshes immediately on return, so nothing is stale when they come back.
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      void refresh();
+    }, POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };

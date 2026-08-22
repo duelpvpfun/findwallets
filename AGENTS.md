@@ -367,6 +367,28 @@ on the next tick and a growing peak is re-ranked. A second endpoint would have p
 sequential query on a hot path for data the page already has. The 24h window is re-checked on the
 client, or a tab left open overnight would keep yesterday's winner up forever.
 
+**`/api/feed` is cached in two layers, and neither is optional at scale.** Every viewer polls it
+every eight seconds and every one of them gets byte-identical data, so uncached, 1,000 concurrent
+readers are 125 requests a second each running a 120ms grouped query against a pool of three - and a
+fan-out wider than that pool does not queue, the transaction pooler stops answering entirely.
+
+- **`CDN-Cache-Control` and `Vercel-CDN-Cache-Control`, not `Cache-Control`.** Next stamps
+  `Cache-Control: no-store` on every dynamic route handler and silently overwrites whatever you set;
+  those two survive, and on Vercel they are what actually controls the edge. Confirmed by reading
+  the headers off a production build - `next dev` reports `no-store` either way, so testing it in
+  dev proves nothing. The route therefore carries **no** `dynamic`/`revalidate` segment config: both
+  re-impose `no-store`. It is dynamic regardless because it reads `request.nextUrl`.
+- **The five-second in-process memo is the second layer**, because the first is somebody else's
+  infrastructure and is most likely to be cold on some node exactly when a crowd arrives. It is
+  keyed by `(no before, resolved limit)` - keying on `before` alone would serve a `?limit=5` caller
+  the 60-row payload the pollers put there, which is a wrong answer rather than a slow one.
+- **Cacheable only when `alertsArePublic()`.** While gated, the response depends on the /admin
+  cookie and a shared cache cannot see that difference: one admin request would be stored and served
+  to everyone. The private path is explicitly `no-store`, and a failed read is never cached - a
+  cached empty feed outlives the outage that caused it.
+- The client skips the poll entirely when `document.hidden`. Browsers throttle timers in background
+  tabs but do not stop them, and abandoned tabs are load with no reader.
+
 **The public feed masks wallet addresses, and that is a business boundary.** The curated list of
 proven wallets IS the paid product — it is what a scan sells and what every paid upstream call in
 the database went into assembling. `fetchAlertFeed` truncates to `abcd…wxyz` at the read that
