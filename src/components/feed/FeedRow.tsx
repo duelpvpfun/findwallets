@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { formatMultiple, formatUsd } from "@/lib/format";
-import { dexScreenerUrl, tradeLinksFor } from "@/lib/alerts/config";
+import { CHART_VENUE, trackedLinkUrl, tradeLinksFor } from "@/lib/alerts/config";
 import type { AlertFeedRow } from "@/lib/db/alerts";
 import type { Chain } from "@/lib/types";
 import McapSparkline from "./McapSparkline";
@@ -207,12 +207,22 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
         {/* One click to a buy without opening the row. The real marks, served
             from `public/venues/` — self-hosted rather than hotlinked, so no
             referrer leaks on every row and nobody else's deploy can blank them.
-            `alt` is empty because the accessible name is on the anchor. */}
+            `alt` is empty because the accessible name is on the anchor.
+
+            Routed through `/api/go`, which counts the tap and resolves the
+            venue URL server-side. That is also the only way these links can
+            carry a referral code at all: the codes are private env vars, so a
+            client component can never render anything but the plain URL. */}
         <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
           {links.map((link) => (
             <a
               key={link.name}
-              href={link.plain(alert.chain as Chain, alert.tokenAddress)}
+              href={trackedLinkUrl({
+                venue: link.slug,
+                chain: alert.chain as Chain,
+                address: alert.tokenAddress,
+                source: "feed",
+              })}
               target="_blank"
               rel="noopener noreferrer"
               title={`Buy on ${link.name}`}
@@ -329,7 +339,12 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             {links.map((link) => (
               <a
                 key={link.name}
-                href={link.plain(alert.chain as Chain, alert.tokenAddress)}
+                href={trackedLinkUrl({
+                  venue: link.slug,
+                  chain: alert.chain as Chain,
+                  address: alert.tokenAddress,
+                  source: "feed",
+                })}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"
@@ -338,7 +353,12 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
               </a>
             ))}
             <a
-              href={dexScreenerUrl(alert.chain as Chain, alert.tokenAddress)}
+              href={trackedLinkUrl({
+                venue: CHART_VENUE,
+                chain: alert.chain as Chain,
+                address: alert.tokenAddress,
+                source: "feed",
+              })}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:text-neutral-50"

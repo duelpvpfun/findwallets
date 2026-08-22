@@ -232,15 +232,21 @@ export const MIN_SCOREBOARD_MCAP_USD = 10_000;
 /**
  * The pinned leaderboard: how far back it looks, and how many calls it shows.
  *
- * Rolling 24 hours, refreshed hourly. A pin is the first thing a stranger who
- * opens the channel reads, so it has to answer "does this work" with calls they
- * could still check on a chart — an all-time top 3 would sit on three coins
- * from weeks ago and read as a screenshot rather than a live record.
+ * **The last hour, refreshed hourly — the owner's call, 2026-08-22.** It shipped
+ * on a rolling 24 hours, which made it the same three calls as the 2pm recap
+ * for most of the day: the pin is edited silently in place, so a reader saw one
+ * board that never appeared to change and a daily post that told them what they
+ * had already read. Two messages, one fact.
+ *
+ * An hour restores the division of labour. The pin is what is happening now and
+ * earns its refresh; the recap is the day, and is the only place a 24-hour
+ * ranking appears. A quiet hour says so rather than reaching back for an older
+ * call — see `buildLeaderboardMessage`, which never widens its own window.
  *
  * Three, because the pin has to stay short enough that Telegram does not
  * collapse it behind "show more" in the header preview.
  */
-export const PIN_WINDOW_HOURS = envNumber("ALERTS_PIN_WINDOW_HOURS", 24);
+export const PIN_WINDOW_HOURS = envNumber("ALERTS_PIN_WINDOW_HOURS", 1);
 export const PIN_TOP_N = envNumber("ALERTS_PIN_TOP_N", 3);
 
 /**
@@ -403,6 +409,53 @@ const GMGN_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base
 /** The buttons for one chain, in display order. */
 export function tradeLinksFor(chain: Chain): TradeLink[] {
   return TRADE_LINKS.filter((link) => link.chains.includes(chain));
+}
+
+/**
+ * Where a tap came from. Short because it rides in the query string of a
+ * Telegram button, and those are read by people who hold the message down.
+ */
+export const CLICK_SOURCES = ["tg", "feed", "scan"] as const;
+export type ClickSource = (typeof CLICK_SOURCES)[number];
+
+/** The chart button's slug in the click ledger. Not a `TradeLink` — Dexscreener
+ * is not a venue we send buyers to — but it sits beside them and the question
+ * "did they want to buy or just to look" is the one worth answering. */
+export const CHART_VENUE = "chart";
+
+/**
+ * A buy link routed through our own redirect, so the tap is counted.
+ *
+ * Only the venue slug, the chain and the address travel in the URL: the
+ * destination is rebuilt server-side in `/api/go` from `TRADE_LINKS`, never
+ * taken from the request, so this cannot be turned into an open redirect by
+ * editing the query string.
+ *
+ * **It also buys the site its referral codes back.** Referral codes are private
+ * env vars, so a client component can only ever render `link.plain(...)` — every
+ * tap from the feed was earning nothing. Resolving the destination on the server
+ * fixes that for free.
+ *
+ * `absolute` is for Telegram, which needs a full origin in a button URL.
+ */
+export function trackedLinkUrl(input: {
+  venue: string;
+  chain: Chain;
+  address: string;
+  source: ClickSource;
+  /** Pass `SITE_URL` from the caller. This module is imported by client
+   * components, and pulling the origin in here would ship it into the bundle
+   * for the one caller that needs it. */
+  origin?: string | URL;
+}): string {
+  const params = new URLSearchParams({
+    v: input.venue,
+    c: input.chain,
+    t: input.address,
+    s: input.source,
+  });
+  const path = `/api/go?${params.toString()}`;
+  return input.origin ? new URL(path, input.origin).toString() : path;
 }
 
 const DEXSCREENER_SLUG: Record<Chain, string> = { solana: "solana", bsc: "bsc", base: "base" };

@@ -5,7 +5,9 @@ import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/admin
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 import TierScoreboard from "@/components/feed/TierScoreboard";
 import CallCarousel from "@/components/admin/CallCarousel";
+import ClickLedger from "@/components/admin/ClickLedger";
 import type { AlertCut, CallCard, CallScore, SuppressionRow, TierScore } from "@/lib/db/alerts";
+import type { LinkClickStats } from "@/lib/db/linkClicks";
 
 const REFRESH_MS = 60_000;
 
@@ -319,6 +321,7 @@ export default function AdminDashboard({
   alertCuts,
   alertSuppression,
   callCards,
+  linkClicks,
 }: {
   initial: AdminStats;
   alertScores: TierScore[];
@@ -326,6 +329,7 @@ export default function AdminDashboard({
   alertCuts: AlertCut[];
   alertSuppression: SuppressionRow[];
   callCards: CallCard[];
+  linkClicks: LinkClickStats;
 }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
@@ -495,6 +499,12 @@ export default function AdminDashboard({
           behind those numbers actually looked like. */}
       <div className="mt-4">
         <CallCarousel calls={callCards} now={now} />
+      </div>
+
+      {/* Under the calls, because it is the same question asked one step later:
+          the cards say what a call did, this says whether anybody acted on it. */}
+      <div className="mt-4">
+        <ClickLedger stats={linkClicks} />
       </div>
 
       <section className="mt-8">

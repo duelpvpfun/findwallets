@@ -650,6 +650,44 @@ export const botMessages = pgTable("bot_messages", {
  * token instead of once per read halves the cost of every peak check — and on a
  * ~30-call-a-minute free tier, halving the cost doubles the rotation.
  */
+/**
+ * Every tap on a buy link, from the channel or from the site.
+ *
+ * The alerts exist partly to send a reader to a venue, and nothing recorded
+ * whether anybody went. A venue's own referral dashboard cannot answer it
+ * either: it sees the clicks that converted on one venue and nothing about the
+ * rest, so "Telegram or the site" and "which venue do readers actually use"
+ * were both unanswerable.
+ *
+ * Written only by `/api/go`, which is the only path that sends a reader
+ * outward. The destination there is always rebuilt server-side from the venue
+ * slug, never taken from the request, so this can never become an open redirect.
+ */
+export const linkClicks = pgTable(
+  "link_clicks",
+  {
+    id: serial("id").primaryKey(),
+    /** "tg" for a channel button, "feed" for the live feed, "scan" for a
+     * results page. Short because it rides in a Telegram button's query string. */
+    source: text("source").notNull(),
+    /** `TradeLink.slug`, or "chart" for the Dexscreener button beside them. */
+    venue: text("venue").notNull(),
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    /** Salted digest of IP + user agent, exactly as `site_visits` does it: it
+     * separates forty taps from one person from forty people, and never holds
+     * the address itself. */
+    visitorHash: text("visitor_hash"),
+    country: text("country"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("link_clicks_created_at_idx").on(t.createdAt),
+    index("link_clicks_venue_created_idx").on(t.venue, t.createdAt),
+    index("link_clicks_token_created_idx").on(t.chain, t.tokenAddress, t.createdAt),
+  ]
+);
+
 export const tokenPools = pgTable(
   "token_pools",
   {

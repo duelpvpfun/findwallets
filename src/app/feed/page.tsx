@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import WalletConnectButton from "@/components/WalletConnectButton";
+import SiteNav from "@/components/SiteNav";
 import FeedTerminal from "@/components/feed/FeedTerminal";
 import { fetchAlertFeed, fetchAlertSummary, fetchCallCards } from "@/lib/db/alerts";
 import { alertsArePublic } from "@/lib/alerts/config";
@@ -59,29 +60,55 @@ export default async function FeedPage() {
       </div>
 
       <header className="relative border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/" className="mr-auto flex items-center gap-3 rounded-lg transition-opacity hover:opacity-80">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3 sm:px-6">
+          <Link
+            href="/"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg transition-opacity hover:opacity-80"
+          >
             <span className="alpha-glow select-none text-2xl leading-none font-semibold text-white">
               α
             </span>
-            <div>
+            {/* Same rule as the scan page: on a phone the wordmark yields to the
+                centred tabs, and the α carries the brand on its own. */}
+            <div className="hidden sm:block">
               <div className="text-sm font-semibold leading-tight text-neutral-50">
                 Alpha Wallet Finder
               </div>
               <div className="text-[11px] leading-tight text-neutral-500">Smart money feed</div>
             </div>
           </Link>
-          {telegramUrl ? (
+
+          <SiteNav active="feed" />
+
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <WalletConnectButton />
+            {telegramUrl ? (
+              <a
+                href={telegramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Smart money alerts on Telegram"
+                title="Smart money alerts on Telegram"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:border-neutral-700 hover:text-[#29a9eb]"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M21.94 4.3a1.2 1.2 0 0 0-1.63-1.15L2.9 9.9c-1.06.42-1.05 1.93.02 2.33l3.9 1.47 1.5 4.72c.3.96 1.53 1.2 2.17.43l2.1-2.53 4 2.95c.79.58 1.92.14 2.11-.83l3.24-14.14ZM8.7 13.2l8.2-5.1-6.42 6.02a1.2 1.2 0 0 0-.36.72l-.28 2.02-1.14-3.66Z" />
+                </svg>
+              </a>
+            ) : null}
             <a
-              href={telegramUrl}
+              href="https://x.com/crypce0"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+              aria-label="@crypce0 on X"
+              title="Built by @crypce0"
+              className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-50 sm:flex"
             >
-              Telegram
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
             </a>
-          ) : null}
-          <WalletConnectButton />
+          </div>
         </div>
       </header>
 

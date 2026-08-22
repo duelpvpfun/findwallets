@@ -314,6 +314,33 @@ write gate. Calling that a wallet's "record" claims a lifetime figure we do not 
 support, and it reads as inflated to anyone who checks. Three places say it and must agree:
 `buildAlertMessage`, the `FeedTerminal` column header, and the `FeedRow` detail grid.
 
+**Every buy link goes out through `/api/go`, which counts the tap.** Owner's ask, 2026-08-22:
+"might need to know how many people click on axiom pumpfun gmgn links from tg and website to know
+the traffic driven". A venue's own referral dashboard cannot answer it — it shows the conversions
+that landed on that one venue and nothing about the taps that went elsewhere, so a button nobody
+uses looks identical to a button nobody converts on.
+
+- **The destination is rebuilt server-side from the venue slug, never passed in.** The request
+  carries `v` (slug), `c` (chain), `t` (address) and `s` (source); the URL is composed from
+  `TRADE_LINKS`. A redirector that forwards to a caller-supplied URL is a phishing tool wearing our
+  domain, so this is not negotiable. The address is shape-checked per chain — base58 for Solana,
+  `0x` + 40 hex for EVM — and never looked up, because an alert can fire on a mint no scan has
+  touched and refusing those would break the newest calls first.
+- **It also wins the site its referral codes back.** Referral codes are private env vars, so a
+  client component could only ever render `link.plain(...)` — every tap from the feed was earning
+  nothing. Resolving the destination on the server fixed that as a side effect.
+- **The redirect never waits on the write.** `after()` runs the insert once the 302 is out, so a
+  slow database costs a data point rather than a buyer. Anything unrecognisable redirects to `/`
+  rather than erroring: a reader who taps a button has earned a destination.
+- **302 with `no-store` at all three cache layers.** A cached redirect is a click that never reaches
+  the function, which is the one failure that would silently zero the numbers.
+- `source` is `tg` / `feed` / `scan`, and Telegram is a separate column from the site at every level
+  in `/admin`'s "Where the clicks go" — a combined total cannot tell a working channel from a
+  working website, which is the only thing the table was added to answer. Clicks sit next to
+  distinct visitors, because forty taps from one person is not reach.
+- Rate-limited per IP at 40/minute, and a limited request **still redirects** — only the recording
+  is dropped. `link_clicks` starts empty on deploy: there is no history before the first tap.
+
 **Venue logos are self-hosted in `public/venues/`, keyed by `TradeLink.slug`.** Hotlinking a
 third-party favicon leaks a referrer on every row of the feed and blanks the moment they move the
 file, which is why these were monograms first. The fix is to own the bytes. **pump.fun replaced
@@ -499,6 +526,16 @@ from then on **edits that same message** every hour. Twenty-four leaderboard pos
 the alerts the pin exists to advertise, and only one message can usefully be pinned anyway. It runs
 at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
 
+**The pin's window is the LAST HOUR, not 24 hours** (owner's call, 2026-08-22). It shipped on 24
+hours, which made it the same three calls as the 2pm recap for most of the day — and because the pin
+is edited silently in place, the reader saw a board that never appeared to change followed by a
+daily post telling them what they had already read. One hour restores the split: the pin is what is
+happening now and earns its hourly refresh, the recap is the day and is the only 24-hour ranking in
+the channel. **A quiet hour says so** — `buildLeaderboardMessage` never widens its own window to
+fill the board, because reaching back for an older call presents it as if it just happened. The
+empty state still carries the call count and the `updated HH:MM UTC` stamp, or a quiet hour would be
+indistinguishable from a pin that stopped updating.
+
 - **Per-call results only.** Ticker, the cap it was called at, the peak cap, the multiple and the
   percentage. These are the same numbers already on every public feed row. **The aggregate
   scoreboard stays on `/admin`** — a hit rate or a hold median on a pinned message is an operator's
@@ -518,18 +555,20 @@ at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
   right to pin still posted a real message, and forgetting it would post another every hour.
 - Both operations are `disable_notification`. A pin normally notifies the whole channel, and doing
   that hourly is a reason to mute the channel, which would cost every real alert its notification.
-- `?dry=1` renders exactly what would be pinned and posts nothing. `ALERTS_PIN_WINDOW_HOURS` (24)
+- `?dry=1` renders exactly what would be pinned and posts nothing. `ALERTS_PIN_WINDOW_HOURS` (1)
   and `ALERTS_PIN_TOP_N` (3) are the knobs.
 - **In a channel, pinning is covered by "Edit Messages", not "Pin Messages"** — the API omits
   `can_pin_messages` for channels rather than returning false, so reading its absence as denied
   reports a working bot as broken. `npm run alerts:telegram` checks the right one per chat type.
 
 **A daily recap posts at 2pm New York, and it is the only message here that notifies.**
-`/api/cron/alert-digest`, the owner's call 2026-08-22. Same rows and the same builder as the pin —
-two copies of that message would drift, and the pin and the recap disagreeing about what a call did
-is the one thing that would discredit both. Only the header and footer differ: the pin carries
-`updated HH:MM UTC` because it is edited in place and has to prove it is still live, the recap
-carries its date instead.
+`/api/cron/alert-digest`, the owner's call 2026-08-22. Same builder as the pin — two copies of that
+message would drift, and the pin and the recap disagreeing about what a call did is the one thing
+that would discredit both. **Different window, same code:** the recap is fixed at 24 hours
+(`DIGEST_WINDOW_HOURS`, deliberately not borrowed from `PIN_WINDOW_HOURS`) and the pin is the last
+hour, so the two never say the same thing twice. The header names its own window and the footer
+differs: the pin carries `updated HH:MM UTC` because it is edited in place and has to prove it is
+still live, the recap carries its date instead.
 
 - **The route runs hourly and posts at most once a day.** That is not a workaround — Vercel cron
   expressions are UTC, and America/New_York is UTC-4 for two thirds of the year. A fixed
