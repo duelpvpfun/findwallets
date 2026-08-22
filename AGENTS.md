@@ -465,6 +465,17 @@ call peaks 58 minutes in, which is inside the window that was being starved. Thr
   30 minutes to 24h, then 2 hours), so a token that is not due does not take a slot at all. The
   ordering is now only a tie-break among the due, and it still puts never-checked and hot calls
   first, because a sweep can be over-subscribed and the peaks that can still move have to win.
+- **Drawdown outranks age, and it is what the owner actually asked for**
+  ("after recording an ATH from a coin and seeing it retrace a lot we can slow down the fetches or
+  completely stop them if the coin retraced 90% for example"). Past `PEAK_SETTLED_RETRACE` (0.9) a
+  token is retired exactly like a dead one; past `PEAK_SLOW_RETRACE` (0.5) it drops to the coldest
+  interval rather than stopping, because a 60% retrace on a memecoin is a Tuesday. `DEAD_MCAP_USD`
+  does not cover this: a token that ran to $2M and sits at $200K is 90% down and nowhere near the
+  $4K floor. **The safety is stronger here than in the dead case** — a token above `DEAD_MCAP_USD` is
+  still spot-sampled, and `applyMcapSample` raises the peak with `greatest()` regardless of
+  `peak_final`, so a genuine second run is caught at ten-minute resolution instead of candle
+  resolution. `nullif` on the denominator makes a token with no peak yet read as 0% retraced rather
+  than dividing by zero — the right answer, because a call nobody has measured must never be slowed.
 - **`PEAK_CHECKS_PER_SWEEP` 25 → 75, deadline 200s → 240s.** 25 left the pass idle: a check is ~2.8s
   and nearly all of that is `GECKO_MIN_GAP_MS`, not network — a GeckoTerminal call returns in ~200ms
   and the sixth un-throttled call in a burst gets a 429, so the throttle is the entire cost model.
