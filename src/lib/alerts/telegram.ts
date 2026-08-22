@@ -1,7 +1,14 @@
 import "server-only";
 import { SITE_URL } from "../siteUrl";
 import { formatUsd } from "../format";
-import { alertsArePublic, dexScreenerUrl, tradeLinksFor, type AlertTier } from "./config";
+import {
+  CHART_VENUE,
+  alertsArePublic,
+  dexScreenerUrl,
+  trackedLinkUrl,
+  tradeLinksFor,
+  type AlertTier,
+} from "./config";
 import type { Chain } from "../types";
 import type { AlertWalletSnapshot } from "../db/schema";
 
@@ -249,19 +256,21 @@ type InlineButton =
  * cost commission, never dead-end a buyer.
  */
 export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineButton[][] {
-  const trade = tradeLinksFor(chain).map((link) => {
-    // `refEnv` is null for a venue with no referral programme (pump.fun), which
-    // is not the same as a code we forgot to set. Both fall back to the plain
-    // link; only one of them is worth noticing.
-    const ref = link.refEnv ? process.env[link.refEnv] : undefined;
-    return {
-      text: link.name,
-      url:
-        ref && link.withRef
-          ? link.withRef(chain, tokenAddress, ref)
-          : link.plain(chain, tokenAddress),
-    };
-  });
+  // Every buy button goes out through `/api/go`, which counts the tap and then
+  // resolves the venue URL — referral code included — server-side. Sending the
+  // reader straight to the venue is what made "how much traffic do these alerts
+  // drive" unanswerable: a venue's referral dashboard shows the conversions on
+  // that one venue and nothing about the taps that went elsewhere.
+  const trade = tradeLinksFor(chain).map((link) => ({
+    text: link.name,
+    url: trackedLinkUrl({
+      venue: link.slug,
+      chain,
+      address: tokenAddress,
+      source: "tg",
+      origin: SITE_URL,
+    }),
+  }));
 
   const rows: InlineButton[][] = [];
 
@@ -275,7 +284,18 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
   for (let i = 0; i < trade.length; i += 2) rows.push(trade.slice(i, i + 2));
 
   rows.push([
-    { text: "📈 Chart", url: dexScreenerUrl(chain, tokenAddress) },
+    {
+      text: "📈 Chart",
+      // Counted too, and worth separating: a reader who opens the chart is
+      // deciding, a reader who opens Axiom has decided.
+      url: trackedLinkUrl({
+        venue: CHART_VENUE,
+        chain,
+        address: tokenAddress,
+        source: "tg",
+        origin: SITE_URL,
+      }),
+    },
     { text: brandLabel(), url: brandUrl() },
   ]);
   return rows;
@@ -558,6 +578,8 @@ export function buildLeaderboardMessage(input: LeaderboardInput): string {
  * over a body talking about a different span is how a reader stops trusting it.
  */
 function windowLabel(hours: number): string {
+  // A sub-hour override reads in minutes rather than as "last 0h".
+  if (hours < 1) return `last ${Math.max(1, Math.round(hours * 60))}m`;
   const h = Math.round(hours);
   return h === 1 ? "last hour" : `last ${h}h`;
 }

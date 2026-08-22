@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import { CHART_VENUE, trackedLinkUrl } from "@/lib/alerts/config";
 import { formatMultiple, formatUsd } from "@/lib/format";
 import type { AlertFeedRow, CallCard } from "@/lib/db/alerts";
 
@@ -151,7 +152,14 @@ const Card = memo(function Card({
 
   return (
     <a
-      href={`https://dexscreener.com/solana/${entry.tokenAddress}`}
+      // Through `/api/go` like every other outbound link, so a tap on the
+      // leaderboard is counted the same way as a tap on a row.
+      href={trackedLinkUrl({
+        venue: CHART_VENUE,
+        chain: "solana",
+        address: entry.tokenAddress,
+        source: "feed",
+      })}
       target="_blank"
       rel="noopener noreferrer"
       className={`podium-step group relative flex flex-col overflow-hidden rounded-lg border bg-neutral-900/40 px-2.5 py-2 transition-colors sm:px-3 sm:py-2.5 ${

@@ -314,6 +314,33 @@ write gate. Calling that a wallet's "record" claims a lifetime figure we do not 
 support, and it reads as inflated to anyone who checks. Three places say it and must agree:
 `buildAlertMessage`, the `FeedTerminal` column header, and the `FeedRow` detail grid.
 
+**Every buy link goes out through `/api/go`, which counts the tap.** Owner's ask, 2026-08-22:
+"might need to know how many people click on axiom pumpfun gmgn links from tg and website to know
+the traffic driven". A venue's own referral dashboard cannot answer it — it shows the conversions
+that landed on that one venue and nothing about the taps that went elsewhere, so a button nobody
+uses looks identical to a button nobody converts on.
+
+- **The destination is rebuilt server-side from the venue slug, never passed in.** The request
+  carries `v` (slug), `c` (chain), `t` (address) and `s` (source); the URL is composed from
+  `TRADE_LINKS`. A redirector that forwards to a caller-supplied URL is a phishing tool wearing our
+  domain, so this is not negotiable. The address is shape-checked per chain — base58 for Solana,
+  `0x` + 40 hex for EVM — and never looked up, because an alert can fire on a mint no scan has
+  touched and refusing those would break the newest calls first.
+- **It also wins the site its referral codes back.** Referral codes are private env vars, so a
+  client component could only ever render `link.plain(...)` — every tap from the feed was earning
+  nothing. Resolving the destination on the server fixed that as a side effect.
+- **The redirect never waits on the write.** `after()` runs the insert once the 302 is out, so a
+  slow database costs a data point rather than a buyer. Anything unrecognisable redirects to `/`
+  rather than erroring: a reader who taps a button has earned a destination.
+- **302 with `no-store` at all three cache layers.** A cached redirect is a click that never reaches
+  the function, which is the one failure that would silently zero the numbers.
+- `source` is `tg` / `feed` / `scan`, and Telegram is a separate column from the site at every level
+  in `/admin`'s "Where the clicks go" — a combined total cannot tell a working channel from a
+  working website, which is the only thing the table was added to answer. Clicks sit next to
+  distinct visitors, because forty taps from one person is not reach.
+- Rate-limited per IP at 40/minute, and a limited request **still redirects** — only the recording
+  is dropped. `link_clicks` starts empty on deploy: there is no history before the first tap.
+
 **Venue logos are self-hosted in `public/venues/`, keyed by `TradeLink.slug`.** Hotlinking a
 third-party favicon leaks a referrer on every row of the feed and blanks the moment they move the
 file, which is why these were monograms first. The fix is to own the bytes. **pump.fun replaced
