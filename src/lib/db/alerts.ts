@@ -28,6 +28,8 @@ import {
   PEAK_COLD_SECONDS,
   PEAK_HOT_HOURS,
   PEAK_HOT_SECONDS,
+  PEAK_SETTLED_RETRACE,
+  PEAK_SLOW_RETRACE,
   PEAK_WARM_SECONDS,
   PIN_MIN_MCAP_USD,
   SAMPLE_DUE_SLACK_SECONDS,
@@ -512,14 +514,14 @@ export interface TrackingTarget {
    */
   bestSpotMcapUsd: number;
   /**
-   * Whether the token's last observed cap is under `DEAD_MCAP_USD`.
+   * This token's peak is finished: retire it after one more reconciliation.
    *
-   * Carried so the peak pass can retire it after one successful reconciliation
-   * instead of re-reading a number that cannot move. Read from the last SPOT
-   * sample, never from a candle: a candle high is a ceiling the token may be
-   * nowhere near.
+   * True when the last observed cap is under `DEAD_MCAP_USD`, or when the token
+   * has retraced past `PEAK_SETTLED_RETRACE` from the peak already recorded.
+   * Both read from the last SPOT sample, never from a candle — a candle high is
+   * a ceiling the token may be nowhere near.
    */
-  dead: boolean;
+  peakSettled: boolean;
 }
 
 /**
@@ -595,7 +597,7 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
     firstAlertAt: new Date(r.first_alert_at),
     athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
     bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
-    dead: false,
+    peakSettled: false,
   }));
 }
 
@@ -637,6 +639,21 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
     now() - min(coalesce(${alertsFired.athCheckedAt}, ${alertsFired.createdAt}))
   ))`;
   const lastCap = sql`max(coalesce(${alertsFired.lastMcapUsd}, ${alertsFired.mcapAtAlertUsd}, 0))`;
+  const peakCap = sql`max(coalesce(${alertsFired.athMcapUsd}, 0))`;
+
+  /**
+   * Retrace from the recorded peak, or 0 when there is no peak to retrace from.
+   *
+   * The owner's rule (see `PEAK_SETTLED_RETRACE`): a coin far off its high has a
+   * high that is finished, whatever its age. `nullif` on the denominator is what
+   * makes a token with no peak yet read as 0% retraced rather than dividing by
+   * zero — and 0% is the right answer, because a call nobody has measured must
+   * never be slowed down.
+   */
+  const retrace = sql`coalesce(1 - (${lastCap} / nullif(${peakCap}, 0)), 0)`;
+
+  /** Dead, or retraced past the point where the peak can still move. */
+  const settled = sql`(${lastCap} < ${DEAD_MCAP_USD} or ${retrace} >= ${PEAK_SETTLED_RETRACE})`;
 
   const rows = await db.execute<{
     token_address: string;
@@ -645,7 +662,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
     first_alert_at: string;
     ath_checked_at: string | null;
     best_spot_mcap: number | null;
-    dead: boolean;
+    peak_settled: boolean;
   }>(sql`
     select
       ${alertsFired.tokenAddress} as token_address,
@@ -653,7 +670,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
       max(${tokenPools.poolAddress}) as pool_address,
       min(${alertsFired.createdAt}) as first_alert_at,
       min(${alertsFired.athCheckedAt}) as ath_checked_at,
-      (${lastCap} < ${DEAD_MCAP_USD}) as dead,
+      ${settled} as peak_settled,
       greatest(
         max(${alertsFired.mcapAtAlertUsd}),
         max(coalesce((
@@ -675,21 +692,27 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
       and ${alertsFired.peakFinal} = false
     group by ${alertsFired.tokenAddress}
     having ${sinceChecked} > case
-      -- Dead and not yet settled: due immediately, and it leaves the queue for
-      -- good on success. One slot, once, is the whole cost of being right about
-      -- a coin that died.
-      when ${lastCap} < ${DEAD_MCAP_USD} then 0::float8
+      -- Settled and not yet retired: due immediately, and it leaves the queue
+      -- for good on success. One slot, once, is the whole cost of being right
+      -- about a coin whose run is over.
+      when ${settled} then 0::float8
+      -- Drawdown outranks age, because it is the sharper signal. A coin two
+      -- hours old and 70% off its high is not where the next peak comes from.
+      when ${retrace} >= ${PEAK_SLOW_RETRACE}
+        then ${PEAK_COLD_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
       when ${ageSeconds} < ${PEAK_HOT_HOURS * 3600}
         then ${PEAK_HOT_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
       when ${ageSeconds} < 24 * 3600 then ${PEAK_WARM_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
       else ${PEAK_COLD_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
     end
-    -- Among tokens that are due: never checked, then dead-and-unsettled (one
-    -- check and they are gone, so clearing them cheaply protects every later
-    -- sweep), then whichever call's peak can still MOVE, then longest since.
+    -- Among tokens that are due: never checked, then settled-but-not-retired
+    -- (one check and they are gone, so clearing them cheaply protects every
+    -- later sweep), then whichever call's peak can still MOVE, then longest
+    -- since. "Can still move" is near-the-high AND young, in that order.
     order by
       (min(${alertsFired.athCheckedAt}) is null) desc,
-      (${lastCap} < ${DEAD_MCAP_USD}) desc,
+      ${settled} desc,
+      (${retrace} < ${PEAK_SLOW_RETRACE}) desc,
       (${ageSeconds} < ${PEAK_HOT_HOURS * 3600}) desc,
       min(${alertsFired.athCheckedAt}) asc
     limit ${limit}
@@ -702,7 +725,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
     firstAlertAt: new Date(r.first_alert_at),
     athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
     bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
-    dead: Boolean(r.dead),
+    peakSettled: Boolean(r.peak_settled),
   }));
 }
 
@@ -803,10 +826,9 @@ export async function touchAthChecked(
   /**
    * Give up on this token's peak for good.
    *
-   * Only for a token that is BOTH dead and unpriceable by any source we have —
-   * free candles, then the paid fallback. Its cap is under $4K, the spot sampler
-   * has already abandoned it, and no provider will name a pool, so there is
-   * nothing left that could ever move the number. Without this, such a token
+   * Only for a token whose peak is settled anyway AND which no source we have
+   * could price — free candles, then the paid fallback. Its run is over, so
+   * there is nothing left that could move the number. Without this, such a token
    * takes a slot every single sweep forever, because the backdate below is
    * deliberately shorter than every due interval.
    */

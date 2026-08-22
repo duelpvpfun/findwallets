@@ -227,6 +227,32 @@ export const PEAK_WARM_SECONDS = 30 * 60;
 export const PEAK_COLD_SECONDS = 2 * 60 * 60;
 
 /**
+ * Retrace from the recorded peak, which overrides age entirely.
+ *
+ * **The owner's design, 2026-08-22:** "most coins end up going to zero, so after
+ * recording an ATH from a coin and seeing it retrace a lot we can slow down the
+ * fetches or completely stop them if the coin retraced 90% for example."
+ *
+ * Drawdown is a sharper signal than age and it is the one that actually answers
+ * the question. A coin three hours old sitting on its high needs every sweep; a
+ * coin three hours old and 95% off its peak has a peak that is finished, and
+ * `DEAD_MCAP_USD` does not catch it — a token that ran to $2M and sits at
+ * $200K is 90% down and nowhere near the $4K floor.
+ *
+ * Past `PEAK_SETTLED_RETRACE` a token is treated exactly like a dead one: one
+ * last reconciliation, then retired via `peak_final`. The safety here is
+ * stronger than in the dead case, and worth being explicit about: a token above
+ * `DEAD_MCAP_USD` is **still spot-sampled**, and `applyMcapSample` raises the
+ * peak with `greatest()` regardless of `peak_final` — so a genuine second run is
+ * still caught, just at ten-minute resolution instead of candle resolution.
+ *
+ * Between the two thresholds it drops to the coldest interval rather than
+ * stopping, because a 60% retrace on a memecoin is a Tuesday.
+ */
+export const PEAK_SETTLED_RETRACE = 0.9;
+export const PEAK_SLOW_RETRACE = 0.5;
+
+/**
  * Paid peak reads allowed per sweep, as a fallback only.
  *
  * The free candle path fails for real reasons, not just transient ones: a mint

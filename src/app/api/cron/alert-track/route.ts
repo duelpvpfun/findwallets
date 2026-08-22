@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
         // multiply a candle high by, so the read could only be thrown away.
         const supply = target.supplyAtAlert;
         if (!supply || supply <= 0) {
-          await touchAthChecked(CHAIN, target.tokenAddress, target.dead);
+          await touchAthChecked(CHAIN, target.tokenAddress, target.peakSettled);
           continue;
         }
 
@@ -206,10 +206,10 @@ export async function GET(request: NextRequest) {
         }
 
         if (!peak) {
-          // Nothing priced it. Retire it only if it is also dead — the spot
-          // sampler has already abandoned it, so nothing left can move the
-          // number and it would otherwise take a slot every sweep forever.
-          await touchAthChecked(CHAIN, target.tokenAddress, target.dead);
+          // Nothing priced it. Retire it only if its peak is settled anyway —
+          // otherwise it would take a slot every sweep forever, because the
+          // backdate in touchAthChecked is shorter than every due interval.
+          await touchAthChecked(CHAIN, target.tokenAddress, target.peakSettled);
           continue;
         }
 
@@ -233,19 +233,20 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // `target.dead` retires the call from this rotation. A token under
-        // DEAD_MCAP_USD has already been dropped by the spot sampler, so this
-        // reconciliation is the last word on its peak — and re-reading a
-        // settled number every sweep is what was starving the live calls.
+        // `peakSettled` retires the call from this rotation: the token is under
+        // DEAD_MCAP_USD, or it has retraced past PEAK_SETTLED_RETRACE from a
+        // peak we already recorded. Either way this reconciliation is the last
+        // word on its peak, and re-reading a settled number every sweep is what
+        // was starving the live calls.
         const raised = await applyCandlePeak(
           CHAIN,
           target.tokenAddress,
           candleMcap,
           peak.highAt,
-          target.dead
+          target.peakSettled
         );
         if (raised > 0) peaksRaised++;
-        if (target.dead) peaksRetired++;
+        if (target.peakSettled) peaksRetired++;
       }
     }
 
