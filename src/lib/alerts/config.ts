@@ -89,15 +89,23 @@ export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 10_000);
 export const MAX_ALERT_MCAP_USD = envNumber("ALERTS_MAX_MCAP_USD", 1_000_000);
 
 /**
- * A token whose market cap has fallen below this is abandoned: no more samples.
+ * A token whose market cap has fallen below this is abandoned: no more samples,
+ * and its peak retires from the candle rotation after one last reconciliation.
  *
  * Most of these go to zero and stay there, so re-reading them every ten minutes
  * for a week is the bulk of the tracking spend for no information. The trade is
- * explicit and the owner's: a coin that dies below $4K and then somehow runs is
+ * explicit and the owner's: a coin that dies below this and then somehow runs is
  * missed. Not once-and-for-all — the check is on the last cap we saw, so a token
  * that never gets that low keeps being tracked normally.
+ *
+ * **$5K, raised from $4K on 2026-08-22 at the owner's request.** The floor is
+ * well under `MIN_ALERT_MCAP_USD` ($10K) either way, so this only ever drops a
+ * token that has already more than halved from the lowest cap it could have been
+ * called at. Measured on the live set it retires a further 14 of 380
+ * tracked tokens (3.7%), and every slot it frees goes to a call that is still
+ * running.
  */
-export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 4_000);
+export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 5_000);
 
 /**
  * Above this share of the wallets in the window having already sold, the step

@@ -313,7 +313,8 @@ because 113 calls over forty minutes extrapolates to "4,082 calls/day".
 >= 1.00 by construction, so no call could ever read as a loss. It starts null and the first real
 sample sets it.
 
-**A token whose last market cap is under `DEAD_MCAP_USD` ($4K) is abandoned by the tracker.** Most
+**A token whose last market cap is under `DEAD_MCAP_USD` ($5K, the owner's call 2026-08-22) is
+abandoned by the tracker.** Most
 never come back, and re-reading them every ten minutes for a week is the bulk of the tracking spend
 for no information. The check is on the last cap seen, so a token that never gets that low keeps
 being tracked normally.
@@ -471,7 +472,7 @@ call peaks 58 minutes in, which is inside the window that was being starved. Thr
   token is retired exactly like a dead one; past `PEAK_SLOW_RETRACE` (0.5) it drops to the coldest
   interval rather than stopping, because a 60% retrace on a memecoin is a Tuesday. `DEAD_MCAP_USD`
   does not cover this: a token that ran to $2M and sits at $200K is 90% down and nowhere near the
-  $4K floor. **The safety is stronger here than in the dead case** — a token above `DEAD_MCAP_USD` is
+  $5K floor. **The safety is stronger here than in the dead case** — a token above `DEAD_MCAP_USD` is
   still spot-sampled, and `applyMcapSample` raises the peak with `greatest()` regardless of
   `peak_final`, so a genuine second run is caught at ten-minute resolution instead of candle
   resolution. `nullif` on the denominator makes a token with no peak yet read as 0% retraced rather
