@@ -403,6 +403,17 @@ contents, so tapping a ticker cannot yield the contract. The `copy_text` inline 
 instead, with no bot round trip, and it works from a channel post. It is the first button and alone
 on its row, because copying the contract is the step between reading an alert and owning the coin.
 
+**A rug that was ever SCANNED poisons `wallet_tokens`, not just the roster.** A paid scan mints one
+curated "win" per top trader, so a token with manufactured volume hands out 100x credentials
+wholesale and those wallets then qualify for the alert roster on trades nobody really made.
+$BULLBALLS was one scan and it minted **226 fake winners, 103 of them active on the roster** — and
+every one of the 103 had qualified on that token *alone*, with zero appearances in any other call.
+So `alerts:kill` sweeps three populations, not one: the frozen alert snapshots, every wallet the
+stream saw trade the mint on **either side** (a seller with no recorded buy still held it), and every
+`wallet_tokens` win on that mint. It prints how many of the affected roster wallets also qualify
+somewhere else *before* writing, because that number is what blocking actually costs — zero here,
+and it would not always be.
+
 **A wallet ruled out by hand is blocked on `wallets.blocked`, never only deactivated.** The roster
 is REBUILT from `wallet_tokens` on every `alerts:sync --apply`, so a wallet removed from
 `alert_wallets` alone walks straight back in on the next sync and nobody notices. The block lives
