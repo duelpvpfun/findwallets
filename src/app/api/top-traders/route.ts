@@ -267,10 +267,15 @@ export async function GET(request: NextRequest) {
       : await fetchEvmTokenMeta(chain as EvmChain, address);
     emit?.({ type: "token", token });
 
+    // Clamped to what was asked for. The EVM path fetches `limit * 1.3` rows so
+    // it can still fill the tier after dropping churn artifacts, and this counter
+    // was reporting the raw fetch — a Top 100 scan visibly counted past its own
+    // target to "125 of 100", which reads as a broken number rather than as
+    // headroom. It never goes backwards either: a later page can only add.
     let found = 0;
     const onProgress = emit
       ? (page: WalletTrader[]) => {
-          found += page.length;
+          found = Math.min(limit, found + page.length);
           emit?.({ type: "progress", found, requested: limit });
         }
       : undefined;

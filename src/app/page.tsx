@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { Chain } from "@/lib/types";
+import type { Chain, TokenMeta } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import ScanProgress from "@/components/ScanProgress";
 import PaywallDialog from "@/components/PaywallDialog";
@@ -65,6 +65,8 @@ export default function Home() {
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ found: number; requested: number } | null>(null);
+  /** The token of the scan in flight, known before any trader has landed. */
+  const [pendingToken, setPendingToken] = useState<TokenMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CachedScan | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
@@ -179,6 +181,12 @@ export default function Home() {
       setLoading(true);
       setProgress(null);
       setError(null);
+      // The previous scan has to go before this one starts. Leaving it up meant
+      // a buyer scanning a second coin watched the FIRST coin's logo, name and
+      // table for the entire scan and then saw it swap — indistinguishable from
+      // being served a cached result for the coin they just paid to scan.
+      setResult(null);
+      setPendingToken(null);
       try {
         const qs = new URLSearchParams({
           address: ca.trim(),
@@ -206,8 +214,12 @@ export default function Home() {
           return;
         }
 
-        const data = await consumeScanStream(res, (found, requested) =>
-          setProgress({ found, requested })
+        const data = await consumeScanStream(
+          res,
+          (found, requested) => setProgress({ found, requested }),
+          // Resolves long before the first trader page, so the panel can name
+          // the coin being scanned instead of showing nothing or the last one.
+          setPendingToken
         );
         if ("error" in data) {
           setError(data.error);
@@ -233,6 +245,7 @@ export default function Home() {
       } finally {
         setLoading(false);
         setProgress(null);
+        setPendingToken(null);
       }
     },
     [ownerKey, refreshAccount]
@@ -724,7 +737,7 @@ export default function Home() {
             </div>
           ) : (
             loading ? (
-              <ScanProgress progress={progress} chain={chain} limit={limit} />
+              <ScanProgress progress={progress} chain={chain} limit={limit} token={pendingToken} />
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">

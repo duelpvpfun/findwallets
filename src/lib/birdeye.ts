@@ -344,7 +344,6 @@ export async function fetchEvmTopTraders(
     // Out of time: return what has been collected rather than letting the
     // platform kill the function with a consumed credit and nothing delivered.
     if (deadlineAt !== undefined && Date.now() >= deadlineAt && traders.length > 0) break;
-    const before = traders.length;
     const batch = Array.from(
       { length: Math.min(MAX_CONCURRENT_PAGES, pageCount - batchStart) },
       (_, i) => batchStart + i
@@ -369,16 +368,21 @@ export async function fetchEvmTopTraders(
         exhausted = true;
         continue;
       }
+      const pageStart = traders.length;
       for (const item of page.items) {
         // Dropped before mapping: a wallet whose "bag" is most of the supply
         // poisons every derived column on the row (see isVolumeArtifact).
         if (isVolumeArtifact(item.trade, item.volumeBuy, estimatedSupply)) continue;
         traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply));
       }
+      // Reported per page, not once per batch of ten. The batch is a rate-limit
+      // device, not something the buyer should be able to see: reporting on the
+      // batch boundary made a Top 100 scan sit at 0 and then land on 93 in a
+      // single step, so the number looked stuck and then wrong.
+      // Progress only; on-chain holdings are applied to the final list below, so
+      // these rows carry no balance data yet.
+      if (onBatch && traders.length > pageStart) onBatch(traders.slice(pageStart));
     }
-    // Progress only; on-chain holdings are applied to the final list below, so
-    // these rows carry no balance data yet.
-    if (onBatch && traders.length > before) onBatch(traders.slice(before));
     if (exhausted) break;
   }
 
