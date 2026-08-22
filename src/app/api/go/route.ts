@@ -10,10 +10,9 @@ import { clientIp, rateLimit } from "@/lib/rateLimit";
 import { recordLinkClick } from "@/lib/db/linkClicks";
 import { SITE_URL } from "@/lib/siteUrl";
 import type { Chain } from "@/lib/types";
+import { isChain } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
-
-const CHAINS: Chain[] = ["solana", "bsc", "base"];
 
 /** A reader tapping through three venues on one call is normal. Fifty taps a
  * minute from one address is somebody padding the numbers, and the only thing
@@ -116,10 +115,6 @@ function resolveDestination(venue: string, chain: Chain, address: string): strin
   return ref && link.withRef
     ? link.withRef(chain, address, ref)
     : link.plain(chain, address);
-}
-
-function isChain(value: string): value is Chain {
-  return (CHAINS as string[]).includes(value);
 }
 
 function isSource(value: string): value is ClickSource {

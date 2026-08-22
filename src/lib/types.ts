@@ -1,4 +1,4 @@
-export type Chain = "solana" | "bsc" | "base";
+export type Chain = "solana" | "bsc" | "base" | "robinhood";
 
 export interface WalletTrader {
   rank: number;

@@ -40,7 +40,7 @@ export interface LifetimeStats {
  *
  * Overwrite rule: for `all_time` sources (Solana) a rescan is always the newer truth,
  * so we overwrite even when PNL dropped (the wallet round-tripped its unrealized gains).
- * For windowed sources (BSC/Base 90d) an older win can simply fall out of the window,
+ * For windowed sources (every EVM chain, 90d) an older win can simply fall out of the window,
  * so we only raise the recorded figure and never lower it.
  */
 export async function recordScan(

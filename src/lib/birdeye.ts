@@ -1,5 +1,11 @@
 // Server-only client for the Birdeye Data API (https://docs.birdeye.so) — used
-// for chains other than Solana (BSC, Base, etc). Never import from "use client".
+// for chains other than Solana (BSC, Base, Robinhood Chain). Never import from
+// "use client".
+//
+// Birdeye's published network list is STALE — it omits chains the API serves.
+// `robinhood` was absent from docs.birdeye.so/docs/supported-networks while every
+// endpoint below answered for it, so coverage is a question for GET /defi/networks
+// and not for the documentation.
 //
 // IMPORTANT differences vs Solana Tracker (see /memories/repo/birdeye-bsc-api.md):
 // - Top-traders `limit` is hard-capped at 10 per request (not 200), so fetching
@@ -17,7 +23,7 @@ import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
-export type EvmChain = Extract<Chain, "bsc" | "base">;
+export type EvmChain = Extract<Chain, "bsc" | "base" | "robinhood">;
 
 export class BirdeyeError extends Error {
   constructor(message: string, public status?: number) {
@@ -106,6 +112,7 @@ export function isBirdeyeConfigured(): boolean {
 const NATIVE_WRAPPED: Record<EvmChain, string> = {
   bsc: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB
   base: "0x4200000000000000000000000000000000000006", // WETH on Base
+  robinhood: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", // WETH on Robinhood Chain
 };
 
 interface PriceResponse {

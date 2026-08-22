@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Chain, WalletDetail, WalletTrader } from "@/lib/types";
 import { buildWalletDetail } from "@/lib/mockData";
 import { OWNER_STORAGE_KEY } from "@/lib/tiers";
+import { CHAIN_LABELS } from "@/lib/chains";
 import {
   NATIVE_UNIT,
   formatCompactNumber,
@@ -185,7 +186,7 @@ export default function WalletDetailModal({
                     </>
                   ) : (
                     <div className="text-sm text-neutral-500">
-                      Wallet balance isn&apos;t available on {chain === "bsc" ? "BNB Chain" : "Base"} yet.
+                      Wallet balance isn&apos;t available on {CHAIN_LABELS[chain]} yet.
                     </div>
                   )}
                   {detail.avgHoldTimeSecs !== null && (

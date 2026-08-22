@@ -34,7 +34,8 @@ import {
   addressMismatchMessage,
   isChain,
   isValidAddressForChain,
-  siblingEvmChain,
+  siblingEvmChains,
+  listChains,
   CHAIN_LABELS,
 } from "@/lib/chains";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
@@ -307,10 +308,10 @@ export async function GET(request: NextRequest) {
     // An EVM address is valid on every EVM chain, so a token pasted under the
     // wrong one looks like an empty result. Say so instead of leaving the buyer
     // thinking they paid for nothing — the credit is untouched at zero traders.
-    const sibling = siblingEvmChain(chain);
+    const siblings = siblingEvmChains(chain);
     const note =
-      traders.length === 0 && sibling
-        ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${CHAIN_LABELS[sibling]}, switch chains and search again — you have not been charged for this scan.`
+      traders.length === 0 && siblings.length > 0
+        ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${listChains(siblings)}, switch chains and search again — you have not been charged for this scan.`
         : undefined;
 
     // Upstream simply may not have `limit` qualifying traders, so a short result

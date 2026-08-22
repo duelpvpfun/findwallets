@@ -352,9 +352,10 @@ export interface TradeLink {
    */
   refEnv: string | null;
   /** The chain is passed in rather than inferred from the address. Inferring it
-   * cost a real bug: `0x` is true of both EVM chains, so a Base alert linked to
+   * cost a real bug: `0x` is true of every EVM chain, so a Base alert linked to
    * GMGN's BNB Chain page for the same address — a live page, for a different
-   * token. Nothing here may guess a chain it is already being told. */
+   * token. Nothing here may guess a chain it is already being told, and a third
+   * EVM chain only widens the blast radius. */
   withRef: ((chain: Chain, address: string, ref: string) => string) | null;
   plain: (chain: Chain, address: string) => string;
 }
@@ -404,7 +405,17 @@ export const TRADE_LINKS: TradeLink[] = [
   },
 ];
 
-const GMGN_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
+// Robinhood Chain's slug here is UNVERIFIED. GMGN sits behind Cloudflare, which
+// 403s a plain request for any URL, valid or not, so it could not be confirmed
+// the way the Dexscreener one was — and that is exactly why "robinhood" is
+// absent from GMGN's `chains` above. Tap the chain on gmgn.ai once, correct the
+// slug if needed, add it to that array, and the button ships.
+const GMGN_CHAIN_SLUG: Record<Chain, string> = {
+  solana: "sol",
+  bsc: "bsc",
+  base: "base",
+  robinhood: "robinhood",
+};
 
 /** The buttons for one chain, in display order. */
 export function tradeLinksFor(chain: Chain): TradeLink[] {
@@ -458,7 +469,14 @@ export function trackedLinkUrl(input: {
   return input.origin ? new URL(path, input.origin).toString() : path;
 }
 
-const DEXSCREENER_SLUG: Record<Chain, string> = { solana: "solana", bsc: "bsc", base: "base" };
+// "robinhood" confirmed against api.dexscreener.com, which returns
+// `chainId: "robinhood"` for a Robinhood Chain pair.
+const DEXSCREENER_SLUG: Record<Chain, string> = {
+  solana: "solana",
+  bsc: "bsc",
+  base: "base",
+  robinhood: "robinhood",
+};
 
 export function dexScreenerUrl(chain: Chain, address: string): string {
   return `https://dexscreener.com/${DEXSCREENER_SLUG[chain]}/${address}`;

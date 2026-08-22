@@ -12,7 +12,7 @@ const [totals] = await sql`
     count(enriched_at) as enriched,
     count(*) filter (where cardinality(win_badges) > 0) as with_badges
   from wallets
-  where chain in ('solana', 'bsc', 'base')`;
+  where chain in ('solana', 'bsc', 'base', 'robinhood')`;
 
 const [pos] = await sql`
   select count(*) as rows, count(distinct wallet_id) as wallets,

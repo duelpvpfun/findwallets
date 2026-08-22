@@ -34,6 +34,7 @@ const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }>
   { value: "solana", label: "Solana", short: "SOL", dot: "bg-violet-400" },
   { value: "bsc", label: "BNB Chain", short: "BNB", dot: "bg-yellow-400" },
   { value: "base", label: "Base", short: "BASE", dot: "bg-blue-400" },
+  { value: "robinhood", label: "Robinhood", short: "HOOD", dot: "bg-emerald-400" },
 ];
 
 /** A token we've already scanned, replayable from cache as a free sample. */
@@ -49,6 +50,7 @@ const PLACEHOLDERS: Record<Chain, string> = {
   solana: "Paste token contract address (CA)…",
   bsc: "Paste BEP-20 token contract address (0x…)…",
   base: "Paste Base token contract address (0x…)…",
+  robinhood: "Paste Robinhood Chain token contract address (0x…)…",
 };
 
 /** Pacing for a replayed sample: the cached rows arrive in one response, so the
@@ -350,9 +352,12 @@ export default function Home() {
   }
 
   /**
-   * Address formats are disjoint between Solana and EVM, so a paste tells us
-   * the family with certainty. Only the wrong-family case switches: a 0x address
-   * is valid on both BNB Chain and Base, so an EVM pick is left alone.
+   * Address formats are disjoint between Solana and EVM, so a paste tells us the
+   * family with certainty — but only the family. A 0x address is valid on all
+   * three EVM chains, so there is nothing to infer between them and we do not
+   * try: switching a Solana pick to BNB Chain was defensible when it was one of
+   * two, and is wrong two times in three now. The chips stay put and the buyer
+   * picks, which costs one tap and never scans a chain they did not choose.
    */
   function handleAddressChange(value: string) {
     setAddress(value);
@@ -364,9 +369,6 @@ export default function Home() {
     if (family === "solana" && chain !== "solana") {
       setChain("solana");
       setAutoChain("solana");
-    } else if (family === "evm" && chain === "solana") {
-      setChain("bsc");
-      setAutoChain("bsc");
     } else {
       setAutoChain(null);
     }
@@ -606,18 +608,6 @@ export default function Home() {
             <span className="rounded-full border border-blue-900/60 bg-blue-950/30 px-3 py-1 font-medium text-blue-300">
               Switched to {CHAINS.find((c) => c.value === autoChain)?.label} to match this address
             </span>
-            {autoChain === "bsc" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setChain("base");
-                  setAutoChain(null);
-                }}
-                className="text-neutral-500 underline underline-offset-2 transition-colors hover:text-neutral-300"
-              >
-                It&apos;s on Base
-              </button>
-            )}
           </div>
         )}
 

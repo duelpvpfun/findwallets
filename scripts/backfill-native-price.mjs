@@ -13,6 +13,7 @@ const WRAPPED = {
   solana: "So11111111111111111111111111111111111111112",
   bsc: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
   base: "0x4200000000000000000000000000000000000006",
+  robinhood: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
 };
 
 async function solPrice() {
@@ -44,6 +45,7 @@ try {
     solana: await solPrice(),
     bsc: await evmPrice("bsc"),
     base: await evmPrice("base"),
+    robinhood: await evmPrice("robinhood"),
   };
   console.log("native prices:", prices);
 

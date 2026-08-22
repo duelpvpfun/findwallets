@@ -29,10 +29,11 @@ export function formatMultiple(value: number): string {
   return `${value.toFixed(2)}x`;
 }
 
-export const NATIVE_UNIT: Record<"solana" | "bsc" | "base", string> = {
+export const NATIVE_UNIT: Record<"solana" | "bsc" | "base" | "robinhood", string> = {
   solana: "SOL",
   bsc: "BNB",
   base: "ETH",
+  robinhood: "ETH",
 };
 
 export function formatSol(value: number, unit = "SOL"): string {

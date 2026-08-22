@@ -139,13 +139,13 @@ async function claimQueue() {
   if (FORCE) {
     return sql`
       select id, chain, address from wallets
-      where chain in ('solana', 'bsc', 'base')
+      where chain in ('solana', 'bsc', 'base', 'robinhood')
       order by enriched_at asc nulls first, id asc
       limit ${BATCH}`;
   }
   return sql`
     select id, chain, address from wallets
-    where chain in ('solana', 'bsc', 'base')
+    where chain in ('solana', 'bsc', 'base', 'robinhood')
       and (enriched_at is null or enriched_at < ${staleBefore})
     order by enriched_at asc nulls first, id asc
     limit ${BATCH}`;

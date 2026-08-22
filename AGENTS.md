@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Alpha Wallet Finder (findwallets)
 
-Paste a Solana / BNB Chain / Base token contract address, get its top 100–500 traders ranked by
+Paste a Solana / BNB Chain / Base / Robinhood Chain token contract address, get its top 100–500 traders ranked by
 realized PNL, export them as JSON for a tracking bot. **Users pay real money in SOL/USDC per scan.**
 
 Deployed on Vercel. Live at **www.alphawallets.fun** (the `*.vercel.app` host still answers).
@@ -24,7 +24,7 @@ Telegram alert with the deploy URL instead of the domain.
 
 - Next.js 16 (App Router), React 19, TypeScript, Tailwind v4
 - Drizzle ORM + `postgres.js` against Supabase Postgres (us-east-1)
-- Upstream data: Solana Tracker (Solana), Birdeye (BSC/Base), Helius (payment verification)
+- Upstream data: Solana Tracker (Solana), Birdeye (every EVM chain), Helius (payment verification)
 - No test framework is set up. Verify with `npx tsc --noEmit` and `npm run lint`.
 
 ## Commands
@@ -77,6 +77,21 @@ both places:
 | `normalizeAddress` (`chains.ts`) | `scripts/import-export.mjs` | A second `tokens` row for one contract, splitting its history |
 | `MIN_COST_BASIS_USD`, `MAX_PLAUSIBLE_MULTIPLE_X` (`quality.ts`) | `scripts/sync-alert-wallets.mjs` | Dust-basis "588x" wallets onto the alert roster, inflating every alert's headline |
 | `MIN_SCOREBOARD_MCAP_USD` (`alerts/config.ts`) | `scripts/alerts-stats.mjs` | The CLI and the /alerts page disagree about which alerts count |
+
+**Birdeye's published network list is stale; `GET /defi/networks` is the truth.**
+`docs.birdeye.so/docs/supported-networks` omitted `robinhood`, `hyperevm` and `mantle` while the
+API served all three — reading the docs page produced the confident, wrong conclusion that Robinhood
+Chain needed a whole new provider and a hand-written PNL aggregation. Adding a chain starts with
+that endpoint and a live call per endpoint the paid path uses, not with the documentation.
+
+**Adding an EVM chain is six `Record<Chain, …>` entries and nothing else, by design.** Widen the
+union in `types.ts` and `npx tsc --noEmit` enumerates the rest; every runtime branch in `src` is
+`solana` vs not, so a new EVM chain takes the Birdeye path, the lowercase-address path and the
+windowed `recordScan` path with no code written. Payments never needed touching at all: `chain` is
+only a label on the credit reservation and settlement is in SOL/USDC whatever is being scanned.
+What is NOT type-checked, and so has to be found by hand: the `chain in (...)` IN-lists in
+`scripts/enrich-wallets.mjs`, `scripts/enrich-stats.mjs` and `scripts/backfill-evm-holdings.mjs`,
+where a missing chain is never enriched and never says so.
 
 **EVM addresses are stored lowercased; Solana is stored exactly as given.** Every `(chain, address)`
 unique index in the schema is case-sensitive, but an EVM address is not — Birdeye returns them
@@ -602,7 +617,7 @@ it. Turn it on for a few hours, check the lines against Solscan, turn it off. Ne
 ## Architecture notes
 
 - `src/app/api/top-traders/route.ts` is the paid path. Everything else is supporting.
-- Solana ranking is all-time; BSC/Base is a 90-day window. `recordScan` treats them differently —
+- Solana ranking is all-time; every EVM chain is a 90-day window. `recordScan` treats them differently —
   all-time overwrites, windowed only ever raises a stored figure.
 - Without upstream API keys the app serves deterministic mock data from `src/lib/mockData.ts`, always
   flagged with `isDemoData: true`. Don't remove that flag.
