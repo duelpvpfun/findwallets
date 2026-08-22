@@ -499,6 +499,16 @@ from then on **edits that same message** every hour. Twenty-four leaderboard pos
 the alerts the pin exists to advertise, and only one message can usefully be pinned anyway. It runs
 at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
 
+**The pin's window is the LAST HOUR, not 24 hours** (owner's call, 2026-08-22). It shipped on 24
+hours, which made it the same three calls as the 2pm recap for most of the day — and because the pin
+is edited silently in place, the reader saw a board that never appeared to change followed by a
+daily post telling them what they had already read. One hour restores the split: the pin is what is
+happening now and earns its hourly refresh, the recap is the day and is the only 24-hour ranking in
+the channel. **A quiet hour says so** — `buildLeaderboardMessage` never widens its own window to
+fill the board, because reaching back for an older call presents it as if it just happened. The
+empty state still carries the call count and the `updated HH:MM UTC` stamp, or a quiet hour would be
+indistinguishable from a pin that stopped updating.
+
 - **Per-call results only.** Ticker, the cap it was called at, the peak cap, the multiple and the
   percentage. These are the same numbers already on every public feed row. **The aggregate
   scoreboard stays on `/admin`** — a hit rate or a hold median on a pinned message is an operator's
@@ -518,18 +528,20 @@ at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
   right to pin still posted a real message, and forgetting it would post another every hour.
 - Both operations are `disable_notification`. A pin normally notifies the whole channel, and doing
   that hourly is a reason to mute the channel, which would cost every real alert its notification.
-- `?dry=1` renders exactly what would be pinned and posts nothing. `ALERTS_PIN_WINDOW_HOURS` (24)
+- `?dry=1` renders exactly what would be pinned and posts nothing. `ALERTS_PIN_WINDOW_HOURS` (1)
   and `ALERTS_PIN_TOP_N` (3) are the knobs.
 - **In a channel, pinning is covered by "Edit Messages", not "Pin Messages"** — the API omits
   `can_pin_messages` for channels rather than returning false, so reading its absence as denied
   reports a working bot as broken. `npm run alerts:telegram` checks the right one per chat type.
 
 **A daily recap posts at 2pm New York, and it is the only message here that notifies.**
-`/api/cron/alert-digest`, the owner's call 2026-08-22. Same rows and the same builder as the pin —
-two copies of that message would drift, and the pin and the recap disagreeing about what a call did
-is the one thing that would discredit both. Only the header and footer differ: the pin carries
-`updated HH:MM UTC` because it is edited in place and has to prove it is still live, the recap
-carries its date instead.
+`/api/cron/alert-digest`, the owner's call 2026-08-22. Same builder as the pin — two copies of that
+message would drift, and the pin and the recap disagreeing about what a call did is the one thing
+that would discredit both. **Different window, same code:** the recap is fixed at 24 hours
+(`DIGEST_WINDOW_HOURS`, deliberately not borrowed from `PIN_WINDOW_HOURS`) and the pin is the last
+hour, so the two never say the same thing twice. The header names its own window and the footer
+differs: the pin carries `updated HH:MM UTC` because it is edited in place and has to prove it is
+still live, the recap carries its date instead.
 
 - **The route runs hourly and posts at most once a day.** That is not a workaround — Vercel cron
   expressions are UTC, and America/New_York is UTC-4 for two thirds of the year. A fixed

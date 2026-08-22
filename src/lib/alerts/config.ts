@@ -232,15 +232,21 @@ export const MIN_SCOREBOARD_MCAP_USD = 10_000;
 /**
  * The pinned leaderboard: how far back it looks, and how many calls it shows.
  *
- * Rolling 24 hours, refreshed hourly. A pin is the first thing a stranger who
- * opens the channel reads, so it has to answer "does this work" with calls they
- * could still check on a chart — an all-time top 3 would sit on three coins
- * from weeks ago and read as a screenshot rather than a live record.
+ * **The last hour, refreshed hourly — the owner's call, 2026-08-22.** It shipped
+ * on a rolling 24 hours, which made it the same three calls as the 2pm recap
+ * for most of the day: the pin is edited silently in place, so a reader saw one
+ * board that never appeared to change and a daily post that told them what they
+ * had already read. Two messages, one fact.
+ *
+ * An hour restores the division of labour. The pin is what is happening now and
+ * earns its refresh; the recap is the day, and is the only place a 24-hour
+ * ranking appears. A quiet hour says so rather than reaching back for an older
+ * call — see `buildLeaderboardMessage`, which never widens its own window.
  *
  * Three, because the pin has to stay short enough that Telegram does not
  * collapse it behind "show more" in the header preview.
  */
-export const PIN_WINDOW_HOURS = envNumber("ALERTS_PIN_WINDOW_HOURS", 24);
+export const PIN_WINDOW_HOURS = envNumber("ALERTS_PIN_WINDOW_HOURS", 1);
 export const PIN_TOP_N = envNumber("ALERTS_PIN_TOP_N", 3);
 
 /**

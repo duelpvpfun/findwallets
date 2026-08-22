@@ -484,21 +484,33 @@ export function buildLeaderboardMessage(input: LeaderboardInput): string {
   out.push(
     daily
       ? `📅 <b>TODAY'S BEST CALLS</b>${input.dayLabel ? `  ·  ${escapeHtml(input.dayLabel)}` : ""}`
-      : `🏆 <b>BEST CALLS · LAST ${Math.round(input.windowHours)}H</b>`
+      : `🏆 <b>BEST CALLS · ${windowLabel(input.windowHours).toUpperCase()}</b>`
   );
   out.push("");
 
+  const plural = input.totalCalls === 1 ? "" : "s";
+
   if (input.calls.length === 0) {
-    // An empty leaderboard is a real state — a quiet night, or a fresh deploy —
-    // and saying so is better than leaving yesterday's winners pinned above
-    // today's silence.
+    // An empty leaderboard is a real state — a quiet hour, a quiet night, or a
+    // fresh deploy — and saying so is better than leaving an earlier winner
+    // pinned above the silence, or than falling back to a longer window and
+    // presenting an old call as if it just happened.
     out.push(
       daily
         ? "<i>Nothing traded above its entry in the last 24 hours. Some days are like that.</i>"
-        : "<i>No call has traded above its entry yet in this window.</i>"
+        : `<i>No call cleared its entry cap in the ${windowLabel(input.windowHours)}.</i>`
     );
     out.push("");
     out.push(`Every call lands in this channel the moment the wallets buy.`);
+    out.push("");
+    // The count and the clock ship even with nothing to rank. The pin is edited
+    // in place, so without the stamp a quiet hour is indistinguishable from a
+    // leaderboard that stopped updating days ago.
+    out.push(
+      daily
+        ? `<i>${input.totalCalls} call${plural} in 24h</i>`
+        : `<i>${input.totalCalls} call${plural} fired · updated ${utcClock(input.now)} UTC</i>`
+    );
     out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
     return out.join("\n");
   }
@@ -527,7 +539,6 @@ export function buildLeaderboardMessage(input: LeaderboardInput): string {
   // The clock is on the pin only. The pin is edited in place, so a reader needs
   // a way to tell a live leaderboard from one that stopped updating three days
   // ago — a dated recap already says when it is from.
-  const plural = input.totalCalls === 1 ? "" : "s";
   out.push(
     daily
       ? `<i>${input.calls.length} best of ${input.totalCalls} call${plural} in 24h</i>`
@@ -537,6 +548,18 @@ export function buildLeaderboardMessage(input: LeaderboardInput): string {
   out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
 
   return out.join("\n");
+}
+
+/**
+ * "last hour" / "last 6h". Reads as English at 1, which is the pin's window.
+ *
+ * Uppercased by the caller for the header and left as-is in the sentence, so
+ * the window is named identically in both places — the header saying "LAST HOUR"
+ * over a body talking about a different span is how a reader stops trusting it.
+ */
+function windowLabel(hours: number): string {
+  const h = Math.round(hours);
+  return h === 1 ? "last hour" : `last ${h}h`;
 }
 
 /** "14:05". The pin is edited in place, so a reader needs a way to tell a live
