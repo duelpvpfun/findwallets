@@ -251,6 +251,39 @@ supply change cannot masquerade as a market-cap move. `greatest()` means the pea
 up. Alerts that fired under $20K market cap are excluded from the averages — a $3K cap doubling is
 one buy, and a handful would flatter every figure into fiction.
 
+**A step whose wallets have mostly sold does not reach Telegram.** `MAX_SOLD_SHARE` (0.6, the
+owner's rule 2026-08-22) suppresses the *message* when more than 60% of the window is already out.
+It is a Telegram suppression only: the step keeps its claim, stays on the feed and keeps being
+tracked, because **the first night of data says the rule is pointed the wrong way.** Measured over
+263 announced steps it removes 33 of them (13% of messages) and silences exactly one call — and the
+steps it removes hit 2x more often (8 of 32) than the steps where nobody had sold (16 of 110).
+Sold-share climbs with elapsed time and with the wallet count, so it partly measures "this call ran
+and people took profit"; BOTFIRM, the 21-wallets-17-sold call that prompted the rule, went on to
+peak at **3.85x**. Keeping the suppressed steps in the record is the only thing that can settle it.
+Set `ALERTS_MAX_SOLD_SHARE=1` to switch it off.
+
+**Peak leads the feed row, not "now".** Almost every memecoin is below its top an hour later, so
+leading with the current multiple made a feed of `▼ 0.10x` — bearish about calls that had run 4x. The
+peak is the number that says what the call was worth. Nothing is hidden to get there: "now" is still
+on the row (muted), the low is in the open row, and **the peak still gets no up-arrow below 1.2x**
+because `ath_mcap_usd` starts null and is only ever set by an observed sample, so it genuinely can
+come in under 1.00x.
+
+**"Average big wins", never "their record".** `avg_multiple_x` and `avg_pnl_usd` are means over the
+wins stored in `wallet_tokens` — and only wins are ever stored there, because `meetsQualityBar` is a
+write gate. Calling that a wallet's "record" claims a lifetime figure we do not have and cannot
+support, and it reads as inflated to anyone who checks. Three places say it and must agree:
+`buildAlertMessage`, the `FeedTerminal` column header, and the `FeedRow` detail grid.
+
+**Venue logos are self-hosted in `public/venues/`, keyed by `TradeLink.slug`.** Hotlinking a
+third-party favicon leaks a referrer on every row of the feed and blanks the moment they move the
+file, which is why these were monograms first. The fix is to own the bytes. **pump.fun replaced
+BasedBot** (owner's call, 2026-08-22) and is the one venue with `refEnv: null` — no referral
+programme, kept because nearly every call here is a pump.fun launch, and a link we earn nothing on
+beats a link nobody taps. It is Solana-only: there is no pump.fun page for a BNB Chain or Base
+contract, and a dead button is worse than one fewer. `ALERTS_REF_BASEDBOT` is now inert and can come
+out of Vercel.
+
 **Volume knobs exist but ship OFF.** The tiers were calibrated for a ~500-wallet roster; at 1,685
 the measured live rate was **561 alerts an hour**, because two proven wallets buying the same token
 inside two minutes happens by coincidence constantly. `ALERTS_TELEGRAM_MIN_TIER`,

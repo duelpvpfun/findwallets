@@ -17,6 +17,7 @@ import type { AlertWalletSnapshot } from "../db/schema";
 import { classifyBatch, type ClassifiedEvent, type HeliusEnhancedTransaction } from "./classify";
 import {
   MAX_ALERT_MCAP_USD,
+  MAX_SOLD_SHARE,
   MIN_ALERT_MCAP_USD,
   MIN_BUY_USD,
   TELEGRAM_MIN_TIER,
@@ -211,6 +212,7 @@ async function evaluateToken(
 
   const firstBuy = Math.min(...buyers.map((b) => b.firstBuy.getTime()));
   const lastBuy = Math.max(...buyers.map((b) => b.firstBuy.getTime()));
+  const exitedCount = buyers.filter((b) => b.exited).length;
 
   const claimed = await claimTier({
     chain: CHAIN,
@@ -219,7 +221,7 @@ async function evaluateToken(
     episode,
     spanSeconds: Math.round((lastBuy - firstBuy) / 1000),
     wallets: snapshots,
-    exitedCount: buyers.filter((b) => b.exited).length,
+    exitedCount,
     avgMultipleX: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgMultipleX ?? null)),
     avgPnlUsd: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgPnlUsd ?? null)),
     totalBoughtUsd: buyers.reduce((sum, b) => sum + b.boughtUsd, 0),
@@ -251,6 +253,20 @@ async function evaluateToken(
     return { tokenAddress, tier: tier.wallets, wallets: buyers.length };
   }
 
+  // Most of the window is already out. The owner's rule, 2026-08-22: an alert
+  // whose wallets have mostly sold is selling the reader an exit.
+  //
+  // Suppressed from Telegram only. It keeps its claim, stays on the feed and
+  // keeps being tracked, because the evidence so far runs the other way — the
+  // steps this removes hit 2x MORE often than the ones where nobody had sold,
+  // and BOTFIRM, the call that prompted the rule, peaked at 3.85x. Leaving the
+  // suppressed steps in the record is what makes the threshold falsifiable.
+  const soldShare = buyers.length > 0 ? exitedCount / buyers.length : 0;
+  if (soldShare > MAX_SOLD_SHARE) {
+    await markDelivered(claimed.id, `mostly-sold-${Math.round(soldShare * 100)}pct`, null);
+    return { tokenAddress, tier: tier.wallets, wallets: buyers.length };
+  }
+
   if (tier.wallets < TELEGRAM_MIN_TIER) {
     await markDelivered(claimed.id, `suppressed-below-tier-${TELEGRAM_MIN_TIER}`, null);
     return { tokenAddress, tier: tier.wallets, wallets: buyers.length };
@@ -271,7 +287,7 @@ async function evaluateToken(
       avgMultipleX: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgMultipleX ?? null)),
       avgPnlUsd: mean(buyers.map((b) => buyerRoster.get(b.walletAddress)?.avgPnlUsd ?? null)),
       totalBoughtUsd: buyers.reduce((sum, b) => sum + b.boughtUsd, 0),
-      exitedCount: buyers.filter((b) => b.exited).length,
+      exitedCount,
       walletCount: buyers.length,
     });
     // Thread under the first announced step of this call, if there is one.
