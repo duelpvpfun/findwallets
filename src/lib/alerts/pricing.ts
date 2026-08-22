@@ -3,6 +3,8 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "../db/index";
 import { tokens } from "../db/schema";
 import { fetchSolPriceUsd, fetchTokenMeta, fetchTokenSupply } from "../solanaTracker";
+import { fetchSpotQuotes } from "../prices/free";
+import { recordTokenPool } from "../db/alerts";
 
 /**
  * Pricing for the alert engine.
@@ -160,6 +162,26 @@ const SNAPSHOT_FRESH_MS = 5 * 60 * 1000;
  * Supply comes from the chain, and the cap is `price x supply`, matching
  * `fetchTokenMeta`. Every figure in the app then shares one source of truth
  * instead of trusting a pool's self-reported market cap.
+ *
+ * **Free source first, 2026-08-22, and it was the single biggest paid line item
+ * in the product.** `fetchTokenMeta` is two Solana Tracker credits per call, not
+ * one: it fans out to `/tokens/{mint}` *and* `/price` for SOL. This runs once
+ * per claimed tier, and the cache above almost never hits because the token is
+ * new by definition — so on one live day it was 989 `/tokens` calls and 989 of
+ * the day's 1,276 `/price` calls, against 372 total two days earlier. The whole
+ * alert stream, not the paid scan path, had become the biggest consumer.
+ *
+ * DexScreener answers the same question in one free request, and answers it
+ * BETTER: 21 calls were sitting on the feed with no entry cap at all — a
+ * permanent "—" in the peak column, because a null denominator cannot produce a
+ * multiple — and DexScreener priced every one of them that was checked by hand.
+ * Solana Tracker returns no pool over the liquidity floor for a mint that new.
+ *
+ * The discipline is unchanged. Supply still comes from the chain and the cap is
+ * still `price x supply`; DexScreener's own `marketCap` is only a last resort,
+ * exactly as the pool's figure is in `fetchTokenMeta`. And Solana Tracker is
+ * still the fallback, because DexScreener publishes no SLA and this number is
+ * the denominator of every performance figure the call will ever report.
  */
 export async function fetchAlertTokenSnapshot(mint: string): Promise<TokenSnapshot> {
   const db = getDb();
@@ -196,6 +218,15 @@ export async function fetchAlertTokenSnapshot(mint: string): Promise<TokenSnapsh
     }
   }
 
+  const free = await freeSnapshot(mint);
+  if (free) {
+    // Native price is unknown from this source, and passing 0 leaves the stored
+    // value alone — `cacheTokenSnapshot` coalesces, so nothing is overwritten
+    // with a blank.
+    await cacheTokenSnapshot(mint, free, 0);
+    return free;
+  }
+
   try {
     const meta = await fetchTokenMeta(mint);
     const snapshot: TokenSnapshot = {
@@ -211,6 +242,56 @@ export async function fetchAlertTokenSnapshot(mint: string): Promise<TokenSnapsh
   } catch (err) {
     console.error(`[alerts/pricing] token meta failed for ${mint}:`, err);
     return { symbol: null, name: null, imageUrl: null, priceUsd: null, mcapUsd: null, supply: null };
+  }
+}
+
+/**
+ * The same snapshot off DexScreener, or null if it does not know the mint.
+ *
+ * Two calls, neither of them a paid credit: one DexScreener request and one
+ * `getTokenSupply` against the RPC. Null on anything missing rather than a
+ * half-filled snapshot — a call with a price but no denominator would land on
+ * the feed as a permanent dash, which is the failure this exists to remove.
+ *
+ * It also caches the pool. The peak pass needs a pool address before it can read
+ * a candle, and resolving one costs a GeckoTerminal call out of a ~30-a-minute
+ * budget the rotation is already rationing. DexScreener names the pair in the
+ * response we are already parsing, so the very first peak check on a brand-new
+ * call arrives with the lookup already paid for.
+ */
+async function freeSnapshot(mint: string): Promise<TokenSnapshot | null> {
+  try {
+    const quotes = await fetchSpotQuotes([mint]);
+    const quote = quotes.get(mint);
+    if (!quote) return null;
+
+    // Chain supply, never marketCap/price — the rule from `fetchTokenMeta`. A
+    // long-abandoned pool with $0.88 of liquidity still reports a price, and
+    // dividing by it poisons the mcap of everything derived from that alert.
+    const chainSupply = await fetchTokenSupply(mint);
+    const supply = chainSupply > 0 ? chainSupply : null;
+    const mcap = supply ? quote.priceUsd * supply : quote.marketCapUsd;
+    if (!mcap || mcap <= 0) return null;
+
+    if (quote.poolAddress) {
+      // Best-effort. A failed write costs the peak pass one lookup later, never
+      // the alert being announced.
+      await recordTokenPool("solana", mint, quote.poolAddress, "dexscreener").catch(() => {});
+    }
+
+    return {
+      symbol: quote.symbol,
+      name: quote.name,
+      imageUrl: quote.imageUrl,
+      priceUsd: quote.priceUsd,
+      mcapUsd: mcap,
+      supply,
+    };
+  } catch (err) {
+    // Never throws into the alert path: a free source failing must cost a
+    // fallback, not the call.
+    console.error(`[alerts/pricing] free snapshot failed for ${mint}:`, err);
+    return null;
   }
 }
 

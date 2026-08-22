@@ -109,6 +109,24 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
    */
   const lastSample = alert.samples.length > 0 ? alert.samples[alert.samples.length - 1][1] : null;
   const up = !base || !lastSample || lastSample >= base;
+
+  /**
+   * No peak YET, as opposed to no peak.
+   *
+   * `ath_mcap_usd` is deliberately never seeded from the entry cap — a peak
+   * nobody observed is not a peak — so a call is genuinely unmeasured until the
+   * first tracking sweep lands on it, up to ten minutes. On a newest-first feed
+   * that is always the top of the page: 9 of the 12 dashes on a 60-row page were
+   * calls under ten minutes old, sitting above rows that dash because something
+   * is actually wrong with them. One glyph for both made the fresh calls look
+   * broken and the broken ones look fresh.
+   *
+   * The test is the series, not a clock: `samples` carries one entry from alert
+   * time and gains one per sweep, so "nothing has measured this yet" is exactly
+   * one sample or none. Same reasoning as the sample counts beside the 1h/6h/24h
+   * columns on /admin — a dash has to read as "too early" rather than "no edge".
+   */
+  const tooEarly = alert.athMcapUsd === null && alert.samples.length <= 1;
   const standout = standoutWin(alert);
   const wallets = alert.wallets.slice(0, VISIBLE_WALLETS);
   const hidden = alert.wallets.length - wallets.length;
@@ -199,9 +217,21 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
               peakX && peakX >= 1.2 ? "text-emerald-400" : "text-neutral-500"
             }`}
-            title="Highest market cap since the call, over the cap at the call"
+            title={
+              peakX
+                ? "Highest market cap since the call, over the cap at the call"
+                : tooEarly
+                  ? "Called moments ago. The first market-cap sample has not landed yet."
+                  : "No market cap has been measured for this call."
+            }
           >
-            {peakX ? `${peakX >= 1.2 ? "▲ " : ""}${formatMultiple(peakX)}` : "—"}
+            {peakX ? (
+              `${peakX >= 1.2 ? "▲ " : ""}${formatMultiple(peakX)}`
+            ) : tooEarly ? (
+              <span className="text-[10px] font-normal text-neutral-600">tracking</span>
+            ) : (
+              "—"
+            )}
           </span>
         </button>
 
