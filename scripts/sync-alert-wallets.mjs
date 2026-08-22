@@ -110,6 +110,11 @@ async function eligibleWallets() {
     join tokens t on t.id = wt.token_id
     where w.chain = ${CHAIN}
       and not w.is_bot
+      -- Blocked by hand. Checked HERE rather than only in alert_wallets,
+      -- because this query rebuilds the roster from scratch: a wallet removed
+      -- downstream would be re-added by the next sync and nobody would notice.
+      -- (No backticks in this comment: it lives inside a JS template literal.)
+      and not w.blocked
       and wt.multiple_x is not null
       and wt.multiple_x <= ${MAX_PLAUSIBLE_MULTIPLE_X}
       and coalesce(wt.bought_usd, 0) >= ${MIN_COST_BASIS_USD}

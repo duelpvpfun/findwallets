@@ -57,6 +57,17 @@ export const wallets = pgTable(
     identitySource: text("identity_source"),
     tags: text("tags").array().notNull().default([]),
     isBot: boolean("is_bot").notNull().default(false),
+    /**
+     * Ruled out by hand, and never allowed back on the alert roster.
+     *
+     * Distinct from `isBot`, which records what an upstream provider said.
+     * This is a human decision, and it lives on the wallet rather than on
+     * `alert_wallets` because the roster is REBUILT from `wallet_tokens` on
+     * every sync — a wallet deactivated downstream walks straight back in
+     * otherwise. See `drizzle/0029_blocked_wallets.sql`.
+     */
+    blocked: boolean("blocked").notNull().default(false),
+    blockedReason: text("blocked_reason"),
     // Lifetime figures across ALL tokens — the guard against survivorship bias.
     // Null until the wallet gets enriched (Solana: always; BSC: top N only).
     lifetimePnlUsd: doublePrecision("lifetime_pnl_usd"),

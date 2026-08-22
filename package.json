@@ -22,7 +22,8 @@
     "alerts:sync": "env -u DATABASE_URL node --env-file=.env.local scripts/sync-alert-wallets.mjs",
     "alerts:stats": "env -u DATABASE_URL node --env-file=.env.local scripts/alerts-stats.mjs",
     "alerts:replay": "env -u DATABASE_URL node --env-file=.env.local scripts/alerts-replay.mjs",
-    "alerts:telegram": "env -u DATABASE_URL node --env-file=.env.local scripts/telegram-setup.mjs"
+    "alerts:telegram": "env -u DATABASE_URL node --env-file=.env.local scripts/telegram-setup.mjs",
+    "alerts:kill": "env -u DATABASE_URL node --env-file=.env.local scripts/kill-call.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.70.0",

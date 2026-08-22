@@ -381,6 +381,18 @@ contents, so tapping a ticker cannot yield the contract. The `copy_text` inline 
 instead, with no bot round trip, and it works from a channel post. It is the first button and alone
 on its row, because copying the contract is the step between reading an alert and owning the coin.
 
+**A wallet ruled out by hand is blocked on `wallets.blocked`, never only deactivated.** The roster
+is REBUILT from `wallet_tokens` on every `alerts:sync --apply`, so a wallet removed from
+`alert_wallets` alone walks straight back in on the next sync and nobody notices. The block lives
+next to the evidence that qualified it, and it is deliberately separate from `is_bot` — that one
+records what an upstream provider said, this one records that a human looked and said no.
+`npm run alerts:kill -- --symbol GHOUL --apply` deletes a bad call and blocks its buyers in one
+move, because doing those separately is how one gets forgotten: the call without the block leaves
+the wallets free to manufacture the next one, the block without the call leaves a fake multiple on
+the public podium. It deletes `alerts_fired` and `alert_state` but **keeps `wallet_events`** — the
+raw stream is the only evidence of how the call was manufactured and the only thing a rule change
+can be replayed against.
+
 **The roster is quality-selected, not `times_seen`-selected.** `scripts/sync-alert-wallets.mjs`
 takes wallets with **one 5x+ win and nothing else** — and only counts rows with a real cost basis
 (see the duplication table above). `times_seen` measures which tokens customers happened to scan at
