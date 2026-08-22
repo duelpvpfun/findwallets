@@ -313,7 +313,8 @@ because 113 calls over forty minutes extrapolates to "4,082 calls/day".
 >= 1.00 by construction, so no call could ever read as a loss. It starts null and the first real
 sample sets it.
 
-**A token whose last market cap is under `DEAD_MCAP_USD` ($4K) is abandoned by the tracker.** Most
+**A token whose last market cap is under `DEAD_MCAP_USD` ($5K, the owner's call 2026-08-22) is
+abandoned by the tracker.** Most
 never come back, and re-reading them every ten minutes for a week is the bulk of the tracking spend
 for no information. The check is on the last cap seen, so a token that never gets that low keeps
 being tracked normally.
@@ -336,12 +337,28 @@ and people took profit"; BOTFIRM, the 21-wallets-17-sold call that prompted the 
 peak at **3.85x**. Keeping the suppressed steps in the record is the only thing that can settle it.
 Set `ALERTS_MAX_SOLD_SHARE=1` to switch it off.
 
-**Peak leads the feed row, not "now".** Almost every memecoin is below its top an hour later, so
-leading with the current multiple made a feed of `▼ 0.10x` — bearish about calls that had run 4x. The
-peak is the number that says what the call was worth. Nothing is hidden to get there: "now" is still
-on the row (muted), the low is in the open row, and **the peak still gets no up-arrow below 1.2x**
+**The peak is the ONLY multiple on a feed row. "Now" was removed, 2026-08-22.** It led the row once,
+which on a memecoin feed meant a wall of `▼ 0.10x` — bearish about calls that had run 4x — so it was
+demoted to a muted figure beside the peak. That was still wrong, for a reason the demotion hid:
+`last_mcap_usd` **is** seeded from the entry cap when a call fires, so every call reads exactly
+`1.00x` until the first tracking sweep lands, and the feed is newest-first. The top of the page was
+permanently a column of `1.00x` that had measured nothing. Owner's call: "remove all the now, we just
+wanna know the peak since our call." The series is still drawn as the sparkline and the drawdown is
+still in the open row, so nothing is hidden to get there. The same figure came off the podium card
+for the same reason — under the peak almost by definition, so it read as a correction to the number
+above it — and the wallet count took that slot. **The peak still gets no up-arrow below 1.2x**
 because `ath_mcap_usd` starts null and is only ever set by an observed sample, so it genuinely can
 come in under 1.00x.
+
+**A dash on a fresh call reads `tracking`, not `—`.** Since `ath_mcap_usd` is never seeded, a call
+has no peak at all until the first sweep reaches it — up to ten minutes — and on a newest-first feed
+that is always the top of the page. Measured on a 60-row page: 12 dashes, **9 of them calls under ten
+minutes old**, sitting above rows that dash because something is genuinely wrong (a null
+`mcap_at_alert_usd` cannot make a multiple however good the peak is). One glyph for both made the
+fresh calls look broken and the broken ones look fresh. The test is the series, not a clock:
+`samples` carries one entry from alert time and gains one per sweep, so "nothing has measured this
+yet" is exactly one sample or none. Same reasoning as the sample counts beside the 1h/6h/24h columns
+on `/admin` — a dash has to read as "too early" rather than "no edge".
 
 **"Average big wins", never "their record".** `avg_multiple_x` and `avg_pnl_usd` are means over the
 wins stored in `wallet_tokens` — and only wins are ever stored there, because `meetsQualityBar` is a
@@ -398,15 +415,84 @@ Solana Tracker stays wired as the fallback for mints the free sources do not kno
 dying tokens), so it is now the exception rather than every sample. Neither free provider publishes
 an SLA, which is why the paid path is not deleted.
 
+**The paid API is the fallback for holes, never the freshness knob — and `fetchAlertTokenSnapshot`
+was the biggest paid line item in the product before anybody looked.** `fetchTokenMeta` is **two**
+Solana Tracker credits, not one: it fans out to `/tokens/{mint}` *and* `/price` for SOL. The snapshot
+runs once per claimed tier and its 5-minute cache almost never hits, because the token is new by
+definition. One live day was 989 `/tokens` calls and 989 of the day's 1,276 `/price` calls, against
+372 calls total two days earlier — the alert stream, not the paid scan path, had become the biggest
+consumer of the API the paid scans depend on. It now reads DexScreener first, which also **fixes a
+correctness bug**: 21 calls sat on the feed with no `mcap_at_alert_usd` at all, a permanent dash
+because a null denominator cannot make a multiple, and Solana Tracker returns no pool over its
+liquidity floor for a mint that new. Measured on 12 live mints the two sources agree within 8.3%
+worst case and under 1% for most — that spread is a memecoin moving between two sequential calls —
+and coverage is 11/12 each while missing **different** mints, which is the whole argument for
+keeping the fallback. Supply still comes from the chain and the cap is still `price x supply`;
+DexScreener's own `marketCap` is a last resort exactly as a pool's figure is in `fetchTokenMeta`.
+It caches the pool from the same response, so the first peak check on a new call needs no
+GeckoTerminal lookup.
+
+`fetchPeakSincePaid` is the same principle on the peak pass: free candles for the bulk, one paid
+`/chart` call for what the free path could not answer (no pool, empty candle list, 429, timeout).
+Keyed by MINT so it needs no pool lookup and works precisely when pool resolution is what failed,
+and windowed by `time_from` so it cannot credit a call with an earlier run. **Not
+`/tokens/{mint}/ath`** — that is one call and looks tempting, but it is the token's ALL-TIME high,
+which on a token that ran before our alert is somebody else's peak reported as ours.
+`PAID_PEAK_CHECKS_PER_SWEEP` (15) is the ceiling: an outage on the free provider turns every check
+in the sweep into a fallback, and that wants a cap rather than a surprise on the invoice. First live
+sweep: 15 paid checks, **11 of which found a peak the free path could not**.
+
 **The peak comes from candle highs, not from a running maximum of spot checks — and that is a
 correctness fix, not a saving.** $Link was recorded at $1.19M because that was the highest of seven
 glances; it actually traded at **$2.22M**, and its entire run above $1.3M lasted thirteen minutes.
 No polling rate catches that. A candle high does, and it does so **retroactively** — a spike at
-04:29 is in the 04:29 candle forever — so `PEAK_CHECKS_PER_SWEEP` is a *rotation*, not a schedule:
-cadence buys display freshness, never correctness. That is the opposite of the spot sampler, where
-a missed tick is a lost observation.
+04:29 is in the 04:29 candle forever — so correctness never depends on the cadence. That is the
+opposite of the spot sampler, where a missed tick is a lost observation. **Cadence still decides
+what the feed shows**, though, and the feed is what the product is judged on.
 
-Four things that bit, all of them shipped wrong once:
+**The peak pass is a schedule with a rotation underneath, and dead coins retire from it.** It was a
+flat "stalest first" sort, which treats a call running right now exactly like one whose peak was set
+six hours ago. Measured live: 345 tokens in the rotation, **200 already under $4K and 187 of those
+already carrying a peak** — 54% of a budget capped by GeckoTerminal's ~30-a-minute free tier spent
+re-reading numbers that cannot move, while live calls waited **2.3 hours** for a slot. The average
+call peaks 58 minutes in, which is inside the window that was being starved. Three changes:
+
+- **`peak_final` retires a dead token after ONE reconciliation.** The old note here said
+  `DEAD_MCAP_USD` must not apply to the peak pass because a dead coin still had a peak worth being
+  right about. That is true, and it is exactly why the token is checked **once** rather than never.
+  Only the candle rotation honours the flag — `applyMcapSample` still raises the peak with
+  `greatest()` — so it can never hide a token that genuinely trades back up.
+- **The queue is due-gated by the call's age** (`PEAK_HOT/WARM/COLD_SECONDS`: 10 minutes under 6h,
+  30 minutes to 24h, then 2 hours), so a token that is not due does not take a slot at all. The
+  ordering is now only a tie-break among the due, and it still puts never-checked and hot calls
+  first, because a sweep can be over-subscribed and the peaks that can still move have to win.
+- **Drawdown outranks age, and it is what the owner actually asked for**
+  ("after recording an ATH from a coin and seeing it retrace a lot we can slow down the fetches or
+  completely stop them if the coin retraced 90% for example"). Past `PEAK_SETTLED_RETRACE` (0.9) a
+  token is retired exactly like a dead one; past `PEAK_SLOW_RETRACE` (0.5) it drops to the coldest
+  interval rather than stopping, because a 60% retrace on a memecoin is a Tuesday. `DEAD_MCAP_USD`
+  does not cover this: a token that ran to $2M and sits at $200K is 90% down and nowhere near the
+  $5K floor. **The safety is stronger here than in the dead case** — a token above `DEAD_MCAP_USD` is
+  still spot-sampled, and `applyMcapSample` raises the peak with `greatest()` regardless of
+  `peak_final`, so a genuine second run is caught at ten-minute resolution instead of candle
+  resolution. `nullif` on the denominator makes a token with no peak yet read as 0% retraced rather
+  than dividing by zero — the right answer, because a call nobody has measured must never be slowed.
+- **`PEAK_CHECKS_PER_SWEEP` 25 → 75, deadline 200s → 240s.** 25 left the pass idle: a check is ~2.8s
+  and nearly all of that is `GECKO_MIN_GAP_MS`, not network — a GeckoTerminal call returns in ~200ms
+  and the sixth un-throttled call in a burst gets a 429, so the throttle is the entire cost model.
+  75 is still 27 calls a minute. The hot band is ~45 tokens, so **every live call's peak is now at
+  most one tick old** instead of 2.3 hours.
+
+**Freshness came from the budget, not from a faster cron, and that is deliberate.** The pass may use
+240s of a 300s `maxDuration`, so a five-minute schedule would overlap its own previous run: two
+sweeps reading the same rotation, doubling the calls against a 30-a-minute tier and inviting exactly
+the 429s that make a peak check fail. Leave the ten-minute interval alone.
+
+Verified in one real sweep against live data: 61 free checks (was 25), 15 paid of which 11 found a
+peak the free path could not, 21 peaks raised, 9 dead coins retired, 0 rejected, 153s of 240s. Calls
+with no peak fell 16 → 8, plus 14 under fifteen minutes old and genuinely unmeasured.
+
+Five things that bit, all of them shipped wrong once:
 
 - **`token=<mint>` on the OHLCV request is not optional.** It defaults to the pool's BASE token, and
   our mint is regularly the quote side: $ELOTÉ's deepest pool is "ZEC / ELOTÉ", so the default
@@ -424,6 +510,9 @@ Four things that bit, all of them shipped wrong once:
   permanently unresolvable token still cannot block the queue.
 - **The peak pass has its own queue and must not be nested inside the spot pass.** It was, and a
   tick with nothing due for sampling did no peak work at all.
+- **A rejected candle read is never retired.** `touchAthChecked` takes the retire flag too, for a
+  token that is both dead and unpriceable by any source — but the `MAX_CANDLE_JUMP_X` path passes
+  `false` deliberately. Retiring on one bad read would make a provider bug permanent.
 
 **`SAMPLE_DUE_SLACK_SECONDS` fixes a real aliasing bug.** The cron fires every 10 minutes and the
 due-check was "more than 600 seconds since the last one", so a token checked at 04:10:04 was 9m56s

@@ -46,8 +46,6 @@ export interface PodiumEntry {
   tokenImageUrl: string | null;
   entryMcapUsd: number;
   athMcapUsd: number;
-  /** Where the token is now, so the peak is never the only number on the card. */
-  lastMcapUsd: number | null;
   peakX: number;
   walletCount: number;
   createdAt: string;
@@ -61,7 +59,6 @@ function fromCard(card: CallCard): PodiumEntry {
     tokenImageUrl: card.tokenImageUrl,
     entryMcapUsd: card.entryMcapUsd,
     athMcapUsd: card.athMcapUsd,
-    lastMcapUsd: card.lastMcapUsd,
     peakX: card.peakX,
     walletCount: card.walletCount,
     createdAt: card.createdAt,
@@ -79,7 +76,6 @@ function fromRow(row: AlertFeedRow): PodiumEntry | null {
     tokenImageUrl: row.tokenImageUrl,
     entryMcapUsd: entry,
     athMcapUsd: ath,
-    lastMcapUsd: row.lastMcapUsd,
     peakX: ath / entry,
     walletCount: row.walletCount,
     createdAt: row.createdAt,
@@ -224,9 +220,13 @@ const Card = memo(function Card({
       </div>
 
       {/* The two caps the multiple is the ratio of. Without them it is a claim;
-          with them it is checkable against the chart one tap away. And "now"
-          keeps the peak from being the only number on the card — almost every
-          one of these is below its top by the time it is read. */}
+          with them it is checkable against the chart one tap away.
+
+          "now" used to sit on the right of this line and was dropped with the
+          feed's Now column (2026-08-22): on a memecoin it is below the peak
+          almost by definition, so it read as a correction to the number above it
+          rather than as information. The wallet count takes the slot — it is
+          what the reader would otherwise have to open the row to learn. */}
       <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-neutral-800/70 pt-1.5">
         <span className="tnum whitespace-nowrap text-[10px] text-neutral-500">
           {formatUsd(entry.entryMcapUsd)}
@@ -234,7 +234,7 @@ const Card = memo(function Card({
           {formatUsd(entry.athMcapUsd)}
         </span>
         <span className="tnum shrink-0 whitespace-nowrap text-[10px] text-neutral-600">
-          {entry.lastMcapUsd ? `now ${formatUsd(entry.lastMcapUsd)}` : `${entry.walletCount}w`}
+          {entry.walletCount}w
         </span>
       </div>
     </a>

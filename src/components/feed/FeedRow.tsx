@@ -96,9 +96,37 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
   const symbol = (alert.tokenSymbol || "?").replace(/^\$+/, "");
   const base = alert.mcapAtAlertUsd;
   const peakX = base && base > 0 && alert.athMcapUsd ? alert.athMcapUsd / base : null;
-  const nowX = base && base > 0 && alert.lastMcapUsd ? alert.lastMcapUsd / base : null;
   const lowX = base && base > 0 && alert.lowMcapUsd ? alert.lowMcapUsd / base : null;
-  const up = nowX === null || nowX >= 1;
+
+  /**
+   * Sparkline direction, from the series' own last point.
+   *
+   * It used to come from `lastMcapUsd`, because the row printed that same
+   * figure as a number and a line disagreeing with the number beside it is a
+   * bug. The number is gone (see below), so the picture is now free to describe
+   * itself — and the last stored sample is the only point the line actually
+   * ends on.
+   */
+  const lastSample = alert.samples.length > 0 ? alert.samples[alert.samples.length - 1][1] : null;
+  const up = !base || !lastSample || lastSample >= base;
+
+  /**
+   * No peak YET, as opposed to no peak.
+   *
+   * `ath_mcap_usd` is deliberately never seeded from the entry cap — a peak
+   * nobody observed is not a peak — so a call is genuinely unmeasured until the
+   * first tracking sweep lands on it, up to ten minutes. On a newest-first feed
+   * that is always the top of the page: 9 of the 12 dashes on a 60-row page were
+   * calls under ten minutes old, sitting above rows that dash because something
+   * is actually wrong with them. One glyph for both made the fresh calls look
+   * broken and the broken ones look fresh.
+   *
+   * The test is the series, not a clock: `samples` carries one entry from alert
+   * time and gains one per sweep, so "nothing has measured this yet" is exactly
+   * one sample or none. Same reasoning as the sample counts beside the 1h/6h/24h
+   * columns on /admin — a dash has to read as "too early" rather than "no edge".
+   */
+  const tooEarly = alert.athMcapUsd === null && alert.samples.length <= 1;
   const standout = standoutWin(alert);
   const wallets = alert.wallets.slice(0, VISIBLE_WALLETS);
   const hidden = alert.wallets.length - wallets.length;
@@ -167,36 +195,43 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             {base ? formatUsd(base) : "—"}
           </span>
 
-          {/* Peak leads, because it is the number that answers what the call was
-              worth. "Now" led before, and on a memecoin feed that meant a wall
-              of red: nearly everything is down from its top an hour later, so
-              the honest headline of a call is how far it ran, not where it
-              happens to sit right now.
+          {/* Peak since the call, and the only multiple on this row.
+              **"Now" was removed here, the owner's call 2026-08-22**, and the
+              reason is that it was mostly a lie of precision. `last_mcap_usd`
+              is seeded from the entry cap when a call fires, so every call reads
+              exactly "1.00x" until the first tracking sweep lands — and the feed
+              is sorted newest-first, so the top of the page was permanently a
+              column of 1.00x that had measured nothing. Below that it was a wall
+              of `0.10x`, which is true of almost every memecoin an hour later
+              and says nothing about whether the call was worth reading.
 
-              It still gets no arrow below 1.2x. `ath_mcap_usd` starts null and
-              is only ever set by an observed sample, so a peak CAN come in under
-              1.00x, and an up-arrow on one of those would be inventing a gain.
+              What a reader wants from a call is how far it ran after we posted
+              it. That is one number, and it is this one. The series is still
+              drawn as the sparkline and the drawdown is still in the open row,
+              so nothing is hidden to get here.
 
-              The reading stays honest in both directions: the low is in the open
-              row, "Now" is still on this line, and nothing here is rounded up. */}
+              It gets no arrow below 1.2x. `ath_mcap_usd` starts null and is only
+              ever set by an observed sample, so a peak CAN come in under 1.00x,
+              and an up-arrow on one of those would be inventing a gain. */}
           <span
             className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
               peakX && peakX >= 1.2 ? "text-emerald-400" : "text-neutral-500"
             }`}
-            title="Highest market cap since the call, over the cap at the call"
+            title={
+              peakX
+                ? "Highest market cap since the call, over the cap at the call"
+                : tooEarly
+                  ? "Called moments ago. The first market-cap sample has not landed yet."
+                  : "No market cap has been measured for this call."
+            }
           >
-            {peakX ? `${peakX >= 1.2 ? "▲ " : ""}${formatMultiple(peakX)}` : "—"}
-          </span>
-
-          {/* Kept, and deliberately quiet — one muted figure rather than a red
-              "▼ 0.10x" shouting over the peak beside it. */}
-          <span
-            className={`tnum w-14 shrink-0 text-right text-xs ${
-              nowX !== null && up ? "text-neutral-400" : "text-neutral-500"
-            }`}
-            title="Market cap now, over the cap at the call"
-          >
-            {nowX ? formatMultiple(nowX) : "—"}
+            {peakX ? (
+              `${peakX >= 1.2 ? "▲ " : ""}${formatMultiple(peakX)}`
+            ) : tooEarly ? (
+              <span className="text-[10px] font-normal text-neutral-600">tracking</span>
+            ) : (
+              "—"
+            )}
           </span>
         </button>
 
@@ -262,13 +297,6 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
                 {` (${formatMultiple(lowX)})`}
               </span>
             ) : null}
-            <span>
-              Now{" "}
-              <span className={up ? "text-emerald-400" : "text-rose-400"}>
-                {alert.lastMcapUsd ? formatUsd(alert.lastMcapUsd) : "—"}
-              </span>
-              {nowX ? ` (${formatMultiple(nowX)})` : ""}
-            </span>
           </div>
 
           {alert.steps.length > 1 ? (

@@ -581,3 +581,71 @@ export async function fetchPricesMulti(
   }
   return out;
 }
+
+interface ChartCandle {
+  high?: number;
+  time?: number;
+}
+
+/**
+ * The highest price a mint traded since a given moment, from Solana Tracker's
+ * own candles.
+ *
+ * **The paid fallback for the peak pass, not its primary source.** GeckoTerminal
+ * candles are free and answer the same question, so this exists only for the
+ * holes that path leaves: a mint GeckoTerminal has no pool for (24 of 345
+ * tracked tokens on the live set), a pool that returns an empty candle list, a
+ * 429, a timeout. Every one of those otherwise ends with a wrong peak on the
+ * public feed for as long as the token keeps failing to resolve — which for a
+ * mint that is never indexed is forever.
+ *
+ * Three things make it the right shape for that job:
+ *
+ *  - **Keyed by mint, not by pool.** No lookup call first, so a fallback costs
+ *    one credit rather than two, and it works precisely when pool resolution is
+ *    the thing that failed.
+ *  - **`time_from` is a real window**, so this can never credit a call with a
+ *    run that happened before it. `/tokens/{mint}/ath` is one call and looks
+ *    tempting, but it reports the token's ALL-TIME high — on a token that ran
+ *    before our alert that is somebody else's peak reported as ours.
+ *  - No throttle to work around: ~230ms measured, against the 2.2s gap the free
+ *    tier needs.
+ *
+ * Resolves rather than throws, like everything else on this path: losing a
+ * sample must never be able to lose the running maximum with it.
+ */
+export async function fetchPeakSincePaid(
+  mint: string,
+  since: Date
+): Promise<{ highPriceUsd: number; highAt: Date } | null> {
+  const from = Math.floor(since.getTime() / 1000);
+  // Minute candles inside the first day, hourly after — same coverage tradeoff
+  // as the free path. A week of minute candles is more than one response holds.
+  const interval = (Date.now() - since.getTime()) / 3_600_000 <= 16 ? "1m" : "1h";
+
+  try {
+    const res = await stFetch<{ oclhv?: ChartCandle[] }>(`/chart/${mint}`, {
+      type: interval,
+      time_from: String(from),
+      time_to: String(Math.floor(Date.now() / 1000)),
+      // Solana Tracker's own outlier filter. A single wick off a $2 pool is
+      // exactly the kind of read that would put a fabricated peak on the podium.
+      removeOutliers: "true",
+    });
+
+    let best: { highPriceUsd: number; highAt: Date } | null = null;
+    for (const candle of res?.oclhv ?? []) {
+      const { high, time } = candle;
+      // The window is server-side, but re-checked here: a provider widening a
+      // request it cannot serve exactly is not a reason to score the wrong run.
+      if (typeof time !== "number" || time < from) continue;
+      if (typeof high !== "number" || !Number.isFinite(high) || high <= 0) continue;
+      if (!best || high > best.highPriceUsd) {
+        best = { highPriceUsd: high, highAt: new Date(time * 1000) };
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}

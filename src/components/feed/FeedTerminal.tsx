@@ -282,7 +282,6 @@ export default function FeedTerminal({ initialAlerts, trackedWallets, podiumSeed
           <span className="hidden w-12 shrink-0 text-right md:block">Span</span>
           <span className="w-20 shrink-0 text-right">Cap at call</span>
           <span className="w-16 shrink-0 text-right">Peak</span>
-          <span className="w-14 shrink-0 text-right">Now</span>
         </span>
         <span className="hidden w-[132px] shrink-0 lg:block">Since</span>
         <span className="shrink-0">Buy</span>

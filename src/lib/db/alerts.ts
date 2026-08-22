@@ -25,6 +25,12 @@ import {
   MIN_ALERT_MCAP_USD,
   MIN_BUY_USD,
   MIN_SCOREBOARD_MCAP_USD,
+  PEAK_COLD_SECONDS,
+  PEAK_HOT_HOURS,
+  PEAK_HOT_SECONDS,
+  PEAK_SETTLED_RETRACE,
+  PEAK_SLOW_RETRACE,
+  PEAK_WARM_SECONDS,
   PIN_MIN_MCAP_USD,
   SAMPLE_DUE_SLACK_SECONDS,
   TRACKING_DAYS,
@@ -507,6 +513,15 @@ export interface TrackingTarget {
    * order of magnitude.
    */
   bestSpotMcapUsd: number;
+  /**
+   * This token's peak is finished: retire it after one more reconciliation.
+   *
+   * True when the last observed cap is under `DEAD_MCAP_USD`, or when the token
+   * has retraced past `PEAK_SETTLED_RETRACE` from the peak already recorded.
+   * Both read from the last SPOT sample, never from a candle — a candle high is
+   * a ceiling the token may be nowhere near.
+   */
+  peakSettled: boolean;
 }
 
 /**
@@ -574,6 +589,7 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
     limit ${limit}
   `);
 
+  // Never dead by construction: the HAVING above is what excludes them.
   return rows.map((r) => ({
     tokenAddress: r.token_address,
     supplyAtAlert: num(r.supply_at_alert),
@@ -581,26 +597,63 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
     firstAlertAt: new Date(r.first_alert_at),
     athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
     bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
+    peakSettled: false,
   }));
 }
 
 /**
- * The peak rotation: tracked tokens whose candle peak is most overdue.
+ * The peak rotation: tracked tokens whose candle peak is due a re-read.
  *
  * Deliberately its OWN query rather than a slice of `fetchTrackingTokens`.
  * That one returns tokens due for a spot sample, which is a different question
  * with a different cadence — on a tick where few are due the rotation would
- * have almost nothing to choose from, and the "stalest first" ordering would be
- * decided by sampling timing rather than by peak staleness.
+ * have almost nothing to choose from, and the ordering would be decided by
+ * sampling timing rather than by peak staleness.
  *
- * **`DEAD_MCAP_USD` is not applied here.** A token that has died still had a
- * peak, and that peak is exactly what the record needs to be right about — the
- * check is cheap, it is free, and once done the token falls to the back of the
- * rotation on its own.
+ * **It was a flat rotation and is now a schedule with a rotation underneath.**
+ * A flat "stalest first" sort treats a call that is running right now exactly
+ * like one whose peak was set six hours ago, and on the live set that meant 54%
+ * of a rate-limited budget going to dead coins while live calls waited 2.3 hours
+ * for a slot. Two changes fix it:
+ *
+ *  - `peak_final` retires a dead token after ONE reconciliation. The old comment
+ *    here argued that `DEAD_MCAP_USD` must not be applied because a dead token
+ *    still had a peak worth being right about — which is true, and is exactly
+ *    why the token is checked once rather than never. See `0032_peak_final.sql`.
+ *  - a due interval by age (`PEAK_HOT/WARM/COLD_SECONDS`), so a token that is
+ *    not due does not compete for a slot at all.
+ *
+ * The ordering is then only a tie-break among tokens that ARE due, and it still
+ * puts never-checked and hot calls first — a sweep can be over-subscribed, and
+ * when it is, the calls whose peak can still move have to win.
  */
 export async function fetchPeakRotation(chain: string, limit: number): Promise<TrackingTarget[]> {
   const db = getDb();
   if (!db) return [];
+
+  // Age of the newest step, in the same shape the ORDER BY and the HAVING both
+  // need. `max(created_at)` rather than `min`: an escalating token is as live as
+  // its latest step.
+  const ageSeconds = sql`extract(epoch from (now() - max(${alertsFired.createdAt})))`;
+  const sinceChecked = sql`extract(epoch from (
+    now() - min(coalesce(${alertsFired.athCheckedAt}, ${alertsFired.createdAt}))
+  ))`;
+  const lastCap = sql`max(coalesce(${alertsFired.lastMcapUsd}, ${alertsFired.mcapAtAlertUsd}, 0))`;
+  const peakCap = sql`max(coalesce(${alertsFired.athMcapUsd}, 0))`;
+
+  /**
+   * Retrace from the recorded peak, or 0 when there is no peak to retrace from.
+   *
+   * The owner's rule (see `PEAK_SETTLED_RETRACE`): a coin far off its high has a
+   * high that is finished, whatever its age. `nullif` on the denominator is what
+   * makes a token with no peak yet read as 0% retraced rather than dividing by
+   * zero — and 0% is the right answer, because a call nobody has measured must
+   * never be slowed down.
+   */
+  const retrace = sql`coalesce(1 - (${lastCap} / nullif(${peakCap}, 0)), 0)`;
+
+  /** Dead, or retraced past the point where the peak can still move. */
+  const settled = sql`(${lastCap} < ${DEAD_MCAP_USD} or ${retrace} >= ${PEAK_SETTLED_RETRACE})`;
 
   const rows = await db.execute<{
     token_address: string;
@@ -609,6 +662,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
     first_alert_at: string;
     ath_checked_at: string | null;
     best_spot_mcap: number | null;
+    peak_settled: boolean;
   }>(sql`
     select
       ${alertsFired.tokenAddress} as token_address,
@@ -616,6 +670,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
       max(${tokenPools.poolAddress}) as pool_address,
       min(${alertsFired.createdAt}) as first_alert_at,
       min(${alertsFired.athCheckedAt}) as ath_checked_at,
+      ${settled} as peak_settled,
       greatest(
         max(${alertsFired.mcapAtAlertUsd}),
         max(coalesce((
@@ -631,15 +686,34 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
       and ${alertsFired.superseded} = false
       and ${alertsFired.outOfBand} = false
       and ${alertsFired.trackedUntil} > now()
+      -- Retired: reconciled once after dying, so the number is settled. The
+      -- spot sampler still raises the peak with greatest(), so this cannot hide
+      -- a token that genuinely trades back up.
+      and ${alertsFired.peakFinal} = false
     group by ${alertsFired.tokenAddress}
-    -- Never checked first, then whichever call's peak can still MOVE, then
-    -- longest since. The middle term is the balance that matters: once every
-    -- token has been reconciled once, a plain staleness sort spends the budget
-    -- re-reading dead coins whose peak is fixed forever, starving the ones
-    -- currently running. A call under 24h old is where peaks actually happen.
+    having ${sinceChecked} > case
+      -- Settled and not yet retired: due immediately, and it leaves the queue
+      -- for good on success. One slot, once, is the whole cost of being right
+      -- about a coin whose run is over.
+      when ${settled} then 0::float8
+      -- Drawdown outranks age, because it is the sharper signal. A coin two
+      -- hours old and 70% off its high is not where the next peak comes from.
+      when ${retrace} >= ${PEAK_SLOW_RETRACE}
+        then ${PEAK_COLD_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
+      when ${ageSeconds} < ${PEAK_HOT_HOURS * 3600}
+        then ${PEAK_HOT_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
+      when ${ageSeconds} < 24 * 3600 then ${PEAK_WARM_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
+      else ${PEAK_COLD_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
+    end
+    -- Among tokens that are due: never checked, then settled-but-not-retired
+    -- (one check and they are gone, so clearing them cheaply protects every
+    -- later sweep), then whichever call's peak can still MOVE, then longest
+    -- since. "Can still move" is near-the-high AND young, in that order.
     order by
       (min(${alertsFired.athCheckedAt}) is null) desc,
-      (max(${alertsFired.createdAt}) > now() - interval '24 hours') desc,
+      ${settled} desc,
+      (${retrace} < ${PEAK_SLOW_RETRACE}) desc,
+      (${ageSeconds} < ${PEAK_HOT_HOURS * 3600}) desc,
       min(${alertsFired.athCheckedAt}) asc
     limit ${limit}
   `);
@@ -651,6 +725,7 @@ export async function fetchPeakRotation(chain: string, limit: number): Promise<T
     firstAlertAt: new Date(r.first_alert_at),
     athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
     bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
+    peakSettled: Boolean(r.peak_settled),
   }));
 }
 
@@ -689,7 +764,16 @@ export async function applyCandlePeak(
   chain: string,
   tokenAddress: string,
   mcapUsd: number,
-  peakAt: Date
+  peakAt: Date,
+  /**
+   * Retire the call from the candle rotation.
+   *
+   * Passed by the caller rather than re-derived here, because "is this token
+   * dead" is a judgement about the last SPOT sample and the caller is holding
+   * it. Only ever true for a token under `DEAD_MCAP_USD`, whose peak cannot
+   * move again without the spot sampler seeing it first.
+   */
+  final = false
 ): Promise<number> {
   const db = getDb();
   if (!db || !(mcapUsd > 0)) return 0;
@@ -698,6 +782,7 @@ export async function applyCandlePeak(
     .update(alertsFired)
     .set({
       athCheckedAt: new Date(),
+      peakFinal: final,
       athMcapUsd: sql`greatest(coalesce(${alertsFired.athMcapUsd}, 0), ${mcapUsd})`,
       athAt: sql`case
         when ${mcapUsd} > coalesce(${alertsFired.athMcapUsd}, 0)
@@ -735,13 +820,27 @@ export async function applyCandlePeak(
  */
 const ATH_RETRY_BACKDATE_MINUTES = 40;
 
-export async function touchAthChecked(chain: string, tokenAddress: string): Promise<void> {
+export async function touchAthChecked(
+  chain: string,
+  tokenAddress: string,
+  /**
+   * Give up on this token's peak for good.
+   *
+   * Only for a token whose peak is settled anyway AND which no source we have
+   * could price — free candles, then the paid fallback. Its run is over, so
+   * there is nothing left that could move the number. Without this, such a token
+   * takes a slot every single sweep forever, because the backdate below is
+   * deliberately shorter than every due interval.
+   */
+  final = false
+): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db
     .update(alertsFired)
     .set({
       athCheckedAt: sql`now() - interval '${sql.raw(String(ATH_RETRY_BACKDATE_MINUTES))} minutes'`,
+      peakFinal: final,
     })
     .where(and(eq(alertsFired.chain, chain), eq(alertsFired.tokenAddress, tokenAddress)));
 }

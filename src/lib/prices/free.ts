@@ -51,13 +51,14 @@ async function getJson<T>(url: string): Promise<T | null> {
 // --- Spot market cap: DexScreener ---
 
 interface DexPair {
-  baseToken?: { address?: string };
+  baseToken?: { address?: string; name?: string; symbol?: string };
   priceUsd?: string;
   marketCap?: number;
   fdv?: number;
   liquidity?: { usd?: number };
   pairAddress?: string;
   dexId?: string;
+  info?: { imageUrl?: string };
 }
 
 export interface SpotQuote {
@@ -65,6 +66,17 @@ export interface SpotQuote {
   marketCapUsd: number | null;
   /** Handy for the pool cache — DexScreener already knows the pair. */
   poolAddress: string | null;
+  /**
+   * Identity, from the same response.
+   *
+   * Free here and two paid calls anywhere else, which is the whole reason the
+   * alert snapshot reads this endpoint before reaching for Solana Tracker. It
+   * costs nothing to carry: the tracking sweep ignores these, and they are
+   * already in the payload the sweep is parsing anyway.
+   */
+  symbol: string | null;
+  name: string | null;
+  imageUrl: string | null;
 }
 
 /**
@@ -104,6 +116,9 @@ export async function fetchSpotQuotes(mints: string[]): Promise<Map<string, Spot
         priceUsd: price,
         marketCapUsd: typeof mcap === "number" && Number.isFinite(mcap) && mcap > 0 ? mcap : null,
         poolAddress: pair.pairAddress ?? null,
+        symbol: pair.baseToken?.symbol || null,
+        name: pair.baseToken?.name || null,
+        imageUrl: pair.info?.imageUrl || null,
       });
     }
   }

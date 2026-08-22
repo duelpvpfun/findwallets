@@ -89,15 +89,23 @@ export const MIN_ALERT_MCAP_USD = envNumber("ALERTS_MIN_MCAP_USD", 10_000);
 export const MAX_ALERT_MCAP_USD = envNumber("ALERTS_MAX_MCAP_USD", 1_000_000);
 
 /**
- * A token whose market cap has fallen below this is abandoned: no more samples.
+ * A token whose market cap has fallen below this is abandoned: no more samples,
+ * and its peak retires from the candle rotation after one last reconciliation.
  *
  * Most of these go to zero and stay there, so re-reading them every ten minutes
  * for a week is the bulk of the tracking spend for no information. The trade is
- * explicit and the owner's: a coin that dies below $4K and then somehow runs is
+ * explicit and the owner's: a coin that dies below this and then somehow runs is
  * missed. Not once-and-for-all — the check is on the last cap we saw, so a token
  * that never gets that low keeps being tracked normally.
+ *
+ * **$5K, raised from $4K on 2026-08-22 at the owner's request.** The floor is
+ * well under `MIN_ALERT_MCAP_USD` ($10K) either way, so this only ever drops a
+ * token that has already more than halved from the lowest cap it could have been
+ * called at. Measured on the live set it retires a further 14 of 380
+ * tracked tokens (3.7%), and every slot it frees goes to a call that is still
+ * running.
  */
-export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 4_000);
+export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 5_000);
 
 /**
  * Above this share of the wallets in the window having already sold, the step
@@ -181,17 +189,100 @@ export const SAMPLE_DUE_SLACK_SECONDS = 120;
  * Tokens whose peak is reconciled against candle data per sweep.
  *
  * The rotation, not a schedule. Sized by wall clock rather than by the rate
- * limit: measured against the live API a check costs ~5s once the pool is
- * cached and ~10s when it is not, almost all of it the throttle plus network
- * latency. 25 therefore lands around 125s, comfortably inside the pass's 200s
- * budget, and reconciles ~200 tracked tokens roughly every 80 minutes.
+ * limit: measured against the live API a check costs ~2.8s once the pool is
+ * cached and ~5s when it is not — and almost all of that is `GECKO_MIN_GAP_MS`,
+ * not network. A GeckoTerminal call itself returns in ~200ms, so the throttle is
+ * the entire cost model, and the sixth un-throttled call in a burst got a 429.
+ *
+ * **Raised from 25 to 75, 2026-08-22.** 25 was leaving the pass idle: 75 checks
+ * is ~210s of a 240s budget, still 27 calls a minute, and it is what the queue
+ * actually needs. At the live alert rate ~45 tokens are inside the hot band and
+ * due every sweep on their own, so 25 slots meant a full cycle took 2.3 hours
+ * and the calls currently running were the ones waiting.
  *
  * It can afford to be lazy because **a candle high cannot be missed by looking
  * late**: a spike at 04:29 is in the 04:29 candle forever. Cadence buys display
  * freshness here, never correctness, which is the opposite of how the spot
- * sampling behaves.
+ * sampling behaves. Display freshness is still what the feed is judged on.
  */
-export const PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PEAK_CHECKS_PER_SWEEP", 25);
+export const PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PEAK_CHECKS_PER_SWEEP", 75);
+
+/**
+ * How often a call's candle peak is re-read, by how old the call is.
+ *
+ * The peak pass had no cadence at all — it was a flat "stalest first" rotation,
+ * which spends the same effort on a call whose peak was set six hours ago as on
+ * one that is running right now. Measured over 328 scored calls the average peak
+ * lands **58 minutes** after the alert, so the first hours are the only ones
+ * where a re-read can find anything new.
+ *
+ * Three bands, and the numbers are what a free rate limit can actually sustain
+ * at the live alert rate:
+ *
+ *  - under 6h: every sweep. ~45 tokens, which is most of the budget, and the
+ *    only band where the displayed peak is likely to be wrong.
+ *  - 6-24h: every half hour. The peak is almost certainly already found; this
+ *    is here to catch the late second leg.
+ *  - over 24h: every two hours, purely so nothing is silently abandoned before
+ *    `TRACKING_DAYS` is up.
+ *
+ * A dead token is not in any band — it gets one reconciliation and is then
+ * retired via `peak_final`. See `drizzle/0032_peak_final.sql`.
+ */
+export const PEAK_HOT_HOURS = 6;
+export const PEAK_HOT_SECONDS = 10 * 60;
+export const PEAK_WARM_SECONDS = 30 * 60;
+export const PEAK_COLD_SECONDS = 2 * 60 * 60;
+
+/**
+ * Retrace from the recorded peak, which overrides age entirely.
+ *
+ * **The owner's design, 2026-08-22:** "most coins end up going to zero, so after
+ * recording an ATH from a coin and seeing it retrace a lot we can slow down the
+ * fetches or completely stop them if the coin retraced 90% for example."
+ *
+ * Drawdown is a sharper signal than age and it is the one that actually answers
+ * the question. A coin three hours old sitting on its high needs every sweep; a
+ * coin three hours old and 95% off its peak has a peak that is finished, and
+ * `DEAD_MCAP_USD` does not catch it — a token that ran to $2M and sits at
+ * $200K is 90% down and nowhere near the $4K floor.
+ *
+ * Past `PEAK_SETTLED_RETRACE` a token is treated exactly like a dead one: one
+ * last reconciliation, then retired via `peak_final`. The safety here is
+ * stronger than in the dead case, and worth being explicit about: a token above
+ * `DEAD_MCAP_USD` is **still spot-sampled**, and `applyMcapSample` raises the
+ * peak with `greatest()` regardless of `peak_final` — so a genuine second run is
+ * still caught, just at ten-minute resolution instead of candle resolution.
+ *
+ * Between the two thresholds it drops to the coldest interval rather than
+ * stopping, because a 60% retrace on a memecoin is a Tuesday.
+ */
+export const PEAK_SETTLED_RETRACE = 0.9;
+export const PEAK_SLOW_RETRACE = 0.5;
+
+/**
+ * Paid peak reads allowed per sweep, as a fallback only.
+ *
+ * The free candle path fails for real reasons, not just transient ones: a mint
+ * with no GeckoTerminal pool at all (24 of 345 tracked tokens), a pool that
+ * returns an empty candle list, a 429, a timeout. Every one of those currently
+ * ends in `touchAthChecked` and a peak that stays wrong until the token happens
+ * to resolve — which for a mint GeckoTerminal never indexes is never.
+ *
+ * Solana Tracker's `/chart` closes exactly that gap and is the right shape for
+ * it: keyed by MINT so it needs no pool lookup, windowed by `time_from` so it
+ * cannot credit us with somebody else's earlier run, ~230ms with no throttle,
+ * and one credit. So the split is free-first for the bulk and paid for the
+ * holes — which is the opposite of using the paid API for freshness, where it
+ * would cost thousands of credits a day for a number candles already get right.
+ *
+ * The cap is what makes it safe. A GeckoTerminal outage turns every check in the
+ * sweep into a fallback, and without a ceiling that is 75 credits a sweep, 650 a
+ * day, spent on an outage nobody noticed. 15 is more than the measured hole
+ * count and bounded at ~2,100 credits a day worst case — against the ~2,000 a
+ * day that moving the alert snapshot onto DexScreener gives back.
+ */
+export const PAID_PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PAID_PEAK_CHECKS_PER_SWEEP", 15);
 
 /**
  * How far above the best OBSERVED spot market cap a candle peak may sit before

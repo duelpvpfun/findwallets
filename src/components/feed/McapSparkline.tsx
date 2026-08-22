@@ -31,11 +31,13 @@ export default function McapSparkline({
   baselineUsd: number | null;
   /** Whether the token is above where it fired.
    *
-   * Passed in rather than re-derived from the last sample, because the card
-   * prints the same claim as a number and the two must not be able to
-   * disagree. They did: `lastMcapUsd` and the final stored sample differ in the
-   * last float digit, which was enough to draw a red line beside a green
-   * figure. */
+   * Still passed in rather than computed here, so one caller decides it for both
+   * the line and anything drawn beside it. It used to be derived from
+   * `lastMcapUsd` because the row printed that as a number too, and
+   * `lastMcapUsd` differs from the final stored sample in the last float digit —
+   * enough to draw a red line next to a green figure. The row no longer prints
+   * "now" at all, so the caller derives this from the last sample: the point the
+   * line genuinely ends on. */
   up: boolean;
   className?: string;
 }) {
