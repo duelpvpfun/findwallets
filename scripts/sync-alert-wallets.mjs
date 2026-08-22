@@ -59,10 +59,21 @@ const CHAIN = "solana";
 const MIN_SINGLE_MULTIPLE = 5;
 
 /**
- * Plausibility guard on the rows a wallet qualifies with. Mirrors
- * `MIN_COST_BASIS_USD` and `MAX_PLAUSIBLE_MULTIPLE_X` in src/lib/quality.ts —
- * duplicated here because scripts cannot cross the `server-only` boundary, so
- * change both together.
+ * Plausibility guard on the rows a wallet qualifies with.
+ *
+ * `MAX_PLAUSIBLE_MULTIPLE_X` NO LONGER MIRRORS src/lib/quality.ts, deliberately.
+ * The display dropped its ceiling on 2026-08-22: it was suppressing genuine
+ * early entries for being large, and `basisCoversSold` now decides which
+ * denominator is right instead of whether to show a number at all. That is the
+ * correct call for a buyer reading a scan, who can see the token amounts on the
+ * same row.
+ *
+ * The roster is a different question — who gets alerted on — and it keeps the
+ * cap, so this sync admits nothing new by itself. `wallet_tokens` now stores
+ * multiples above 500 where it used to store none, so this line is doing work it
+ * was not doing before rather than merely echoing the app. Lifting it is the
+ * owner's decision; the `bought_usd` floor below is the independent guard that
+ * keeps dust out either way.
  *
  * Not optional. Without it the roster's top entries were wallets whose entire
  * claim was one "588x" against a few dollars of dust: tokens that arrived by

@@ -18,7 +18,7 @@
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
-import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
+import { basisCoversSold, displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
 import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://public-api.birdeye.so";
@@ -230,11 +230,15 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
   // the whole buy volume made a wallet that sold 4% of its bag at 2.4x read as
   // 1.06x, contradicting the Entry -> Exit prices on the same row.
   const soldCostBasisUsd = Math.min(item.volumeSell, item.volumeBuy) * avgBuyPriceUsd;
-  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd);
-  // Second, independent estimate for the corroboration check: prices, not the
-  // profit figure. Both are already computed above.
-  const priceMultipleX = avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : undefined;
-  const multiple = displayMultiple(item.realizedPnl, realizedBasis, priceMultipleX);
+  // Was the sold quantity actually bought? If so, the sold lots' own cost is the
+  // right denominator however few dollars it is. If not, some of what was sold
+  // arrived untracked, so fall back to everything spent — which understates the
+  // multiple rather than inflating it, and still answers "what did their money
+  // do". Never null on account of size: only a wallet with no recorded buy at
+  // all has nothing to divide by.
+  const covered = basisCoversSold(item.volumeSell, item.volumeBuy);
+  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd, covered);
+  const multiple = displayMultiple(item.realizedPnl, realizedBasis);
   const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 
   return {

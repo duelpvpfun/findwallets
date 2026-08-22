@@ -75,7 +75,7 @@ both places:
 | `formatWinBadge` (`format.ts`) | `scripts/enrich-wallets.mjs` | Badges rendered two different ways |
 | `buildSignInMessage` (`auth/message.ts`) | `scripts/account-lifecycle.mjs` | Step B of that script fails loudly — which is the point |
 | `normalizeAddress` (`chains.ts`) | `scripts/import-export.mjs` | A second `tokens` row for one contract, splitting its history |
-| `MIN_COST_BASIS_USD`, `MAX_PLAUSIBLE_MULTIPLE_X` (`quality.ts`) | `scripts/sync-alert-wallets.mjs` | Dust-basis "588x" wallets onto the alert roster, inflating every alert's headline |
+| `MIN_COST_BASIS_USD` (`quality.ts`) | `scripts/sync-alert-wallets.mjs` | Dust-basis "588x" wallets onto the alert roster, inflating every alert's headline |
 | `MIN_SCOREBOARD_MCAP_USD` (`alerts/config.ts`) | `scripts/alerts-stats.mjs` | The CLI and the /alerts page disagree about which alerts count |
 
 **Birdeye's published network list is stale; `GET /defi/networks` is the truth.**
@@ -115,6 +115,26 @@ hand-written statement where there is no column to take a mapper from — bind
 its way to a `jsonb` parameter, so a pre-stringified array arrives as a jsonb *string containing*
 the array. `jsonb_to_recordset` then fails with `cannot call jsonb_to_recordset on a non-array`.
 This bit the alert roster's bulk upsert.
+
+**A multiple is never suppressed for being large.** `MAX_PLAUSIBLE_MULTIPLE_X` used to
+null any multiple over 500x as an artifact, which is a statement about the size of a number rather
+than about a trade. It hid a wallet that turned $299 into $204K while the entry and exit market caps
+on the same row read $34.8K → $23.75M — 682x, the row calling its own figures implausible — plus
+several that bought 10-19M tokens for $48-$212 and sold a fraction for six figures.
+
+What that ceiling was groping for is **untracked inventory**. The artifact in its original comment
+(one $39.46 buy, 225 sells of 15.95M tokens) is not suspect because 587x is big; it is suspect
+because it sold far more tokens than it bought, so most of what it sold arrived by transfer and has
+no recorded cost. `basisCoversSold` tests exactly that, and it decides **which denominator is
+right, never whether to show one**: covered means the sold lots' own cost however few dollars it is,
+uncovered falls back to everything spent, which understates rather than inflates. Measured on a
+500-wallet scan: 16 rows read `n/a` before, 0 do now, and all 415 covered rows produce a multiple
+that matches their independent price ratio exactly.
+
+The dollar floor came off the display for the same reason — $48 spent on 19M tokens is a real
+position when 15M of them are what got sold. It stays on the **roster** (`bought_usd >= 100` in
+`sync-alert-wallets.mjs`), which is a separate question, and so does that script's 500x cap. Those
+two now diverge from the app on purpose; see the note in the script.
 
 **Anything touching money needs care.** These files decide whether a paying user gets what they paid
 for:
