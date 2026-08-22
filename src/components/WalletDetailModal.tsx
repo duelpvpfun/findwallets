@@ -5,6 +5,7 @@ import type { Chain, WalletDetail, WalletTrader } from "@/lib/types";
 import { buildWalletDetail } from "@/lib/mockData";
 import { OWNER_STORAGE_KEY } from "@/lib/tiers";
 import { CHAIN_LABELS } from "@/lib/chains";
+import { realizedBasisUsd } from "@/lib/quality";
 import {
   NATIVE_UNIT,
   formatCompactNumber,
@@ -321,8 +322,15 @@ export default function WalletDetailModal({
                     value={formatUsd(trader.realizedPnlUsd)}
                     positive={trader.realizedPnlUsd >= 0}
                   />
-                  <Stat label="Bought" value={formatUsd(trader.boughtUsd)} />
-                  <Stat label="Sold" value={formatUsd(trader.soldUsd)} />
+                  {/* Cost of the tokens SOLD, not everything ever bought. Sat
+                      directly beside "$ PNL" as "Bought"/"Sold", inviting a
+                      subtraction that disagreed with the PNL next to it
+                      whenever part of the bag was never sold. */}
+                  <Stat
+                    label="Cost of sold"
+                    value={formatUsd(realizedBasisUsd(trader.soldCostBasisUsd, trader.boughtUsd))}
+                  />
+                  <Stat label="Sold for" value={formatUsd(trader.soldUsd)} />
                 </div>
 
                 {trader.remainingPercent !== null && trader.remainingValueUsd !== null && (

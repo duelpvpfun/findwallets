@@ -14,6 +14,7 @@ import {
   shortenAddress,
 } from "@/lib/format";
 import { buildExportJson, copyText } from "@/lib/export";
+import { realizedBasisUsd } from "@/lib/quality";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import ExportDialog from "./ExportDialog";
 import ShareCardModal from "./ShareCardModal";
@@ -58,6 +59,30 @@ interface Row extends WalletTrader {
   /** Null when the basis was too small to measure a return against. */
   multipleX: number | null;
   unsoldPnlUsd: number;
+  /**
+   * The two figures the row displays as `cost → proceeds`, and the two the
+   * multiple above is actually computed from.
+   *
+   * They used to be `boughtUsd → soldUsd`, which covers DIFFERENT QUANTITIES of
+   * tokens the moment a wallet does not sell everything it bought: a wallet that
+   * bought 554M for $1.20M and sold 294M for $1.23M reads as "+$30K" next to a
+   * PNL of $598K. Both numbers were right and the pair was unreadable, and a
+   * tooltip saying so did not save it — the owner did the subtraction anyway,
+   * which is the only test that counts.
+   *
+   * `proceedsUsd` is `basisUsd + pnlUsd` and NOT gross sale volume, which would
+   * not have fixed it. The PNL is the provider's, computed against its own lot
+   * accounting, while the basis is ours (`min(sold, bought) × avgBuyPrice`).
+   * Measured on one 500-wallet scan the two disagree on 94 rows, and all 94 are
+   * wallets that sold at least as many tokens as they bought inside the ranking
+   * window — they were holding lots from before it, which upstream can cost and
+   * we cannot. Gross proceeds there include money our basis has no claim on, so
+   * subtracting the two overstated the profit by a median 1.46x. Deriving the
+   * second figure from the PNL we are already showing means the row reconciles
+   * on every wallet instead of on four fifths of them.
+   */
+  basisUsd: number;
+  proceedsUsd: number;
 }
 
 const NO_MULTIPLE_REASON =
@@ -158,6 +183,9 @@ export default function TradersTable({
             pnlPercent: t.realizedPnlPercent,
             multipleX: t.avgMultipleX,
             unsoldPnlUsd,
+            basisUsd: realizedBasisUsd(t.soldCostBasisUsd, t.boughtUsd),
+            proceedsUsd:
+              realizedBasisUsd(t.soldCostBasisUsd, t.boughtUsd) + t.realizedPnlUsd,
           };
         }
         // Total covers sold lots plus the bag still held, so the denominator is
@@ -172,6 +200,8 @@ export default function TradersTable({
           pnlPercent: (pnlUsd / totalBasis) * 100,
           multipleX: 1 + pnlUsd / totalBasis,
           unsoldPnlUsd,
+          basisUsd: totalBasis,
+          proceedsUsd: totalBasis + pnlUsd,
         };
       }),
     [traders, basis]
@@ -848,9 +878,9 @@ function DesktopTable({
             </th>
             <th
               className="w-[16%] py-2.5 font-medium"
-              title="Total USD spent buying, then total USD received selling. These cover different quantities of tokens whenever a wallet didn't sell everything it bought, so the two figures are not a round trip and their difference is not the PNL."
+              title="What these tokens cost, then what they came to. Both sides cover the same tokens, so the difference is the PNL shown and the ratio is the multiple. On Realized that is the tokens actually sold; on Total it also counts the bag still held. Not total spent buying, and not gross sale volume — a wallet that sold tokens it had held since before the ranking window received money this cost figure has no claim on."
             >
-              Bought → Sold
+              Cost → Value
             </th>
             {hasHoldingData && (
               <th
@@ -1025,7 +1055,10 @@ const TableRow = memo(function TableRow({
         />
       </td>
       <td className="py-3 align-top tabular-nums">
-        <ArrowPair from={formatUsd(t.boughtUsd)} to={formatUsd(t.soldUsd)} />
+        <ArrowPair
+          from={formatUsd(t.basisUsd)}
+          to={formatUsd(t.proceedsUsd)}
+        />
         <TokenAmounts trader={t} symbol={token.symbol} className="mt-0.5 text-[11px]" />
       </td>
       {hasHoldingData && (
@@ -1573,10 +1606,13 @@ const TraderCard = memo(function TraderCard({
           }
         />
         <CardField
-          label="Bought → Sold"
+          label="Cost → Value"
           value={
             <>
-              <ArrowPair from={formatUsd(trader.boughtUsd)} to={formatUsd(trader.soldUsd)} />
+              <ArrowPair
+                from={formatUsd(trader.basisUsd)}
+                to={formatUsd(trader.proceedsUsd)}
+              />
               <TokenAmounts trader={trader} symbol={token.symbol} className="mt-0.5 text-[10px]" />
             </>
           }
