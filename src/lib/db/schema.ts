@@ -600,22 +600,29 @@ export const alertsFired = pgTable(
 );
 
 /**
- * A Telegram message this bot keeps pinned and rewrites in place.
+ * A Telegram message the bot addresses by key instead of posting and forgetting.
  *
- * One row per kind of pin. The hourly leaderboard is the only one today: it is
- * a single message edited every hour rather than a fresh post, because 24
- * leaderboard posts a day would bury the alerts they exist to advertise, and
- * only one message can be usefully pinned regardless.
+ * Two kinds live here, and `kind` is the whole difference:
+ *
+ *  - `leaderboard` — posted once, pinned, then EDITED in place every hour. One
+ *    row, forever. 24 leaderboard posts a day would bury the alerts the pin
+ *    exists to advertise, and only one message can usefully be pinned anyway.
+ *  - `digest-YYYY-MM-DD` — the daily 2pm recap, one row per day. The row is
+ *    claimed before the message is sent, so `messageId` is null for a moment
+ *    and the primary key is what stops a retried cron delivery posting a second
+ *    recap. That is the same rule as everywhere else in the alert path:
+ *    idempotency is an index, never a read-then-write.
  *
  * `chatId` is part of the row, not assumed: a message id is meaningless outside
  * the chat it was posted in, so repointing `TELEGRAM_ALERT_CHAT_ID` has to make
  * the cron post a new message instead of editing an id that now belongs to
  * somebody else's channel.
  */
-export const pinnedMessages = pgTable("pinned_messages", {
+export const botMessages = pgTable("bot_messages", {
   kind: text("kind").primaryKey(),
   chatId: text("chat_id").notNull(),
-  messageId: bigint("message_id", { mode: "number" }).notNull(),
+  /** Null only between claiming a row and the send returning. */
+  messageId: bigint("message_id", { mode: "number" }),
   postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

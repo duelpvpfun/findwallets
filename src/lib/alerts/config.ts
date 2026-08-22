@@ -199,6 +199,34 @@ export const PIN_TOP_N = envNumber("ALERTS_PIN_TOP_N", 3);
  */
 export const PIN_MIN_MCAP_USD = MIN_SCOREBOARD_MCAP_USD;
 
+/**
+ * The daily recap: one post a day at 2pm, the owner's call (2026-08-22).
+ *
+ * Separate from the pin on purpose. The pin is what a stranger who opens the
+ * channel reads and it rewrites itself silently every hour; the recap is a real
+ * post that notifies, aimed at subscribers who already scrolled past today's
+ * alerts and want to know which of them went anywhere. Same numbers, different
+ * job, so different knobs.
+ *
+ * **Local time, not a fixed UTC hour.** The owner said "2PM EST", which is New
+ * York time rather than the literal UTC-5 offset — and a cron expression cannot
+ * express that, because America/New_York is UTC-4 for two thirds of the year.
+ * A fixed `0 19 * * *` would post at 3pm all summer. So the route runs every
+ * hour and posts only when the local hour matches, which is exact year-round
+ * and needs no DST edit twice a year.
+ */
+export const DIGEST_HOUR_LOCAL = envNumber("ALERTS_DIGEST_HOUR_LOCAL", 14);
+export const DIGEST_TZ = process.env.ALERTS_DIGEST_TZ || "America/New_York";
+
+/**
+ * Fixed at 24 hours, not borrowed from `PIN_WINDOW_HOURS`.
+ *
+ * The recap is the day's calls by definition, so it must not silently follow a
+ * change made to shorten the pin's window.
+ */
+export const DIGEST_WINDOW_HOURS = 24;
+export const DIGEST_TOP_N = envNumber("ALERTS_DIGEST_TOP_N", 3);
+
 /** Quote assets. A token leg paired against one of these is a trade; a token
  * moving with no quote leg at all is a transfer or an airdrop and must never
  * count as a buy. */

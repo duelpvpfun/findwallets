@@ -388,7 +388,7 @@ npm run alerts:replay -- --simulate       # force an alert end to end; --undo cl
 ```
 
 **A pinned leaderboard sits at the top of the channel, refreshed hourly.**
-`/api/cron/alert-pin` posts ONE message, pins it silently, stores its id in `pinned_messages`, and
+`/api/cron/alert-pin` posts ONE message, pins it silently, stores its id in `bot_messages`, and
 from then on **edits that same message** every hour. Twenty-four leaderboard posts a day would bury
 the alerts the pin exists to advertise, and only one message can usefully be pinned anyway. It runs
 at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
@@ -417,6 +417,38 @@ at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
 - **In a channel, pinning is covered by "Edit Messages", not "Pin Messages"** — the API omits
   `can_pin_messages` for channels rather than returning false, so reading its absence as denied
   reports a working bot as broken. `npm run alerts:telegram` checks the right one per chat type.
+
+**A daily recap posts at 2pm New York, and it is the only message here that notifies.**
+`/api/cron/alert-digest`, the owner's call 2026-08-22. Same rows and the same builder as the pin —
+two copies of that message would drift, and the pin and the recap disagreeing about what a call did
+is the one thing that would discredit both. Only the header and footer differ: the pin carries
+`updated HH:MM UTC` because it is edited in place and has to prove it is still live, the recap
+carries its date instead.
+
+- **The route runs hourly and posts at most once a day.** That is not a workaround — Vercel cron
+  expressions are UTC, and America/New_York is UTC-4 for two thirds of the year. A fixed
+  `0 19 * * *` would be 2pm in January and 3pm in July. Comparing the local hour is exact and needs
+  no DST edit twice a year. `ALERTS_DIGEST_HOUR_LOCAL` (14) and `ALERTS_DIGEST_TZ` are the knobs.
+- **Once a day is an index, never a read-then-write.** The row key is the local calendar day
+  (`digest-2026-08-22`) and the claim is an `on conflict do nothing ... returning`, so a retried
+  cron delivery collides instead of posting a second recap. Same rule as `alerts_fired_key_idx`.
+  `?force=1` skips the *hour* check and cannot skip the claim; the escape hatch is deleting the row.
+- **A failed send gives the day back.** `releaseBotMessage` only ever deletes a row whose
+  `message_id` is still null, so a Telegram outage at 2pm gets retried at 3pm rather than costing
+  the day, and a successful post can never be un-claimed.
+- **A missed 2pm catches up later the same day** rather than being skipped: the gate is
+  `local hour >= 14`, so a recap at 4pm because the 2pm run failed still happens. On first deploy
+  after 2pm this posts once immediately, which is the same rule working, not a bug.
+- It notifies. Everything else the bot sends is either an alert or a silent pin operation; a recap
+  nobody is pinged for is a recap nobody reads.
+- `?dry=1` renders it and posts nothing. `?dry=1&force=1` renders it outside the 2pm window.
+
+**`bot_messages` holds messages the bot addresses by key rather than posting and forgetting.**
+`leaderboard` is one row edited forever; `digest-YYYY-MM-DD` is one row a day. `message_id` is
+nullable for exactly one reason: the recap's row is claimed *before* the message exists, which is
+what makes the once-a-day guarantee a primary key instead of a check. `chat_id` is stored beside it
+because a message id is meaningless outside its chat — repointing `TELEGRAM_ALERT_CHAT_ID` has to
+post a new message, not edit an id that now belongs to a different channel.
 
 **`ALERTS_RAW_MODE=1` forwards every classified trade to Telegram, unaggregated.** The verification
 gate: buy classification is the one part of this system that cannot be proven correct by reading

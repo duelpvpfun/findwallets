@@ -435,6 +435,20 @@ export interface LeaderboardInput {
   /** Passed in rather than read from the clock, so the message is a pure
    * function of its input and can be diffed in a test or a script. */
   now: number;
+  /**
+   * `pin` is the message that lives at the top of the channel and rewrites
+   * itself hourly. `daily` is the once-a-day recap that notifies.
+   *
+   * Same rows, and deliberately the same builder — two copies of this would
+   * drift, and the whole point is that the pin and the recap cannot disagree
+   * about what a call did. Only the header and the footer differ, because the
+   * two messages answer slightly different questions: the pin has to prove it
+   * is still live, the recap has to say which day it is about.
+   */
+  variant?: "pin" | "daily";
+  /** The recap's own day, already formatted in the owner's timezone. Passing it
+   * in keeps this function free of a clock and of a timezone. */
+  dayLabel?: string;
 }
 
 /**
@@ -454,15 +468,24 @@ export interface LeaderboardInput {
  *    "3 best of 112 calls" is the same three rows and an honest one.
  */
 export function buildLeaderboardMessage(input: LeaderboardInput): string {
+  const daily = input.variant === "daily";
   const out: string[] = [];
-  out.push(`🏆 <b>BEST CALLS · LAST ${Math.round(input.windowHours)}H</b>`);
+  out.push(
+    daily
+      ? `📅 <b>TODAY'S BEST CALLS</b>${input.dayLabel ? `  ·  ${escapeHtml(input.dayLabel)}` : ""}`
+      : `🏆 <b>BEST CALLS · LAST ${Math.round(input.windowHours)}H</b>`
+  );
   out.push("");
 
   if (input.calls.length === 0) {
     // An empty leaderboard is a real state — a quiet night, or a fresh deploy —
     // and saying so is better than leaving yesterday's winners pinned above
     // today's silence.
-    out.push("<i>No call has traded above its entry yet in this window.</i>");
+    out.push(
+      daily
+        ? "<i>Nothing traded above its entry in the last 24 hours. Some days are like that.</i>"
+        : "<i>No call has traded above its entry yet in this window.</i>"
+    );
     out.push("");
     out.push(`Every call lands in this channel the moment the wallets buy.`);
     out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
@@ -487,11 +510,18 @@ export function buildLeaderboardMessage(input: LeaderboardInput): string {
     out.push("");
   });
 
-  // The denominator, then the clock. Both are what stop this reading as a
-  // screenshot somebody kept because it flattered them.
+  // The denominator always ships with the list. "Top 3" on its own is a
+  // cherry-pick; "3 best of 88 calls" is the same three rows and honest.
+  //
+  // The clock is on the pin only. The pin is edited in place, so a reader needs
+  // a way to tell a live leaderboard from one that stopped updating three days
+  // ago — a dated recap already says when it is from.
+  const plural = input.totalCalls === 1 ? "" : "s";
   out.push(
-    `<i>${input.calls.length} best of ${input.totalCalls} call${input.totalCalls === 1 ? "" : "s"}` +
-      ` · updated ${utcClock(input.now)} UTC</i>`
+    daily
+      ? `<i>${input.calls.length} best of ${input.totalCalls} call${plural} in 24h</i>`
+      : `<i>${input.calls.length} best of ${input.totalCalls} call${plural}` +
+          ` · updated ${utcClock(input.now)} UTC</i>`
   );
   out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
 
@@ -559,6 +589,22 @@ export async function pinMessage(messageId: number): Promise<SendResult> {
   return callTelegram("pinChatMessage", {
     message_id: messageId,
     disable_notification: true,
+  });
+}
+
+/**
+ * The daily recap. The one message in this file that notifies.
+ *
+ * Everything else here is either an alert (which notifies by being an alert) or
+ * a pin operation (silent, because an hourly pin notification is a reason to
+ * mute the channel). The recap is once a day, and a recap nobody is pinged for
+ * is a recap nobody reads.
+ */
+export async function sendDigestMessage(text: string): Promise<SendResult> {
+  return callTelegram("sendMessage", {
+    text,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
   });
 }
 

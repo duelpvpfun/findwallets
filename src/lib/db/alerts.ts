@@ -1,11 +1,11 @@
 import "server-only";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   alertState,
   alertsFired,
   alertWallets,
-  pinnedMessages,
+  botMessages,
   walletEvents,
   type AlertMcapSample,
   type AlertWalletSnapshot,
@@ -1694,15 +1694,16 @@ export async function fetchPinnedMessage(kind: string): Promise<PinnedMessage | 
   if (!db) return null;
   const [row] = await db
     .select({
-      chatId: pinnedMessages.chatId,
-      messageId: pinnedMessages.messageId,
-      postedAt: pinnedMessages.postedAt,
-      updatedAt: pinnedMessages.updatedAt,
+      chatId: botMessages.chatId,
+      messageId: botMessages.messageId,
+      postedAt: botMessages.postedAt,
+      updatedAt: botMessages.updatedAt,
     })
-    .from(pinnedMessages)
-    .where(eq(pinnedMessages.kind, kind))
+    .from(botMessages)
+    .where(eq(botMessages.kind, kind))
     .limit(1);
-  if (!row) return null;
+  // A row with no id yet is a claim in flight, not a message to edit.
+  if (!row || row.messageId === null) return null;
   return {
     chatId: row.chatId,
     messageId: Number(row.messageId),
@@ -1727,10 +1728,10 @@ export async function recordPinnedMessage(
   const db = getDb();
   if (!db) return;
   await db
-    .insert(pinnedMessages)
+    .insert(botMessages)
     .values({ kind, chatId, messageId })
     .onConflictDoUpdate({
-      target: pinnedMessages.kind,
+      target: botMessages.kind,
       set: { chatId, messageId, postedAt: sql`now()`, updatedAt: sql`now()` },
     });
 }
@@ -1740,9 +1741,9 @@ export async function touchPinnedMessage(kind: string): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db
-    .update(pinnedMessages)
+    .update(botMessages)
     .set({ updatedAt: sql`now()` })
-    .where(eq(pinnedMessages.kind, kind));
+    .where(eq(botMessages.kind, kind));
 }
 
 /** Forget a pin whose message Telegram no longer has, so the next sweep posts
@@ -1750,7 +1751,7 @@ export async function touchPinnedMessage(kind: string): Promise<void> {
 export async function clearPinnedMessage(kind: string): Promise<void> {
   const db = getDb();
   if (!db) return;
-  await db.delete(pinnedMessages).where(eq(pinnedMessages.kind, kind));
+  await db.delete(botMessages).where(eq(botMessages.kind, kind));
 }
 
 /**
@@ -1779,4 +1780,54 @@ export async function countDeliveredCalls(chain: string, hours: number): Promise
     ) calls
   `);
   return Number(row?.calls ?? 0);
+}
+
+/**
+ * Claim the right to post today's recap, exactly once.
+ *
+ * Returns true for the caller that got there first and false for everybody
+ * else. The key is the local calendar day, so the guarantee is "one recap per
+ * day" no matter how many times the hourly cron fires or how many times Vercel
+ * retries a delivery — and it is an INSERT that either takes the primary key or
+ * does not, never a read followed by a write. The same rule as
+ * `alerts_fired_key_idx`: two concurrent invocations both reading "not posted
+ * yet" is exactly how a channel ends up with two recaps.
+ *
+ * The row is claimed before the message exists, which is why `message_id` is
+ * nullable. `attachBotMessageId` fills it in afterwards.
+ */
+export async function claimBotMessage(kind: string, chatId: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  const claimed = await db
+    .insert(botMessages)
+    .values({ kind, chatId })
+    .onConflictDoNothing({ target: botMessages.kind })
+    .returning({ kind: botMessages.kind });
+  return claimed.length > 0;
+}
+
+/** Record the id of a message posted under an existing claim. */
+export async function attachBotMessageId(kind: string, messageId: number): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .update(botMessages)
+    .set({ messageId, updatedAt: sql`now()` })
+    .where(eq(botMessages.kind, kind));
+}
+
+/**
+ * Release a claim whose send failed.
+ *
+ * Without this a Telegram outage at 2pm would burn the day's claim and the
+ * recap would never be posted at all — the next hourly pass has to be able to
+ * try again. Only ever called when no message was sent.
+ */
+export async function releaseBotMessage(kind: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .delete(botMessages)
+    .where(and(eq(botMessages.kind, kind), isNull(botMessages.messageId)));
 }
