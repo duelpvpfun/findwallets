@@ -328,10 +328,19 @@ instead, with no bot round trip, and it works from a channel post. It is the fir
 on its row, because copying the contract is the step between reading an alert and owning the coin.
 
 **The roster is quality-selected, not `times_seen`-selected.** `scripts/sync-alert-wallets.mjs`
-takes wallets with one 4x+ win, or two 3x+ wins, or a 2x with $5K+ profit — and only counts rows
-with a real cost basis (see the duplication table above). `times_seen` measures which tokens
-customers happened to scan at least as much as it measures the wallet. Rows are deactivated, never
-deleted: an alert fired last week still names them.
+takes wallets with **one 5x+ win and nothing else** — and only counts rows with a real cost basis
+(see the duplication table above). `times_seen` measures which tokens customers happened to scan at
+least as much as it measures the wallet. Rows are deactivated, never deleted: an alert fired last
+week still names them.
+
+**That rule replaced a looser one on 2026-08-22 and took the roster 1,685 → 846.** The old rule was
+"one 4x+, or two 3x+, or a 2x with $5K+ profit"; the two extra paths were letting wallets in on a
+record nobody would have copied. Replaying the live buy stream against both: tokens reaching tier 2
+fell 149 → 98, tier 10 fell 30 → 11, and every one of the thirteen calls that ran 1.5x+ still had
+five or more surviving wallets, so none stopped firing. **Do not reach for the roster as a volume
+control again** — halving it cut calls by a third, while gating the first Telegram post on tier 6 cut
+messages 76% on the same data. Breadth is what makes confluence detectable; the roster is what makes
+it credible.
 
 **The script writes the roster AND the Helius address list.** Splitting them is how they drift — an
 address Helius streams that `alert_wallets` does not know is wasted invocations, and a wallet in

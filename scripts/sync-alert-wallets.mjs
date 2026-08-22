@@ -29,19 +29,34 @@ const LIMIT = limitArg >= 0 ? Number(args[limitArg + 1]) : null;
 const CHAIN = "solana";
 
 /**
- * The owner's eligibility rule, 2026-08-21: "one 4x+ at least, or multiple 3x+,
- * or 2x+ and 5k+ pnl in one coin."
+ * The owner's eligibility rule, 2026-08-22: **one 5x+ win, and nothing else
+ * qualifies.**
+ *
+ * Replaces the three-path rule of 2026-08-21 ("one 4x+, or multiple 3x+, or 2x+
+ * and 5k+ pnl in one coin"), which admitted 1,685 wallets. One 5x+ admits 846 —
+ * half the roster gone in one move, and the two paths that go are the ones that
+ * let a wallet in on a 2x or on a pair of 3x nobody would have copied.
+ *
+ * Measured before the change, replaying the live buy stream against both
+ * rosters: tokens reaching tier 2 fall from 149 to 98, tokens reaching tier 10
+ * from 30 to 11, and **every one of the thirteen calls that ran 1.5x or better
+ * still had five or more surviving wallets in it**, so none of them stops
+ * firing. Trimming harder was tried and rejected — "one 3x+ AND two wins total"
+ * gets to 139 wallets but takes a 1.92x call to zero surviving wallets and three
+ * more down to one.
+ *
+ * Worth knowing before reaching for this lever again: the roster is a weak
+ * volume control. Halving it cut calls by a third, while gating the first
+ * Telegram post on tier 6 cut messages by 76% on the same night's data. Breadth
+ * is what makes confluence detectable at all; the roster is what makes it
+ * credible.
  *
  * Deliberately about the QUALITY of a wallet's record rather than how often we
  * happen to have seen it. `times_seen` counts appearances in scans customers
  * paid for, which measures which tokens got scanned at least as much as it
  * measures the wallet.
  */
-const MIN_SINGLE_MULTIPLE = 4;
-const MIN_REPEAT_MULTIPLE = 3;
-const MIN_REPEAT_COUNT = 2;
-const MIN_PNL_MULTIPLE = 2;
-const MIN_PNL_USD = 5000;
+const MIN_SINGLE_MULTIPLE = 5;
 
 /**
  * Plausibility guard on the rows a wallet qualifies with. Mirrors
@@ -100,10 +115,6 @@ async function eligibleWallets() {
       and coalesce(wt.bought_usd, 0) >= ${MIN_COST_BASIS_USD}
     group by w.id, w.address, w.identity_name, w.twitter
     having count(*) filter (where wt.multiple_x >= ${MIN_SINGLE_MULTIPLE}) >= 1
-        or count(*) filter (where wt.multiple_x >= ${MIN_REPEAT_MULTIPLE}) >= ${MIN_REPEAT_COUNT}
-        or count(*) filter (
-             where wt.multiple_x >= ${MIN_PNL_MULTIPLE} and wt.realized_pnl_usd >= ${MIN_PNL_USD}
-           ) >= 1
     order by max(wt.multiple_x) desc nulls last
   `;
 }
