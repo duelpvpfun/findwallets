@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { Chain } from "@/lib/types";
+import type { Chain, TokenMeta } from "@/lib/types";
 import TradersTable from "@/components/TradersTable";
 import ScanProgress from "@/components/ScanProgress";
 import PaywallDialog from "@/components/PaywallDialog";
@@ -34,6 +34,7 @@ const CHAINS: Array<{ value: Chain; label: string; short: string; dot: string }>
   { value: "solana", label: "Solana", short: "SOL", dot: "bg-violet-400" },
   { value: "bsc", label: "BNB Chain", short: "BNB", dot: "bg-yellow-400" },
   { value: "base", label: "Base", short: "BASE", dot: "bg-blue-400" },
+  { value: "robinhood", label: "Robinhood", short: "HOOD", dot: "bg-emerald-400" },
 ];
 
 /** A token we've already scanned, replayable from cache as a free sample. */
@@ -49,6 +50,7 @@ const PLACEHOLDERS: Record<Chain, string> = {
   solana: "Paste token contract address (CA)…",
   bsc: "Paste BEP-20 token contract address (0x…)…",
   base: "Paste Base token contract address (0x…)…",
+  robinhood: "Paste Robinhood Chain token contract address (0x…)…",
 };
 
 /** Pacing for a replayed sample: the cached rows arrive in one response, so the
@@ -63,6 +65,10 @@ export default function Home() {
   const [limit, setLimit] = useState<(typeof LIMIT_OPTIONS)[number]>(100);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ found: number; requested: number } | null>(null);
+  /** The token of the scan in flight, known before any trader has landed. */
+  const [pendingToken, setPendingToken] = useState<TokenMeta | null>(null);
+  /** Guards against a slow chain lookup landing after the buyer moved on. */
+  const resolveRun = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CachedScan | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
@@ -177,6 +183,12 @@ export default function Home() {
       setLoading(true);
       setProgress(null);
       setError(null);
+      // The previous scan has to go before this one starts. Leaving it up meant
+      // a buyer scanning a second coin watched the FIRST coin's logo, name and
+      // table for the entire scan and then saw it swap — indistinguishable from
+      // being served a cached result for the coin they just paid to scan.
+      setResult(null);
+      setPendingToken(null);
       try {
         const qs = new URLSearchParams({
           address: ca.trim(),
@@ -204,8 +216,12 @@ export default function Home() {
           return;
         }
 
-        const data = await consumeScanStream(res, (found, requested) =>
-          setProgress({ found, requested })
+        const data = await consumeScanStream(
+          res,
+          (found, requested) => setProgress({ found, requested }),
+          // Resolves long before the first trader page, so the panel can name
+          // the coin being scanned instead of showing nothing or the last one.
+          setPendingToken
         );
         if ("error" in data) {
           setError(data.error);
@@ -231,6 +247,7 @@ export default function Home() {
       } finally {
         setLoading(false);
         setProgress(null);
+        setPendingToken(null);
       }
     },
     [ownerKey, refreshAccount]
@@ -350,26 +367,54 @@ export default function Home() {
   }
 
   /**
-   * Address formats are disjoint between Solana and EVM, so a paste tells us
-   * the family with certainty. Only the wrong-family case switches: a 0x address
-   * is valid on both BNB Chain and Base, so an EVM pick is left alone.
+   * Picks the chain from the pasted address.
+   *
+   * The family is free — Solana and EVM address formats are disjoint — so a
+   * Solana paste switches immediately with no network call. Which EVM chain it
+   * is cannot be read off a `0x` address, so it is looked up rather than
+   * guessed: `/api/resolve-chain` asks Dexscreener where that contract actually
+   * trades. Guessing BNB Chain was wrong two times in three with a third EVM
+   * chain, and not guessing left the buyer to be told "Switch to BNB Chain, Base
+   * or Robinhood" after submitting, which is the site asking them to do its job.
+   *
+   * The lookup is advisory and cannot cost anything: it moves the picker, the
+   * server still validates the chain it is handed, and a failure leaves the
+   * picker alone. `resolveRun` drops a slow answer that lands after the buyer has
+   * typed something else or chosen a chain by hand — their choice always wins.
    */
   function handleAddressChange(value: string) {
     setAddress(value);
-    const family = detectAddressFamily(value.trim());
+    const trimmed = value.trim();
+    const family = detectAddressFamily(trimmed);
+    resolveRun.current += 1;
+
     if (!family) {
       setAutoChain(null);
       return;
     }
-    if (family === "solana" && chain !== "solana") {
-      setChain("solana");
-      setAutoChain("solana");
-    } else if (family === "evm" && chain === "solana") {
-      setChain("bsc");
-      setAutoChain("bsc");
-    } else {
-      setAutoChain(null);
+    if (family === "solana") {
+      if (chain !== "solana") {
+        setChain("solana");
+        setAutoChain("solana");
+      } else {
+        setAutoChain(null);
+      }
+      return;
     }
+
+    const run = resolveRun.current;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/resolve-chain?address=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { chain: Chain | null };
+        if (run !== resolveRun.current || !data.chain) return;
+        setChain(data.chain);
+        setAutoChain(data.chain);
+      } catch {
+        // Advisory only — leave the picker where it is.
+      }
+    })();
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -532,6 +577,9 @@ export default function Home() {
                 key={c.value}
                 type="button"
                 onClick={() => {
+                  // Beats a chain lookup still in flight: a deliberate tap is
+                  // never overridden a moment later by a guess about the paste.
+                  resolveRun.current += 1;
                   setChain(c.value);
                   setAutoChain(null);
                 }}
@@ -606,18 +654,6 @@ export default function Home() {
             <span className="rounded-full border border-blue-900/60 bg-blue-950/30 px-3 py-1 font-medium text-blue-300">
               Switched to {CHAINS.find((c) => c.value === autoChain)?.label} to match this address
             </span>
-            {autoChain === "bsc" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setChain("base");
-                  setAutoChain(null);
-                }}
-                className="text-neutral-500 underline underline-offset-2 transition-colors hover:text-neutral-300"
-              >
-                It&apos;s on Base
-              </button>
-            )}
           </div>
         )}
 
@@ -734,7 +770,7 @@ export default function Home() {
             </div>
           ) : (
             loading ? (
-              <ScanProgress progress={progress} chain={chain} limit={limit} />
+              <ScanProgress progress={progress} chain={chain} limit={limit} token={pendingToken} />
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">

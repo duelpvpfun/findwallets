@@ -14,9 +14,10 @@ const TOKENS = [
   { chain: "solana", address: "RmtMAYVTTFv2iK9muMrXEoAnSSsZPPgRPbqZCKwNDYk" },
   { chain: "bsc", address: "0x8b7abC1C0F2e6C0b76BC4FD0F7190f67d72E7777" },
   { chain: "base", address: "0xB2000000000000000000004c27f6523082f41D01" },
+  { chain: "robinhood", address: "0x020bfC650A365f8BB26819deAAbF3E21291018b4" },
 ];
 
-const NATIVE = { solana: "SOL", bsc: "BNB", base: "ETH" };
+const NATIVE = { solana: "SOL", bsc: "BNB", base: "ETH", robinhood: "ETH" };
 const sql = postgres(process.env.POSTGRES_URL_NON_POOLING, { ssl: "require", prepare: false });
 
 const usd = (v) => {

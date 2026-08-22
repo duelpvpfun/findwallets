@@ -29,7 +29,15 @@ export default function ShareCardModal({ token, trader, onClose }: ShareCardModa
     // Realized + unrealized combined, so a wallet still holding its bag isn't
     // shown as if it only made the money it has already cashed out.
     const totalPnlUsd = trader.realizedPnlUsd + (trader.unrealizedPnlUsd ?? 0);
-    const investedUsd = trader.boughtUsd;
+    // The cost of the tokens this PNL came from: the ones sold, plus the bag
+    // still held. NOT `boughtUsd`, which also counts tokens transferred away
+    // and so inflates the denominator — that put 1.50x on the share card for a
+    // wallet the table called 1.92x. One wallet cannot have two multiples, and
+    // this is the copy that leaves the site, so it is the one that has to be
+    // defensible. Same basis as TradersTable's total mode, deliberately.
+    const unsoldPnlUsd = trader.unrealizedPnlUsd ?? 0;
+    const heldCostUsd = Math.max(0, (trader.remainingValueUsd ?? 0) - unsoldPnlUsd);
+    const investedUsd = trader.soldCostBasisUsd + heldCostUsd || trader.boughtUsd;
     const positionUsd = investedUsd + totalPnlUsd;
 
     drawPnlCard(canvas, {

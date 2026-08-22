@@ -89,7 +89,7 @@ for (const e of entries) {
 
   if (typeof e.evmAddress === "string" && EVM_ADDRESS.test(e.evmAddress)) {
     const evm = e.evmAddress.toLowerCase();
-    rows.push(row("bsc", evm), row("base", evm));
+    rows.push(row("bsc", evm), row("base", evm), row("robinhood", evm));
     addresses++;
   } else if (e.evmAddress) {
     skipped.push(`${identity_name}: bad evm address ${e.evmAddress}`);

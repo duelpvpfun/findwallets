@@ -39,7 +39,12 @@ export interface TickerWallet {
   alsoWon: Array<{ symbol: string; multipleX: number | null; realizedPnlUsd: number }>;
 }
 
-const NATIVE_SYMBOL: Record<Chain, string> = { solana: "SOL", bsc: "BNB", base: "ETH" };
+const NATIVE_SYMBOL: Record<Chain, string> = {
+  solana: "SOL",
+  bsc: "BNB",
+  base: "ETH",
+  robinhood: "ETH",
+};
 
 /** Smallest cost basis that still makes a multiple worth showing publicly. */
 const MIN_TICKER_BOUGHT_USD = 1000;

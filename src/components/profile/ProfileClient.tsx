@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatUsd, shortenAddress } from "@/lib/format";
+import { chainLabel } from "@/lib/chains";
 import { saveScan, type CachedScan } from "@/lib/scanCache";
 import type { CreditBalance } from "@/components/AccountProvider";
 import ProfileShell from "./ProfileShell";
@@ -40,12 +41,6 @@ interface ProfileClientProps {
   retentionDays: number;
   maxPinned: number;
 }
-
-const CHAIN_LABELS: Record<string, string> = {
-  solana: "Solana",
-  bsc: "BNB Chain",
-  base: "Base",
-};
 
 export default function ProfileClient({
   wallet,
@@ -271,7 +266,7 @@ function ResultRow({
             ${row.tokenSymbol ?? shortenAddress(row.tokenAddress, 4)}
           </span>
           <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400">
-            {CHAIN_LABELS[row.chain] ?? row.chain}
+            {chainLabel(row.chain)}
           </span>
           <span className="tnum text-[11px] text-neutral-500">
             {row.traderCount} wallets

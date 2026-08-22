@@ -15,10 +15,12 @@ const APPLY = process.argv.includes("--apply");
 const RPC = {
   bsc: process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org",
   base: process.env.BASE_RPC_URL || "https://mainnet.base.org",
+  robinhood: process.env.ROBINHOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
 };
 // Public-node ceilings, confirmed live: BSC -32005 above ~20, Base -32014
-// ("maximum 10 calls in 1 batch") plus -32016 throttling at 10.
-const BATCH_SIZE = { bsc: 20, base: 5 };
+// ("maximum 10 calls in 1 batch") plus -32016 throttling at 10, Robinhood a
+// whole-batch HTTP 429 at 100 while 50 went through clean.
+const BATCH_SIZE = { bsc: 20, base: 5, robinhood: 20 };
 const MAX_ATTEMPTS = 6;
 const RATE_LIMIT_CODES = new Set([-32005, -32016]);
 
@@ -61,7 +63,7 @@ async function rpcBatch(chain, calls) {
 const tokens = await sql`
   select t.id, t.chain, t.address, t.symbol, t.price_usd
   from tokens t
-  where t.chain in ('bsc','base')
+  where t.chain in ('bsc','base','robinhood')
   order by t.symbol`;
 
 let changed = 0;

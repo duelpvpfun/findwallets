@@ -2,7 +2,7 @@
 // Never import this from a "use client" component — it reads the API key from env.
 import "server-only";
 import type { TokenMeta, WalletDetail, WalletTrader } from "./types";
-import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
+import { basisCoversSold, displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
 import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://data.solanatracker.io";
@@ -253,7 +253,14 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   // ...and the denominator has to match: only the sold lots' own cost basis, or a
   // wallet that offloaded 4% of its bag at 2.4x reports 1.06x.
   const soldCostBasisUsd = Math.min(tokensSold, tokensBought) * avgBuyPriceUsd;
-  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, buyUsd);
+  // Was the sold quantity actually bought? If so, the sold lots' own cost is the
+  // right denominator however few dollars it is. If not, some of what was sold
+  // arrived untracked, so fall back to everything spent — which understates the
+  // multiple rather than inflating it, and still answers "what did their money
+  // do". Never null on account of size: only a wallet with no recorded buy at
+  // all has nothing to divide by.
+  const covered = basisCoversSold(tokensSold, tokensBought);
+  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, buyUsd, covered);
   const multiple = displayMultiple(realizedPnlUsd, realizedBasis);
   const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 

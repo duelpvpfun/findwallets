@@ -11,7 +11,7 @@
 import "server-only";
 import type { Chain } from "./types";
 
-type EvmChain = Extract<Chain, "bsc" | "base">;
+type EvmChain = Extract<Chain, "bsc" | "base" | "robinhood">;
 
 // Tried in order. The public Base endpoint throttles hard enough to lose ~70% of
 // a 50-wallet scan (confirmed live: -32016 on 35 of 50 wallets while
@@ -30,6 +30,13 @@ const RPC_URLS: Record<EvmChain, string[]> = {
     "https://mainnet.base.org",
     "https://base.drpc.org",
   ].filter((u): u is string => Boolean(u)),
+  // Robinhood Chain has one public endpoint and its own docs call it
+  // rate-limited and unfit for production, so ROBINHOOD_RPC_URL is the one that
+  // matters here — there is no second community node to fall back to.
+  robinhood: [
+    process.env.ROBINHOOD_RPC_URL,
+    "https://rpc.mainnet.chain.robinhood.com",
+  ].filter((u): u is string => Boolean(u)),
 };
 
 // balanceOf(address) and decimals() selectors.
@@ -38,9 +45,11 @@ const DECIMALS = "0x313ce567";
 
 // Confirmed live against the default public nodes: BSC rejects eth_call batches
 // around 50 (-32005), Base hard-caps at 10 per batch (-32014) and throttles at
-// 10 (-32016). Both numbers are the public-endpoint ceiling; a paid RPC via
-// BSC_RPC_URL / BASE_RPC_URL will tolerate far more.
-const BATCH_SIZE: Record<EvmChain, number> = { bsc: 20, base: 5 };
+// 10 (-32016). Robinhood's public node answered 50 cleanly and returned a
+// whole-batch HTTP 429 at 100, so 20 sits well inside a ceiling that is measured
+// rather than documented. Each is the public-endpoint limit; a paid RPC via
+// BSC_RPC_URL / BASE_RPC_URL / ROBINHOOD_RPC_URL will tolerate far more.
+const BATCH_SIZE: Record<EvmChain, number> = { bsc: 20, base: 5, robinhood: 20 };
 const MAX_ATTEMPTS = 4;
 const RATE_LIMIT_CODES = new Set([-32005, -32016]);
 

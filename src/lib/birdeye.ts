@@ -1,5 +1,11 @@
 // Server-only client for the Birdeye Data API (https://docs.birdeye.so) — used
-// for chains other than Solana (BSC, Base, etc). Never import from "use client".
+// for chains other than Solana (BSC, Base, Robinhood Chain). Never import from
+// "use client".
+//
+// Birdeye's published network list is STALE — it omits chains the API serves.
+// `robinhood` was absent from docs.birdeye.so/docs/supported-networks while every
+// endpoint below answered for it, so coverage is a question for GET /defi/networks
+// and not for the documentation.
 //
 // IMPORTANT differences vs Solana Tracker (see /memories/repo/birdeye-bsc-api.md):
 // - Top-traders `limit` is hard-capped at 10 per request (not 200), so fetching
@@ -12,12 +18,12 @@
 import "server-only";
 import type { Chain, TokenMeta, WalletDetail, WalletTrader } from "./types";
 import { fetchTokenBalances, fetchTokenDecimals } from "./evmBalances";
-import { displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
+import { basisCoversSold, displayMultiple, isVolumeArtifact, realizedBasisUsd } from "./quality";
 import { trackApiCall } from "./db/usage";
 
 const BASE_URL = "https://public-api.birdeye.so";
 
-export type EvmChain = Extract<Chain, "bsc" | "base">;
+export type EvmChain = Extract<Chain, "bsc" | "base" | "robinhood">;
 
 export class BirdeyeError extends Error {
   constructor(message: string, public status?: number) {
@@ -106,6 +112,7 @@ export function isBirdeyeConfigured(): boolean {
 const NATIVE_WRAPPED: Record<EvmChain, string> = {
   bsc: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB
   base: "0x4200000000000000000000000000000000000006", // WETH on Base
+  robinhood: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", // WETH on Robinhood Chain
 };
 
 interface PriceResponse {
@@ -136,25 +143,39 @@ interface TokenMarketDataResponse {
   market_cap: number;
 }
 
+/**
+ * Token meta for an EVM chain.
+ *
+ * Both responses are nullable and BOTH ARE NULL for a contract Birdeye does not
+ * index on the selected chain — `{"data": null, "success": true}`, a 200. A 0x
+ * address is valid on every EVM chain, so that is the ordinary shape of a buyer
+ * picking the wrong one, and dereferencing it threw a TypeError that surfaced as
+ * "Failed to fetch trader data." The credit was refunded, but the wrong-chain
+ * hint the caller builds for exactly this case could never be reached, so the
+ * buyer was told nothing about the one thing that would have worked. Falling
+ * back lets the scan reach its zero-trader path and name the other chains.
+ */
 export async function fetchEvmTokenMeta(chain: EvmChain, address: string): Promise<TokenMeta> {
   const [meta, market, nativePriceUsd] = await Promise.all([
-    beFetch<TokenMetadataResponse>(chain, "/defi/v3/token/meta-data/single", { address }),
-    beFetch<TokenMarketDataResponse>(chain, "/defi/v3/token/market-data", { address }),
+    beFetch<TokenMetadataResponse | null>(chain, "/defi/v3/token/meta-data/single", { address }),
+    beFetch<TokenMarketDataResponse | null>(chain, "/defi/v3/token/market-data", { address }),
     fetchNativePriceUsd(chain),
   ]);
 
-  const priceUsd = market.price ?? 0;
-  const marketCapUsd = market.market_cap ?? 0;
+  const priceUsd = market?.price ?? 0;
+  const marketCapUsd = market?.market_cap ?? 0;
   // `||`, not `??`: Birdeye reports 0 (not null) for unindexed circulating
   // supply, and a 0 here zeroes every market cap in the scan.
-  const estimatedSupply = market.circulating_supply || market.total_supply || 0;
+  const estimatedSupply = market?.circulating_supply || market?.total_supply || 0;
 
   return {
     chain,
     address,
-    name: meta.name,
-    symbol: meta.symbol,
-    imageUrl: meta.logo_uri ?? null,
+    // The address, not "Unknown": it is what the buyer pasted, so it reads as
+    // "we found nothing for this" rather than as a token that exists.
+    name: meta?.name ?? `${address.slice(0, 6)}…${address.slice(-4)}`,
+    symbol: meta?.symbol ?? "",
+    imageUrl: meta?.logo_uri ?? null,
     priceUsd,
     marketCapUsd,
     estimatedSupply,
@@ -209,7 +230,14 @@ function mapTopTrader(item: TopTraderItem, rank: number, estimatedSupply: number
   // the whole buy volume made a wallet that sold 4% of its bag at 2.4x read as
   // 1.06x, contradicting the Entry -> Exit prices on the same row.
   const soldCostBasisUsd = Math.min(item.volumeSell, item.volumeBuy) * avgBuyPriceUsd;
-  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd);
+  // Was the sold quantity actually bought? If so, the sold lots' own cost is the
+  // right denominator however few dollars it is. If not, some of what was sold
+  // arrived untracked, so fall back to everything spent — which understates the
+  // multiple rather than inflating it, and still answers "what did their money
+  // do". Never null on account of size: only a wallet with no recorded buy at
+  // all has nothing to divide by.
+  const covered = basisCoversSold(item.volumeSell, item.volumeBuy);
+  const realizedBasis = realizedBasisUsd(soldCostBasisUsd, boughtUsd, covered);
   const multiple = displayMultiple(item.realizedPnl, realizedBasis);
   const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 
@@ -323,7 +351,6 @@ export async function fetchEvmTopTraders(
     // Out of time: return what has been collected rather than letting the
     // platform kill the function with a consumed credit and nothing delivered.
     if (deadlineAt !== undefined && Date.now() >= deadlineAt && traders.length > 0) break;
-    const before = traders.length;
     const batch = Array.from(
       { length: Math.min(MAX_CONCURRENT_PAGES, pageCount - batchStart) },
       (_, i) => batchStart + i
@@ -348,16 +375,21 @@ export async function fetchEvmTopTraders(
         exhausted = true;
         continue;
       }
+      const pageStart = traders.length;
       for (const item of page.items) {
         // Dropped before mapping: a wallet whose "bag" is most of the supply
         // poisons every derived column on the row (see isVolumeArtifact).
         if (isVolumeArtifact(item.trade, item.volumeBuy, estimatedSupply)) continue;
         traders.push(mapTopTrader(item, traders.length + 1, estimatedSupply));
       }
+      // Reported per page, not once per batch of ten. The batch is a rate-limit
+      // device, not something the buyer should be able to see: reporting on the
+      // batch boundary made a Top 100 scan sit at 0 and then land on 93 in a
+      // single step, so the number looked stuck and then wrong.
+      // Progress only; on-chain holdings are applied to the final list below, so
+      // these rows carry no balance data yet.
+      if (onBatch && traders.length > pageStart) onBatch(traders.slice(pageStart));
     }
-    // Progress only; on-chain holdings are applied to the final list below, so
-    // these rows carry no balance data yet.
-    if (onBatch && traders.length > before) onBatch(traders.slice(before));
     if (exhausted) break;
   }
 

@@ -1,6 +1,11 @@
 import type { Chain } from "./types";
 
-export const ALLOWED_CHAINS: Chain[] = ["solana", "bsc", "base"];
+export const ALLOWED_CHAINS: Chain[] = ["solana", "bsc", "base", "robinhood"];
+
+/** The EVM members of `Chain`. Derived lists beat hand-written ones here: the
+ * wrong-chain hints below name every alternative, and a chain missing from one
+ * of them reads to the user as "that chain does not exist". */
+export const EVM_CHAINS: Chain[] = ALLOWED_CHAINS.filter((c) => c !== "solana");
 
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -9,7 +14,17 @@ export const CHAIN_LABELS: Record<Chain, string> = {
   solana: "Solana",
   bsc: "BNB Chain",
   base: "Base",
+  robinhood: "Robinhood",
 };
+
+/**
+ * Label for a chain that arrives as an unvalidated string — a `chain` column is
+ * `text`, so a row could name a chain this build has never heard of. Falls back
+ * to the raw value rather than rendering "undefined".
+ */
+export function chainLabel(value: string): string {
+  return isChain(value) ? CHAIN_LABELS[value] : value;
+}
 
 export function isChain(value: string): value is Chain {
   return (ALLOWED_CHAINS as string[]).includes(value);
@@ -69,7 +84,7 @@ export function addressMismatchMessage(chain: Chain, address: string): string | 
     return `That doesn't look like a ${label} contract address. Check for a missing or extra character.`;
   }
   if (chain === "solana" && family === "evm") {
-    return `That's an EVM contract address, but ${label} is selected. Switch to BNB Chain or Base.`;
+    return `That's an EVM contract address, but ${label} is selected. Switch to ${listChains(EVM_CHAINS)}.`;
   }
   if (chain !== "solana" && family === "solana") {
     return `That's a Solana contract address, but ${label} is selected. Switch to Solana.`;
@@ -77,10 +92,22 @@ export function addressMismatchMessage(chain: Chain, address: string): string | 
   return null;
 }
 
-/** Sibling EVM chain — a 0x address is valid on both, so a "not found" on one
- * is worth suggesting the other. */
-export function siblingEvmChain(chain: Chain): Chain | null {
-  if (chain === "bsc") return "base";
-  if (chain === "base") return "bsc";
-  return null;
+/**
+ * The other EVM chains — a 0x address is valid on all of them, so a "not found"
+ * on one is worth suggesting the rest.
+ *
+ * Returns a list rather than a single chain. With only BNB Chain and Base there
+ * was exactly one alternative and naming it was free; with a third, picking one
+ * to mention would send half the wrong-chain pastes to the wrong suggestion.
+ */
+export function siblingEvmChains(chain: Chain): Chain[] {
+  if (chain === "solana") return [];
+  return EVM_CHAINS.filter((c) => c !== chain);
+}
+
+/** "BNB Chain, Base or Robinhood" — an Oxford-less list for user-facing copy. */
+export function listChains(chains: Chain[]): string {
+  const labels = chains.map((c) => CHAIN_LABELS[c]);
+  if (labels.length <= 1) return labels[0] ?? "";
+  return `${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`;
 }

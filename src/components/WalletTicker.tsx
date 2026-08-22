@@ -39,6 +39,7 @@ const CHAIN_DOT: Record<Chain, string> = {
   solana: "bg-violet-400",
   bsc: "bg-yellow-400",
   base: "bg-blue-400",
+  robinhood: "bg-emerald-400",
 };
 
 /** How long a wallet stays visible before the next one pushes in above it. */

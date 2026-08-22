@@ -34,7 +34,8 @@ import {
   addressMismatchMessage,
   isChain,
   isValidAddressForChain,
-  siblingEvmChain,
+  siblingEvmChains,
+  listChains,
   CHAIN_LABELS,
 } from "@/lib/chains";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
@@ -266,10 +267,15 @@ export async function GET(request: NextRequest) {
       : await fetchEvmTokenMeta(chain as EvmChain, address);
     emit?.({ type: "token", token });
 
+    // Clamped to what was asked for. The EVM path fetches `limit * 1.3` rows so
+    // it can still fill the tier after dropping churn artifacts, and this counter
+    // was reporting the raw fetch — a Top 100 scan visibly counted past its own
+    // target to "125 of 100", which reads as a broken number rather than as
+    // headroom. It never goes backwards either: a later page can only add.
     let found = 0;
     const onProgress = emit
       ? (page: WalletTrader[]) => {
-          found += page.length;
+          found = Math.min(limit, found + page.length);
           emit?.({ type: "progress", found, requested: limit });
         }
       : undefined;
@@ -307,10 +313,10 @@ export async function GET(request: NextRequest) {
     // An EVM address is valid on every EVM chain, so a token pasted under the
     // wrong one looks like an empty result. Say so instead of leaving the buyer
     // thinking they paid for nothing — the credit is untouched at zero traders.
-    const sibling = siblingEvmChain(chain);
+    const siblings = siblingEvmChains(chain);
     const note =
-      traders.length === 0 && sibling
-        ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${CHAIN_LABELS[sibling]}, switch chains and search again — you have not been charged for this scan.`
+      traders.length === 0 && siblings.length > 0
+        ? `No traders found on ${CHAIN_LABELS[chain]}. If this token is on ${listChains(siblings)}, switch chains and search again — you have not been charged for this scan.`
         : undefined;
 
     // Upstream simply may not have `limit` qualifying traders, so a short result

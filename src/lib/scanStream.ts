@@ -1,15 +1,22 @@
 "use client";
 
-import type { ScanEvent, ScanResult } from "./types";
+import type { ScanEvent, ScanResult, TokenMeta } from "./types";
 
 /**
  * Reads the NDJSON stream from `/api/top-traders?stream=1`, reporting progress
  * as pages arrive and resolving with the final result line. Falls back to
  * parsing the whole body as JSON if the server answered without streaming.
+ *
+ * `onToken` fires as soon as the token resolves, well before any trader page.
+ * The server has always sent that line and this function used to drop it, so a
+ * buyer scanning a second coin sat looking at the FIRST coin's name, logo and
+ * table for the whole scan — which reads as "it ignored me", or worse, as
+ * cached data they just paid for.
  */
 export async function consumeScanStream(
   res: Response,
-  onProgress: (found: number, requested: number) => void
+  onProgress: (found: number, requested: number) => void,
+  onToken?: (token: TokenMeta) => void
 ): Promise<ScanResult | { error: string }> {
   const isNdjson = res.headers.get("content-type")?.includes("ndjson");
   if (!isNdjson || !res.body) {
@@ -28,7 +35,8 @@ export async function consumeScanStream(
     } catch {
       return;
     }
-    if (event.type === "progress") onProgress(event.found, event.requested);
+    if (event.type === "token") onToken?.(event.token);
+    else if (event.type === "progress") onProgress(event.found, event.requested);
     else if (event.type === "result") result = event.result;
     else if (event.type === "error") result = { error: event.error };
   }

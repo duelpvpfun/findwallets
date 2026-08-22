@@ -359,14 +359,15 @@ function PastePanel({ sample }: { sample: OnboardingSample | null }) {
     { value: "solana", short: "SOL", dot: "bg-violet-400" },
     { value: "bsc", short: "BNB", dot: "bg-yellow-400" },
     { value: "base", short: "BASE", dot: "bg-blue-400" },
+    { value: "robinhood", short: "HOOD", dot: "bg-emerald-400" },
   ];
   const active = sample?.chain ?? "solana";
 
   return (
     <div>
       <PanelCopy>
-        Paste a token contract address. The chain is detected from the address.
-        An invalid address is rejected before it costs a scan.
+        Paste a token contract address and pick the chain. An invalid address is
+        rejected before it costs a scan.
       </PanelCopy>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-3 sm:flex-row sm:items-center">
