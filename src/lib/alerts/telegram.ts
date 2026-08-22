@@ -105,8 +105,8 @@ export interface AlertMessageInput {
  *
  *   1. How many, and how tight — the pips and the headline.
  *   2. The three numbers that size the opportunity, on one line.
- *   3. **Who these wallets are.** This is the entire moat. `avg 5.8x ·
- *      $50.2K per win` comes from our own curated history of what these
+ *   3. **Who these wallets are.** This is the entire moat. `Average big wins:
+ *      5.8x · $50.2K` comes from our own curated history of what these
  *      wallets have already done, not from the trade that just happened.
  *      Anyone can scrape a mempool and say a wallet bought; nobody else can
  *      say whose wallet it was and what it has done before.
@@ -146,10 +146,15 @@ export function buildAlertMessage(input: AlertMessageInput): string {
   if (input.mcapUsd && input.mcapUsd > 0) facts.push(`📊 <b>${formatUsd(input.mcapUsd)}</b> MC`);
   out.push(facts.join("  ·  "));
 
+  // "Their record" was the wrong words for this number. It is the mean over the
+  // wins we have stored for these wallets, not their lifetime performance — the
+  // losers are not in `wallet_tokens` at all — so it read as a claim we cannot
+  // make and looked inflated to anyone who checked. "Average big wins" is what
+  // it has always measured.
   const record: string[] = [];
-  if (input.avgMultipleX !== null) record.push(`avg <b>${formatMultiple(input.avgMultipleX)}</b>`);
-  if (input.avgPnlUsd !== null) record.push(`<b>${formatUsd(input.avgPnlUsd)}</b> per win`);
-  if (record.length > 0) out.push(`🏆 <b>Their record:</b> ${record.join(" · ")}`);
+  if (input.avgMultipleX !== null) record.push(`<b>${formatMultiple(input.avgMultipleX)}</b>`);
+  if (input.avgPnlUsd !== null) record.push(`<b>${formatUsd(input.avgPnlUsd)}</b>`);
+  if (record.length > 0) out.push(`🏆 <b>Average big wins:</b> ${record.join(" · ")}`);
 
   // One concrete win beats any average for making a stranger believe the
   // average. A named trader with a 27x on something recognisable is the single
@@ -234,10 +239,16 @@ type InlineButton =
  */
 export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineButton[][] {
   const trade = tradeLinksFor(chain).map((link) => {
-    const ref = process.env[link.refEnv];
+    // `refEnv` is null for a venue with no referral programme (pump.fun), which
+    // is not the same as a code we forgot to set. Both fall back to the plain
+    // link; only one of them is worth noticing.
+    const ref = link.refEnv ? process.env[link.refEnv] : undefined;
     return {
       text: link.name,
-      url: ref ? link.withRef(chain, tokenAddress, ref) : link.plain(chain, tokenAddress),
+      url:
+        ref && link.withRef
+          ? link.withRef(chain, tokenAddress, ref)
+          : link.plain(chain, tokenAddress),
     };
   });
 

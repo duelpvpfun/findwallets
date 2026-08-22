@@ -100,6 +100,23 @@ export const MAX_ALERT_MCAP_USD = envNumber("ALERTS_MAX_MCAP_USD", 1_000_000);
 export const DEAD_MCAP_USD = envNumber("ALERTS_DEAD_MCAP_USD", 4_000);
 
 /**
+ * Above this share of the wallets in the window having already sold, the step
+ * does not reach Telegram. The owner's rule, 2026-08-22: "if >60% of smart
+ * wallets sold don't fire — BOTFIRM has 21 smart wallets in but 17 of 21 sold,
+ * so useless."
+ *
+ * Set to 1 to disable. The suppressed step is still claimed, still on the feed
+ * and still tracked, which is deliberate: measured against the first night of
+ * live data this rule is a 13% cut in messages that silences exactly one call,
+ * and the steps it removes had a HIGHER 2x rate (8 of 32) than the steps where
+ * nobody had sold (16 of 110). Sold-share rises with time and with the wallet
+ * count, so it partly measures "this call ran and people took profit" — BOTFIRM
+ * itself went on to peak at 3.85x. Keeping the suppressed steps in the record is
+ * the only way to find out whether the threshold is doing what it is meant to.
+ */
+export const MAX_SOLD_SHARE = envNumber("ALERTS_MAX_SOLD_SHARE", 0.6);
+
+/**
  * Lowest tier that reaches Telegram. Everything in-band still lands on the feed.
  *
  * **Off by default (0).** The band above is the volume control the owner chose;
@@ -206,20 +223,36 @@ export const IGNORED_SUBJECT_MINTS = new Set([
  */
 export interface TradeLink {
   name: string;
+  /**
+   * Logo asset under `public/venues/`.
+   *
+   * Self-hosted, never hotlinked. A third-party favicon leaks a referrer on
+   * every row of the feed and breaks silently the moment they move the file,
+   * which is why this started life as a monogram. The fix is to own the bytes,
+   * not to go without the logo.
+   */
+  slug: string;
   chains: Chain[];
-  /** Env var holding the referral code. */
-  refEnv: string;
+  /**
+   * Env var holding the referral code, or null for a venue we earn nothing on.
+   *
+   * pump.fun has no referral programme and is here regardless: it is where a
+   * pump.fun token actually trades, and losing a commission is not a reason to
+   * send a buyer somewhere worse.
+   */
+  refEnv: string | null;
   /** The chain is passed in rather than inferred from the address. Inferring it
    * cost a real bug: `0x` is true of both EVM chains, so a Base alert linked to
    * GMGN's BNB Chain page for the same address — a live page, for a different
    * token. Nothing here may guess a chain it is already being told. */
-  withRef: (chain: Chain, address: string, ref: string) => string;
+  withRef: ((chain: Chain, address: string, ref: string) => string) | null;
   plain: (chain: Chain, address: string) => string;
 }
 
 export const TRADE_LINKS: TradeLink[] = [
   {
     name: "Axiom",
+    slug: "axiom",
     chains: ["solana"],
     refEnv: "ALERTS_REF_AXIOM",
     withRef: (_chain, mint, ref) => `https://axiom.trade/t/${mint}/@${ref}`,
@@ -227,6 +260,7 @@ export const TRADE_LINKS: TradeLink[] = [
   },
   {
     name: "Trojan",
+    slug: "trojan",
     chains: ["solana"],
     refEnv: "ALERTS_REF_TROJAN",
     withRef: (_chain, mint, ref) => `https://t.me/solana_trojanbot?start=r-${ref}-${mint}`,
@@ -236,29 +270,31 @@ export const TRADE_LINKS: TradeLink[] = [
     // GMGN covers all three chains off one referral code, which is why it is
     // the chart link rather than Dexscreener on the paid rows.
     name: "GMGN",
+    slug: "gmgn",
     chains: ["solana", "bsc", "base"],
     refEnv: "ALERTS_REF_GMGN",
     withRef: (chain, address, ref) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${ref}_${address}`,
     plain: (chain, address) => `https://gmgn.ai/${GMGN_CHAIN_SLUG[chain]}/token/${address}`,
   },
   {
-    // Deep-links per token, same as the others. The referral code goes on as
-    // `?ref=`, which is the convention but is NOT confirmed for this host —
-    // Cloudflare blocks any request that could verify it. A wrong parameter is
-    // ignored rather than broken, so the risk is silently losing commission,
-    // not a dead link. Confirm it attaches, and if the parameter has another
-    // name this is a one-word change.
-    name: "BasedBot",
-    chains: ["solana", "bsc", "base"],
-    refEnv: "ALERTS_REF_BASEDBOT",
-    withRef: (chain, address, ref) =>
-      `https://basedbot.app/token/${BASEDBOT_CHAIN_SLUG[chain]}/${address}?ref=${ref}`,
-    plain: (chain, address) => `https://basedbot.app/token/${BASEDBOT_CHAIN_SLUG[chain]}/${address}`,
+    // Replaced BasedBot, 2026-08-22, the owner's call. No referral programme
+    // and none expected — it earns its place by being the venue the token is
+    // actually on. Almost every call in this feed is a pump.fun launch, so for
+    // most readers this is the shortest path from alert to filled order, and a
+    // link we make nothing on beats a link nobody taps.
+    //
+    // Solana only. There is no pump.fun page for a BNB Chain or Base contract,
+    // and a dead link on an alert is worse than one fewer button.
+    name: "pump.fun",
+    slug: "pumpfun",
+    chains: ["solana"],
+    refEnv: null,
+    withRef: null,
+    plain: (_chain, mint) => `https://pump.fun/coin/${mint}`,
   },
 ];
 
 const GMGN_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
-const BASEDBOT_CHAIN_SLUG: Record<Chain, string> = { solana: "sol", bsc: "bsc", base: "base" };
 
 /** The buttons for one chain, in display order. */
 export function tradeLinksFor(chain: Chain): TradeLink[] {

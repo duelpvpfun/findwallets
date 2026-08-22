@@ -45,4 +45,8 @@ highpnl*.json
 # Pre-change dumps written by scripts/merge-duplicate-tokens.mjs — archive data, keep local
 backup-merge-tokens-*.json
 *.png
+# ...but the venue logos are shipped assets, not a stray screenshot. The blanket
+# rule above meant they were silently absent from the deploy and every Buy icon
+# on /feed 404'd.
+!public/venues/*.png
 .keys/

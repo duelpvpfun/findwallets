@@ -255,11 +255,11 @@ export default function FeedTerminal({ initialAlerts, trackedWallets }: Props) {
           <span className="w-16 shrink-0">Fired</span>
           <span className="w-9 shrink-0 text-center">In</span>
           <span className="w-24 shrink-0">Token</span>
-          <span className="w-36 shrink-0">Their record</span>
+          <span className="w-36 shrink-0">Avg big wins</span>
           <span className="hidden w-12 shrink-0 text-right md:block">Span</span>
           <span className="w-20 shrink-0 text-right">Cap at call</span>
-          <span className="w-14 shrink-0 text-right">Peak</span>
-          <span className="w-16 shrink-0 text-right">Now</span>
+          <span className="w-16 shrink-0 text-right">Peak</span>
+          <span className="w-14 shrink-0 text-right">Now</span>
         </span>
         <span className="hidden w-[132px] shrink-0 lg:block">Since</span>
         <span className="shrink-0">Buy</span>

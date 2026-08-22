@@ -24,14 +24,6 @@ import McapSparkline from "./McapSparkline";
 /** Wallets listed before the rest collapse behind a count. */
 const VISIBLE_WALLETS = 6;
 
-/** A colour per venue, so the row is scannable by shape and not just by letter. */
-const BOT_CHIP: Record<string, string> = {
-  Axiom: "bg-sky-500/20 text-sky-300 hover:bg-sky-500/30",
-  Trojan: "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30",
-  GMGN: "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30",
-  BasedBot: "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30",
-};
-
 const KIND_CHIP: Record<string, string> = {
   burst: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   cluster: "border-amber-500/30 bg-amber-500/10 text-amber-300",
@@ -175,27 +167,36 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
             {base ? formatUsd(base) : "—"}
           </span>
 
-          {/* Peak carries NO arrow: it is a running maximum seeded at the entry
-              cap, so it is >= 1.00x by construction and an up-arrow beside it
-              would be claiming a gain that may never have existed. Dimmed until
-              it is actually meaningful. */}
+          {/* Peak leads, because it is the number that answers what the call was
+              worth. "Now" led before, and on a memecoin feed that meant a wall
+              of red: nearly everything is down from its top an hour later, so
+              the honest headline of a call is how far it ran, not where it
+              happens to sit right now.
+
+              It still gets no arrow below 1.2x. `ath_mcap_usd` starts null and
+              is only ever set by an observed sample, so a peak CAN come in under
+              1.00x, and an up-arrow on one of those would be inventing a gain.
+
+              The reading stays honest in both directions: the low is in the open
+              row, "Now" is still on this line, and nothing here is rounded up. */}
           <span
-            className={`tnum w-14 shrink-0 text-right text-xs ${
-              peakX && peakX >= 1.2 ? "font-semibold text-blue-300" : "text-neutral-500"
+            className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
+              peakX && peakX >= 1.2 ? "text-emerald-400" : "text-neutral-500"
             }`}
             title="Highest market cap since the call, over the cap at the call"
           >
-            {peakX ? formatMultiple(peakX) : "—"}
+            {peakX ? `${peakX >= 1.2 ? "▲ " : ""}${formatMultiple(peakX)}` : "—"}
           </span>
 
-          {/* Now is the honest one, and the only one that gets a direction. */}
+          {/* Kept, and deliberately quiet — one muted figure rather than a red
+              "▼ 0.10x" shouting over the peak beside it. */}
           <span
-            className={`tnum w-16 shrink-0 text-right text-xs font-semibold ${
-              nowX === null ? "text-neutral-500" : up ? "text-emerald-400" : "text-rose-400"
+            className={`tnum w-14 shrink-0 text-right text-xs ${
+              nowX !== null && up ? "text-neutral-400" : "text-neutral-500"
             }`}
             title="Market cap now, over the cap at the call"
           >
-            {nowX ? `${up ? "▲" : "▼"} ${formatMultiple(nowX)}` : "—"}
+            {nowX ? formatMultiple(nowX) : "—"}
           </span>
         </button>
 
@@ -203,10 +204,11 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
           <McapSparkline samples={alert.samples} baselineUsd={base} up={up} />
         </span>
 
-        {/* One click to a buy without opening the row. Monograms rather than the
-            real logos: hotlinking four third-party favicons leaks a referrer per
-            row and breaks the moment any of them moves a file. */}
-        <span className="hidden shrink-0 items-center gap-1 sm:flex">
+        {/* One click to a buy without opening the row. The real marks, served
+            from `public/venues/` — self-hosted rather than hotlinked, so no
+            referrer leaks on every row and nobody else's deploy can blank them.
+            `alt` is empty because the accessible name is on the anchor. */}
+        <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
           {links.map((link) => (
             <a
               key={link.name}
@@ -215,11 +217,10 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
               rel="noopener noreferrer"
               title={`Buy on ${link.name}`}
               aria-label={`Buy $${symbol} on ${link.name}`}
-              className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-colors ${
-                BOT_CHIP[link.name] ?? "bg-neutral-800 text-neutral-300"
-              }`}
+              className="flex h-5 w-5 items-center justify-center overflow-hidden rounded bg-neutral-900 opacity-70 ring-1 ring-neutral-800 transition-opacity hover:opacity-100"
             >
-              {link.name.slice(0, 1)}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/venues/${link.slug}.png`} alt="" width={20} height={20} loading="lazy" />
             </a>
           ))}
         </span>
@@ -288,8 +289,8 @@ export default function FeedRow({ alert, fresh }: { alert: AlertFeedRow; fresh: 
           <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 text-xs">
             <div className="col-span-3 grid grid-cols-subgrid text-[10px] uppercase tracking-wider text-neutral-600">
               <span>Wallet</span>
-              <span className="text-right">Avg win</span>
-              <span className="text-right">Avg PNL</span>
+              <span className="text-right">Avg big win</span>
+              <span className="text-right">Avg big PNL</span>
             </div>
             {wallets.map((w) => (
               <div key={w.address} className="col-span-3 grid grid-cols-subgrid items-baseline">
