@@ -229,6 +229,37 @@ winners** (a median over all calls is ~1.00x and says nothing). The drawdown is 
 same sample writes it, so it is free — and still shown per call in the feed, so a "hit" can be
 checked against how rough the ride was.
 
+**The peak is a ceiling nobody sells into, so `/admin` also shows 1h / 6h / 24h.**
+`mcap_1h_usd`, `mcap_6h_usd` and `mcap_24h_usd` were written by the tracking cron from the day the
+scoreboard shipped and read by **nothing** for as long. They are the only figures that answer "what
+would holding have paid", and unlike the winner-size column they are taken over **every** scored
+call including the zeros — a hold figure that excluded the losers would be worthless. Each carries
+its own sample count so a dash reads as "too early" rather than "no edge". `Peak in` (median
+minutes to the peak, winners only) is the other half: "6.4x" and "6.4x in 40 seconds" are the same
+number and different products, and only one of them a reader in a channel could have acted on.
+
+**`fetchAlertCuts` slices calls by something other than the tier, and every cut but one is taken
+from the FIRST announced step** — so it reads as what was knowable when the message went out.
+Entry cap, roster dollars in, cluster span and sold-share are at-post; "escalated to" is labelled
+hindsight because it is the strongest correlate in the data and cannot be turned into a filter.
+All five dimensions come out of **one** statement via a lateral `VALUES` join, because a query per
+dimension is a fan-out against a pool of three. `rugRate` is in that table and has no equivalent in
+the tier table on purpose: a cut can be worth making because it removes losers rather than because
+it finds winners, and a hit rate cannot show that.
+
+**`fetchAlertSuppression` is what makes the volume knobs falsifiable.** The rule elsewhere in this
+file is that a suppressed alert stays in the record "because a suppressed call that turns out to
+have been good is the only evidence the knob is wrong" — and until 2026-08-22 nothing displayed that
+evidence, so the rule was true and useless. Counted in **steps**, not calls, because the unit a
+filter removes is a message. `n/a` in that table is honest and expected: an out-of-band step and a
+superseded step are never tracked, so there is no peak to score them against. The knobs it *can*
+hold to account are the ones that suppress but keep tracking — min tier, min cap, mostly-sold.
+
+**The scoreboard must never be served by `/api/feed`.** It was, for a while, unread by any caller,
+on the endpoint that goes public with `ALERTS_PUBLIC` — the same mistake as a private page served by
+a public route. Hit rates and hold medians are how the product gets tuned; publishing them invites
+an operator's median being read as a return somebody made. `/admin` only.
+
 **Two arithmetic traps in that table, both of which shipped wrong once.** The headline must count
 **calls**, not `alerts_fired` rows: a token escalating 2 → 6 writes five rows, and summing the tier
 table reported one token as five ten-baggers. And the per-day denominator is **floored at one day**,

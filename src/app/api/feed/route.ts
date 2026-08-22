@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, rateLimit } from "@/lib/rateLimit";
-import { fetchAlertFeed, fetchAlertSummary, fetchTierScoreboard } from "@/lib/db/alerts";
+import { fetchAlertFeed, fetchAlertSummary } from "@/lib/db/alerts";
 import { alertsArePublic } from "@/lib/alerts/config";
 import { isAdminRequest } from "@/lib/adminAuth";
 
@@ -40,8 +40,9 @@ export async function GET(request: NextRequest) {
   const count = Number(params.get("limit"));
 
   try {
-    // Sequential, never Promise.all — see AGENTS.md. Three statements against a
-    // pool of 3 is exactly the fan-out that stops the pooler answering.
+    // Sequential, never Promise.all — see AGENTS.md. Even two statements against
+    // a pool of 3 must not be fanned out; that is what stops the pooler
+    // answering at all.
     const alerts = await fetchAlertFeed(
       CHAIN,
       Number.isFinite(count) && count > 0 ? Math.min(count, 100) : 40,
@@ -53,11 +54,16 @@ export async function GET(request: NextRequest) {
     if (before > 0) return NextResponse.json({ alerts });
 
     const summary = await fetchAlertSummary(CHAIN);
-    const scoreboard = await fetchTierScoreboard(CHAIN);
 
-    return NextResponse.json({ alerts, summary, scoreboard });
+    // The tier scoreboard is NOT here. It used to be, unread by any caller, on
+    // an endpoint that goes public with ALERTS_PUBLIC — which is the same
+    // mistake as a private page served by a public route. Hit rates and "what
+    // holding paid" are how we decide what to tune; publishing them invites
+    // reading an operator's median as a return somebody made. It lives on
+    // /admin, which is what the note in feed/page.tsx already claimed.
+    return NextResponse.json({ alerts, summary });
   } catch (err) {
     console.error("[alerts/feed] failed:", err);
-    return NextResponse.json({ alerts: [], summary: null, scoreboard: [] });
+    return NextResponse.json({ alerts: [], summary: null });
   }
 }

@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 import TierScoreboard from "@/components/feed/TierScoreboard";
-import type { CallScore, TierScore } from "@/lib/db/alerts";
+import type { AlertCut, CallScore, SuppressionRow, TierScore } from "@/lib/db/alerts";
 
 const REFRESH_MS = 60_000;
 
@@ -315,10 +315,14 @@ export default function AdminDashboard({
   initial,
   alertScores,
   callScore,
+  alertCuts,
+  alertSuppression,
 }: {
   initial: AdminStats;
   alertScores: TierScore[];
   callScore: CallScore;
+  alertCuts: AlertCut[];
+  alertSuppression: SuppressionRow[];
 }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
@@ -475,7 +479,12 @@ export default function AdminDashboard({
           published to customers reads as a return somebody made. Here it is
           what it actually is — the number that says how to tune the tiers. */}
       <div className="mt-6">
-        <TierScoreboard scores={alertScores} calls={callScore} />
+        <TierScoreboard
+          scores={alertScores}
+          calls={callScore}
+          cuts={alertCuts}
+          suppression={alertSuppression}
+        />
       </div>
 
       <section className="mt-8">

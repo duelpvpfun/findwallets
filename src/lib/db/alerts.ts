@@ -19,6 +19,8 @@ import {
   FRESH_SAMPLE_SECONDS,
   LONGEST_WINDOW_SECONDS,
   MAX_SAMPLES,
+  MAX_ALERT_MCAP_USD,
+  MIN_ALERT_MCAP_USD,
   MIN_BUY_USD,
   MIN_SCOREBOARD_MCAP_USD,
   TRACKING_DAYS,
@@ -938,6 +940,27 @@ export interface TierScore {
   /** Median peak among calls that reached 2x. */
   medianWinnerPeakX: number | null;
   bestPeakX: number | null;
+  /**
+   * Median minutes from firing to the peak being observed, among the winners.
+   *
+   * The peak alone cannot tell an operator whether a tier is tradeable. "6.4x,
+   * 25 minutes to get there" and "6.4x, 40 seconds" are the same number and
+   * completely different products, and only one of them a reader in a channel
+   * could have acted on.
+   */
+  medianMinutesToPeakX: number | null;
+  /**
+   * Median multiple 24 hours in, over ALL scored calls in the tier.
+   *
+   * Deliberately not conditional on having won: this is the "what would holding
+   * have paid" figure, and the honest version of it includes the calls that went
+   * to zero. Nobody sells the top, so the peak is the ceiling and this is the
+   * floor of a realistic answer. Null until the tier has calls a day old.
+   */
+  median24hX: number | null;
+  /** Scored calls old enough to have a 24h reading, so a null above is legible
+   * as "too early" rather than "no edge". */
+  scored24h: number;
 }
 
 export async function fetchTierScoreboard(chain: string, days = 30): Promise<TierScore[]> {
@@ -953,6 +976,9 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
     hits_10x: number;
     median_winner_peak_x: number | null;
     best_peak_x: number | null;
+    median_minutes_to_peak_x: number | null;
+    median_24h_x: number | null;
+    scored_24h: number;
     span_days: number | null;
   }>(sql`
     with scored as (
@@ -963,7 +989,13 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
         -- and counting it as a miss would understate every tier.
         case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
               and ${alertsFired.athMcapUsd} is not null
-             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x
+             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x,
+        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
+              and ${alertsFired.mcap24hUsd} is not null
+             then ${alertsFired.mcap24hUsd} / ${alertsFired.mcapAtAlertUsd} end as x24h,
+        case when ${alertsFired.athAt} is not null
+             then extract(epoch from (${alertsFired.athAt} - ${alertsFired.createdAt})) / 60.0
+             end as minutes_to_peak
       from ${alertsFired}
       where ${alertsFired.chain} = ${chain}
         and ${alertsFired.superseded} = false
@@ -981,6 +1013,14 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
         order by case when peak_x >= 2 then peak_x end
       )::float8 as median_winner_peak_x,
       max(peak_x)::float8 as best_peak_x,
+      -- Among winners only. Across every call this is dominated by the tokens
+      -- that peaked in the first sample and then died, which is a fact about
+      -- the sampling rate rather than about the tier.
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then minutes_to_peak end
+      )::float8 as median_minutes_to_peak_x,
+      percentile_cont(0.5) within group (order by x24h)::float8 as median_24h_x,
+      count(x24h)::int as scored_24h,
       -- The real elapsed span, floored at one day. Two reasons: a feed three
       -- days old must not be divided by thirty, and a feed forty minutes old
       -- must not be multiplied by thirty-six — that produced "4,082 calls/day"
@@ -1017,6 +1057,9 @@ export async function fetchTierScoreboard(chain: string, days = 30): Promise<Tie
       hitRate2x: scored > 0 ? hits2x / scored : null,
       medianWinnerPeakX: num(row?.median_winner_peak_x),
       bestPeakX: num(row?.best_peak_x),
+      medianMinutesToPeakX: num(row?.median_minutes_to_peak_x),
+      median24hX: num(row?.median_24h_x),
+      scored24h: Number(row?.scored_24h ?? 0),
     };
   });
 }
@@ -1042,6 +1085,30 @@ export interface CallScore {
   hits2xPerDay: number;
   bestPeakX: number | null;
   medianWinnerPeakX: number | null;
+  /**
+   * What holding would actually have paid, at three fixed ages.
+   *
+   * Collected by the tracking cron since the scoreboard shipped and never once
+   * read until now. They are the only figures here that answer "what would I
+   * have made", because nobody sells the top: the peak is the ceiling, these are
+   * the realistic middle. Over ALL scored calls, winners and zeros alike — that
+   * is the whole point of them.
+   *
+   * Null until the feed is old enough. Each carries its own sample count so a
+   * dash reads as "too early" rather than "no edge".
+   */
+  median1hX: number | null;
+  median6hX: number | null;
+  median24hX: number | null;
+  scored1h: number;
+  scored6h: number;
+  scored24h: number;
+  /** Median minutes from firing to peak, among winners. How long a reader had. */
+  medianMinutesToPeakX: number | null;
+  /** Median low, over entry, among winners — how rough the ride was on the calls
+   * that worked. A 6x that first halved is not the same product as a 6x that
+   * went straight up, and the difference is entirely who held. */
+  medianWinnerDrawdownX: number | null;
 }
 
 export async function fetchCallScore(chain: string, days = 30): Promise<CallScore> {
@@ -1055,6 +1122,14 @@ export async function fetchCallScore(chain: string, days = 30): Promise<CallScor
     hits2xPerDay: 0,
     bestPeakX: null,
     medianWinnerPeakX: null,
+    median1hX: null,
+    median6hX: null,
+    median24hX: null,
+    scored1h: 0,
+    scored6h: 0,
+    scored24h: 0,
+    medianMinutesToPeakX: null,
+    medianWinnerDrawdownX: null,
   };
   const db = getDb();
   if (!db) return empty;
@@ -1067,13 +1142,29 @@ export async function fetchCallScore(chain: string, days = 30): Promise<CallScor
     hits_10x: number;
     best_peak_x: number | null;
     median_winner_peak_x: number | null;
+    median_1h_x: number | null;
+    median_6h_x: number | null;
+    median_24h_x: number | null;
+    scored_1h: number;
+    scored_6h: number;
+    scored_24h: number;
+    median_minutes_to_peak_x: number | null;
+    median_winner_drawdown_x: number | null;
     span_days: number | null;
   }>(sql`
     with calls as (
       select
         min(${alertsFired.createdAt}) as created_at,
         (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry,
-        max(${alertsFired.athMcapUsd}) as peak
+        max(${alertsFired.athMcapUsd}) as peak,
+        -- The earliest moment any step of this call recorded its running max.
+        -- Every step of a call tracks the same token and is sampled in the same
+        -- pass, so the peak is shared and this is when it was first seen.
+        min(${alertsFired.athAt}) as peak_at,
+        min(${alertsFired.lowMcapUsd}) as low,
+        max(${alertsFired.mcap1hUsd}) as m1h,
+        max(${alertsFired.mcap6hUsd}) as m6h,
+        max(${alertsFired.mcap24hUsd}) as m24h
       from ${alertsFired}
       where ${alertsFired.chain} = ${chain}
         and ${alertsFired.superseded} = false
@@ -1085,7 +1176,17 @@ export async function fetchCallScore(chain: string, days = 30): Promise<CallScor
       select
         created_at,
         case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and peak is not null
-             then peak / entry end as peak_x
+             then peak / entry end as peak_x,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and low is not null
+             then low / entry end as low_x,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and m1h is not null
+             then m1h / entry end as x1h,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and m6h is not null
+             then m6h / entry end as x6h,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and m24h is not null
+             then m24h / entry end as x24h,
+        case when peak_at is not null
+             then extract(epoch from (peak_at - created_at)) / 60.0 end as minutes_to_peak
       from calls
     )
     select
@@ -1098,6 +1199,18 @@ export async function fetchCallScore(chain: string, days = 30): Promise<CallScor
       percentile_cont(0.5) within group (
         order by case when peak_x >= 2 then peak_x end
       )::float8 as median_winner_peak_x,
+      percentile_cont(0.5) within group (order by x1h)::float8 as median_1h_x,
+      percentile_cont(0.5) within group (order by x6h)::float8 as median_6h_x,
+      percentile_cont(0.5) within group (order by x24h)::float8 as median_24h_x,
+      count(x1h)::int as scored_1h,
+      count(x6h)::int as scored_6h,
+      count(x24h)::int as scored_24h,
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then minutes_to_peak end
+      )::float8 as median_minutes_to_peak_x,
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then low_x end
+      )::float8 as median_winner_drawdown_x,
       greatest(extract(epoch from (now() - min(created_at))) / 86400.0, 1.0)::float8 as span_days
     from scored
   `);
@@ -1115,7 +1228,282 @@ export async function fetchCallScore(chain: string, days = 30): Promise<CallScor
     hits2xPerDay: hits2x / spanDays,
     bestPeakX: num(row?.best_peak_x),
     medianWinnerPeakX: num(row?.median_winner_peak_x),
+    median1hX: num(row?.median_1h_x),
+    median6hX: num(row?.median_6h_x),
+    median24hX: num(row?.median_24h_x),
+    scored1h: Number(row?.scored_1h ?? 0),
+    scored6h: Number(row?.scored_6h ?? 0),
+    scored24h: Number(row?.scored_24h ?? 0),
+    medianMinutesToPeakX: num(row?.median_minutes_to_peak_x),
+    medianWinnerDrawdownX: num(row?.median_winner_drawdown_x),
   };
+}
+
+/**
+ * Where the edge is, sliced by something other than the tier.
+ *
+ * The tier table answers "which escalation step is worth reading". It cannot
+ * answer "does a call at $15K beat a call at $150K", or "does a tight
+ * thirty-second burst beat an hour of accumulation" — and those are the levers
+ * left once the tiers are set. Each cut is grouped by CALL, and every dimension
+ * except the last is taken from the FIRST announced step, so it reads as what
+ * was knowable at the moment the message went out rather than in hindsight.
+ *
+ * `rugRate` is here and the peak table has no equivalent on purpose. A cut can
+ * be worth making because it removes losers rather than because it finds
+ * winners, and that is invisible in a hit rate: on the first night, calls
+ * posting with $1.5K+ of roster money already in had the same 2x rate as the
+ * rest and rugged zero times out of eight.
+ */
+export interface AlertCut {
+  /** Which slice this row belongs to, e.g. "Entry cap". */
+  dimension: string;
+  /** The bucket label, e.g. "$25-60K". */
+  bucket: string;
+  /** Display order within the dimension. */
+  ord: number;
+  calls: number;
+  scored: number;
+  hits2x: number;
+  hitRate2x: number | null;
+  medianWinnerPeakX: number | null;
+  /** Share of scored calls that ended below half the entry cap. */
+  rugRate: number | null;
+  median24hX: number | null;
+}
+
+export async function fetchAlertCuts(chain: string, days = 30): Promise<AlertCut[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute<{
+    dimension: string;
+    bucket: string;
+    ord: number;
+    calls: number;
+    scored: number;
+    hits_2x: number;
+    median_winner_peak_x: number | null;
+    rugs: number;
+    median_24h_x: number | null;
+  }>(sql`
+    with calls as (
+      select
+        (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry,
+        (array_agg(${alertsFired.totalBoughtUsd} order by ${alertsFired.tier} asc))[1] as bought,
+        (array_agg(${alertsFired.spanSeconds} order by ${alertsFired.tier} asc))[1] as span_seconds,
+        (array_agg(${alertsFired.exitedCount} order by ${alertsFired.tier} asc))[1] as exited,
+        (array_agg(${alertsFired.walletCount} order by ${alertsFired.tier} asc))[1] as wallets,
+        max(${alertsFired.tier}) as peak_tier,
+        max(${alertsFired.athMcapUsd}) as peak,
+        max(${alertsFired.mcap24hUsd}) as m24h
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
+        and ${alertsFired.createdAt} > now() - make_interval(days => ${days})
+      group by ${alertsFired.tokenAddress}, ${alertsFired.episode}
+    ),
+    scored as (
+      select
+        entry, bought, span_seconds, exited, wallets, peak_tier,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and peak is not null
+             then peak / entry end as peak_x,
+        case when entry >= ${MIN_SCOREBOARD_MCAP_USD} and m24h is not null
+             then m24h / entry end as x24h
+      from calls
+    ),
+    -- One lateral VALUES row per dimension, so every cut comes out of a single
+    -- pass over the calls. Four separate GROUP BY queries would be four round
+    -- trips against a pool of three, and they must not be run concurrently.
+    tagged as (
+      select s.peak_x, s.x24h, d.dimension, d.bucket, d.ord
+      from scored s
+      cross join lateral (values
+        (
+          'Entry cap',
+          (case when s.entry is null then null
+                when s.entry < 25000 then '$10-25K'
+                when s.entry < 60000 then '$25-60K'
+                when s.entry < 200000 then '$60-200K'
+                else '$200K+' end)::text,
+          (case when s.entry is null then 0
+                when s.entry < 25000 then 1
+                when s.entry < 60000 then 2
+                when s.entry < 200000 then 3
+                else 4 end)::int
+        ),
+        (
+          'Roster $ in at post',
+          (case when s.bought is null then null
+                when s.bought < 400 then 'under $400'
+                when s.bought < 1000 then '$400-1K'
+                when s.bought < 2500 then '$1-2.5K'
+                else '$2.5K+' end)::text,
+          (case when s.bought is null then 0
+                when s.bought < 400 then 1
+                when s.bought < 1000 then 2
+                when s.bought < 2500 then 3
+                else 4 end)::int
+        ),
+        (
+          'Cluster span',
+          (case when s.span_seconds is null then null
+                when s.span_seconds < 30 then 'under 30s'
+                when s.span_seconds < 120 then '30s-2m'
+                when s.span_seconds < 600 then '2-10m'
+                else '10m+' end)::text,
+          (case when s.span_seconds is null then 0
+                when s.span_seconds < 30 then 1
+                when s.span_seconds < 120 then 2
+                when s.span_seconds < 600 then 3
+                else 4 end)::int
+        ),
+        (
+          'Already sold at post',
+          (case when s.wallets is null or s.wallets = 0 then null
+                when s.exited = 0 then 'none out'
+                when s.exited::float8 / s.wallets <= 0.33 then 'up to a third'
+                when s.exited::float8 / s.wallets <= 0.6 then 'a third to 60%'
+                else 'over 60%' end)::text,
+          (case when s.wallets is null or s.wallets = 0 then 0
+                when s.exited = 0 then 1
+                when s.exited::float8 / s.wallets <= 0.33 then 2
+                when s.exited::float8 / s.wallets <= 0.6 then 3
+                else 4 end)::int
+        ),
+        (
+          -- The one hindsight cut, and labelled as such in the UI. It is the
+          -- strongest correlate in the data and an operator needs to see it,
+          -- but it cannot be turned into a filter: nothing at post time says
+          -- whether a 2-wallet call will go on to reach twenty.
+          'Escalated to (hindsight)',
+          (case when s.peak_tier is null then null
+                when s.peak_tier <= 3 then '2-3 wallets'
+                when s.peak_tier <= 6 then '4-6 wallets'
+                when s.peak_tier <= 10 then '8-10 wallets'
+                else '15-20 wallets' end)::text,
+          (case when s.peak_tier is null then 0
+                when s.peak_tier <= 3 then 1
+                when s.peak_tier <= 6 then 2
+                when s.peak_tier <= 10 then 3
+                else 4 end)::int
+        )
+      ) as d(dimension, bucket, ord)
+      where d.bucket is not null
+    )
+    select
+      dimension,
+      bucket,
+      min(ord)::int as ord,
+      count(*)::int as calls,
+      count(peak_x)::int as scored,
+      count(*) filter (where peak_x >= 2)::int as hits_2x,
+      percentile_cont(0.5) within group (
+        order by case when peak_x >= 2 then peak_x end
+      )::float8 as median_winner_peak_x,
+      count(*) filter (where peak_x < 0.5)::int as rugs,
+      percentile_cont(0.5) within group (order by x24h)::float8 as median_24h_x
+    from tagged
+    group by dimension, bucket
+    order by dimension, ord
+  `);
+
+  return rows.map((r) => {
+    const scored = Number(r.scored ?? 0);
+    return {
+      dimension: r.dimension,
+      bucket: r.bucket,
+      ord: Number(r.ord ?? 0),
+      calls: Number(r.calls ?? 0),
+      scored,
+      hits2x: Number(r.hits_2x ?? 0),
+      hitRate2x: scored > 0 ? Number(r.hits_2x ?? 0) / scored : null,
+      medianWinnerPeakX: num(r.median_winner_peak_x),
+      rugRate: scored > 0 ? Number(r.rugs ?? 0) / scored : null,
+      median24hX: num(r.median_24h_x),
+    };
+  });
+}
+
+/**
+ * What every filter in the system took out of the channel, and how it did.
+ *
+ * The point is `bestPeakX`. AGENTS.md's rule for a volume knob is that a
+ * suppressed call is still recorded, "because a suppressed call that turns out
+ * to have been good is the only evidence the knob is wrong" — and until now
+ * nothing displayed that evidence, so the rule was true and useless. If the
+ * mostly-sold row ever shows an 8x, that threshold is costing money and this is
+ * where it becomes visible.
+ *
+ * Counted in STEPS, not calls, because the unit a filter removes is a message.
+ * `Superseded` is checked first: those steps were never going to post, being the
+ * lower rungs claimed in the same instant as the tier actually announced.
+ */
+export interface SuppressionRow {
+  reason: string;
+  steps: number;
+  scored: number;
+  hits2x: number;
+  bestPeakX: number | null;
+}
+
+export async function fetchAlertSuppression(
+  chain: string,
+  days = 30
+): Promise<SuppressionRow[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute<{
+    reason: string;
+    steps: number;
+    scored: number;
+    hits_2x: number;
+    best_peak_x: number | null;
+  }>(sql`
+    with steps as (
+      select
+        case
+          when ${alertsFired.superseded} then 'Superseded'
+          when ${alertsFired.outOfBand} and ${alertsFired.mcapAtAlertUsd} < ${MIN_ALERT_MCAP_USD}
+            then 'Under the band floor'
+          when ${alertsFired.outOfBand} and ${alertsFired.mcapAtAlertUsd} > ${MAX_ALERT_MCAP_USD}
+            then 'Over the band ceiling'
+          when ${alertsFired.outOfBand} then 'Out of band'
+          when ${alertsFired.deliveryError} like 'mostly-sold%' then 'Mostly sold'
+          when ${alertsFired.deliveryError} like 'suppressed-below-tier%' then 'Under the min tier'
+          when ${alertsFired.deliveryError} like 'suppressed-below-mcap%' then 'Under the min cap'
+          when ${alertsFired.deliveryError} is not null then 'Delivery failed'
+          else 'Posted'
+        end as reason,
+        -- Scored on the same footing as everything else, so a suppressed step
+        -- and a posted one are directly comparable.
+        case when ${alertsFired.mcapAtAlertUsd} >= ${MIN_SCOREBOARD_MCAP_USD}
+              and ${alertsFired.athMcapUsd} is not null
+             then ${alertsFired.athMcapUsd} / ${alertsFired.mcapAtAlertUsd} end as peak_x
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.createdAt} > now() - make_interval(days => ${days})
+    )
+    select
+      reason,
+      count(*)::int as steps,
+      count(peak_x)::int as scored,
+      count(*) filter (where peak_x >= 2)::int as hits_2x,
+      max(peak_x)::float8 as best_peak_x
+    from steps
+    group by reason
+    order by count(*) desc
+  `);
+
+  return rows.map((r) => ({
+    reason: r.reason,
+    steps: Number(r.steps ?? 0),
+    scored: Number(r.scored ?? 0),
+    hits2x: Number(r.hits_2x ?? 0),
+    bestPeakX: num(r.best_peak_x),
+  }));
 }
 
 /** Headline counters for the page. */
