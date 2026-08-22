@@ -67,6 +67,8 @@ export default function Home() {
   const [progress, setProgress] = useState<{ found: number; requested: number } | null>(null);
   /** The token of the scan in flight, known before any trader has landed. */
   const [pendingToken, setPendingToken] = useState<TokenMeta | null>(null);
+  /** Guards against a slow chain lookup landing after the buyer moved on. */
+  const resolveRun = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CachedScan | null>(null);
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
@@ -365,26 +367,54 @@ export default function Home() {
   }
 
   /**
-   * Address formats are disjoint between Solana and EVM, so a paste tells us the
-   * family with certainty — but only the family. A 0x address is valid on all
-   * three EVM chains, so there is nothing to infer between them and we do not
-   * try: switching a Solana pick to BNB Chain was defensible when it was one of
-   * two, and is wrong two times in three now. The chips stay put and the buyer
-   * picks, which costs one tap and never scans a chain they did not choose.
+   * Picks the chain from the pasted address.
+   *
+   * The family is free — Solana and EVM address formats are disjoint — so a
+   * Solana paste switches immediately with no network call. Which EVM chain it
+   * is cannot be read off a `0x` address, so it is looked up rather than
+   * guessed: `/api/resolve-chain` asks Dexscreener where that contract actually
+   * trades. Guessing BNB Chain was wrong two times in three with a third EVM
+   * chain, and not guessing left the buyer to be told "Switch to BNB Chain, Base
+   * or Robinhood" after submitting, which is the site asking them to do its job.
+   *
+   * The lookup is advisory and cannot cost anything: it moves the picker, the
+   * server still validates the chain it is handed, and a failure leaves the
+   * picker alone. `resolveRun` drops a slow answer that lands after the buyer has
+   * typed something else or chosen a chain by hand — their choice always wins.
    */
   function handleAddressChange(value: string) {
     setAddress(value);
-    const family = detectAddressFamily(value.trim());
+    const trimmed = value.trim();
+    const family = detectAddressFamily(trimmed);
+    resolveRun.current += 1;
+
     if (!family) {
       setAutoChain(null);
       return;
     }
-    if (family === "solana" && chain !== "solana") {
-      setChain("solana");
-      setAutoChain("solana");
-    } else {
-      setAutoChain(null);
+    if (family === "solana") {
+      if (chain !== "solana") {
+        setChain("solana");
+        setAutoChain("solana");
+      } else {
+        setAutoChain(null);
+      }
+      return;
     }
+
+    const run = resolveRun.current;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/resolve-chain?address=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { chain: Chain | null };
+        if (run !== resolveRun.current || !data.chain) return;
+        setChain(data.chain);
+        setAutoChain(data.chain);
+      } catch {
+        // Advisory only — leave the picker where it is.
+      }
+    })();
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -547,6 +577,9 @@ export default function Home() {
                 key={c.value}
                 type="button"
                 onClick={() => {
+                  // Beats a chain lookup still in flight: a deliberate tap is
+                  // never overridden a moment later by a guess about the paste.
+                  resolveRun.current += 1;
                   setChain(c.value);
                   setAutoChain(null);
                 }}

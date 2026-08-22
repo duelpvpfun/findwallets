@@ -18,12 +18,27 @@ export const MIN_WALLET_PNL_USD = 1000;
 export const MIN_COST_BASIS_USD = 100;
 
 /**
- * Above this, a multiple is an artifact rather than a trade. Live example: a
- * wallet with ONE $39.46 buy and 225 sells of 15.95M tokens reports 587x — the
- * $23,152 profit is real, but the tokens it sold mostly arrived by transfer, so
- * there is no basis to measure a return against.
+ * Above this, a multiple needs corroborating before it is believed. Live
+ * example: a wallet with ONE $39.46 buy and 225 sells of 15.95M tokens reports
+ * 587x — the $23,152 profit is real, but the tokens it sold mostly arrived by
+ * transfer, so there is no basis to measure a return against.
  */
 export const MAX_PLAUSIBLE_MULTIPLE_X = 500;
+
+/**
+ * How far the price-implied multiple may sit from the basis-implied one before a
+ * big multiple is treated as an artifact.
+ *
+ * A flat cap suppressed real trades. A wallet that turned $299 into $204K on
+ * TENDIES read `n/a` at 683x while the entry and exit market caps on the same
+ * row said $34.8K → $23.75M, which is 682x — the row was calling its own
+ * numbers implausible. Meanwhile the 587x artifact above has an average sell
+ * price BELOW its average buy price, so the two estimates are orders of
+ * magnitude apart. Measured over the 16 suppressed rows of one 500-wallet scan,
+ * twelve agreed to within 1% and four were out by 1.27x to 4.01x, so the gap
+ * separates them cleanly and this tolerance is deliberately tight.
+ */
+const MULTIPLE_CORROBORATION_TOLERANCE = 0.1;
 
 /**
  * Denominator for a realized return: the cost of the tokens actually sold.
@@ -38,13 +53,33 @@ export function realizedBasisUsd(soldCostBasisUsd: number, boughtUsd: number): n
 }
 
 /**
- * The multiple to display, or null when the basis is too small to divide by.
- * The PNL stays visible either way — an absent ratio is honest, a 587x is not.
+ * The multiple to display, or null when the basis cannot support one. The PNL
+ * stays visible either way — an absent ratio is honest, a 587x is not.
+ *
+ * Past `MAX_PLAUSIBLE_MULTIPLE_X` a second, independent estimate has to agree:
+ * average sell price over average buy price. That ratio comes from prices rather
+ * than from the profit figure, so on a genuine early entry the two land on the
+ * same number, while a wallet whose tokens arrived by transfer has a tiny basis
+ * inflating one of them and not the other. The basis must also clear
+ * `MIN_COST_BASIS_USD` — corroboration says a big multiple is arithmetically
+ * sound, not that $48 of dust is a position worth reporting a return on.
  */
-export function displayMultiple(pnlUsd: number, basisUsd: number): number | null {
+export function displayMultiple(
+  pnlUsd: number,
+  basisUsd: number,
+  priceMultipleX?: number
+): number | null {
   if (!Number.isFinite(pnlUsd) || !Number.isFinite(basisUsd) || basisUsd <= 0) return null;
   const x = 1 + pnlUsd / basisUsd;
-  return x > MAX_PLAUSIBLE_MULTIPLE_X ? null : x;
+  if (x <= MAX_PLAUSIBLE_MULTIPLE_X) return x;
+
+  if (basisUsd < MIN_COST_BASIS_USD) return null;
+  if (priceMultipleX === undefined || !Number.isFinite(priceMultipleX) || priceMultipleX <= 0) {
+    return null;
+  }
+  // Symmetric: either estimate being the larger one is equally suspicious.
+  const disagreement = Math.abs(Math.log(priceMultipleX / x));
+  return disagreement <= MULTIPLE_CORROBORATION_TOLERANCE ? x : null;
 }
 
 /** True when a result is worth storing or tagging. */

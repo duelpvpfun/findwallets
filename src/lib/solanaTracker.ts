@@ -254,7 +254,10 @@ function mapHolder(h: HolderApi, rank: number, estimatedSupply: number): WalletT
   // wallet that offloaded 4% of its bag at 2.4x reports 1.06x.
   const soldCostBasisUsd = Math.min(tokensSold, tokensBought) * avgBuyPriceUsd;
   const realizedBasis = realizedBasisUsd(soldCostBasisUsd, buyUsd);
-  const multiple = displayMultiple(realizedPnlUsd, realizedBasis);
+  // Second, independent estimate for the corroboration check: prices, not the
+  // profit figure. Both are already computed above.
+  const priceMultipleX = avgBuyPriceUsd > 0 ? avgSellPriceUsd / avgBuyPriceUsd : undefined;
+  const multiple = displayMultiple(realizedPnlUsd, realizedBasis, priceMultipleX);
   const realizedPnlPercent = multiple === null ? 0 : (multiple - 1) * 100;
 
   return {
