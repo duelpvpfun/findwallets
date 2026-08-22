@@ -4,7 +4,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AdminStats, PaymentRow, TimePoint, UsageRow } from "@/lib/db/adminStats";
 import { formatCompactNumber, shortenAddress } from "@/lib/format";
 import TierScoreboard from "@/components/feed/TierScoreboard";
-import type { AlertCut, CallScore, SuppressionRow, TierScore } from "@/lib/db/alerts";
+import CallCarousel from "@/components/admin/CallCarousel";
+import type { AlertCut, CallCard, CallScore, SuppressionRow, TierScore } from "@/lib/db/alerts";
 
 const REFRESH_MS = 60_000;
 
@@ -317,12 +318,14 @@ export default function AdminDashboard({
   callScore,
   alertCuts,
   alertSuppression,
+  callCards,
 }: {
   initial: AdminStats;
   alertScores: TierScore[];
   callScore: CallScore;
   alertCuts: AlertCut[];
   alertSuppression: SuppressionRow[];
+  callCards: CallCard[];
 }) {
   const [stats, setStats] = useState(initial);
   const [refreshing, setRefreshing] = useState(false);
@@ -485,6 +488,13 @@ export default function AdminDashboard({
           cuts={alertCuts}
           suppression={alertSuppression}
         />
+      </div>
+
+      {/* Directly under the tables, because it answers the question they
+          provoke: the tables say which knob to move, this says what the calls
+          behind those numbers actually looked like. */}
+      <div className="mt-4">
+        <CallCarousel calls={callCards} now={now} />
       </div>
 
       <section className="mt-8">

@@ -1831,3 +1831,118 @@ export async function releaseBotMessage(kind: string): Promise<void> {
     .delete(botMessages)
     .where(and(eq(botMessages.kind, kind), isNull(botMessages.messageId)));
 }
+
+/**
+ * Every scored call, best first, for the /admin carousel.
+ *
+ * Deliberately NOT `fetchTopCalls`. That one serves Telegram, so it is limited
+ * to calls that actually reached the channel and to ones that traded above
+ * their entry — a leaderboard must not headline a tip nobody was given, and a
+ * flat call is not a top call at any rank. This one is the operator's view and
+ * has the opposite obligation: a suppressed call that turned out to be good is
+ * the only evidence a knob is wrong, so suppressed calls are in here and are
+ * labelled rather than dropped.
+ *
+ * Full contract addresses. `/admin` is behind the admin cookie; the masking in
+ * `fetchAlertFeed` is a business boundary on the PUBLIC read, and applying it
+ * here would mean the operator cannot check a call against a chart.
+ */
+export interface CallCard {
+  tokenAddress: string;
+  tokenSymbol: string | null;
+  tokenName: string | null;
+  tokenImageUrl: string | null;
+  episode: number;
+  firstTier: number;
+  peakTier: number;
+  walletCount: number;
+  entryMcapUsd: number;
+  athMcapUsd: number;
+  lowMcapUsd: number | null;
+  lastMcapUsd: number | null;
+  peakX: number;
+  /** Trough over entry. The counterweight to the peak — how rough the ride was. */
+  drawdownX: number | null;
+  minutesToPeak: number | null;
+  /** How much the roster put in on the first step. */
+  boughtUsd: number | null;
+  /** Steps that reached Telegram, and steps that were held back. */
+  deliveredSteps: number;
+  suppressedSteps: number;
+  createdAt: string;
+}
+
+export async function fetchCallCards(
+  chain: string,
+  days = 30,
+  limit = 24
+): Promise<CallCard[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    with calls as (
+      select
+        ${alertsFired.tokenAddress} as token_address,
+        ${alertsFired.episode} as episode,
+        (array_agg(${alertsFired.tokenSymbol} order by ${alertsFired.tier} desc))[1] as token_symbol,
+        (array_agg(${alertsFired.tokenName} order by ${alertsFired.tier} desc))[1] as token_name,
+        (array_agg(${alertsFired.tokenImageUrl} order by ${alertsFired.tier} desc))[1] as token_image_url,
+        min(${alertsFired.tier})::int as first_tier,
+        max(${alertsFired.tier})::int as peak_tier,
+        (array_agg(${alertsFired.walletCount} order by ${alertsFired.tier} desc))[1]::int as wallet_count,
+        (array_agg(${alertsFired.totalBoughtUsd} order by ${alertsFired.tier} asc))[1] as bought_usd,
+        -- Entry from the FIRST step, exactly as the feed and the pin do.
+        (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry_mcap_usd,
+        max(${alertsFired.athMcapUsd}) as ath_mcap_usd,
+        min(${alertsFired.lowMcapUsd}) as low_mcap_usd,
+        max(${alertsFired.lastMcapUsd}) as last_mcap_usd,
+        max(${alertsFired.athAt}) as ath_at,
+        min(${alertsFired.createdAt}) as created_at,
+        count(${alertsFired.deliveredAt})::int as delivered_steps,
+        count(*) filter (
+          where ${alertsFired.deliveredAt} is null and ${alertsFired.deliveryError} is not null
+        )::int as suppressed_steps
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
+        and ${alertsFired.createdAt} > now() - make_interval(days => ${days})
+      group by ${alertsFired.chain}, ${alertsFired.tokenAddress}, ${alertsFired.episode}
+    )
+    select
+      *,
+      (ath_mcap_usd / entry_mcap_usd)::float8 as peak_x,
+      case when low_mcap_usd is not null
+           then (low_mcap_usd / entry_mcap_usd)::float8 end as drawdown_x,
+      case when ath_at is not null
+           then extract(epoch from (ath_at - created_at)) / 60.0 end as minutes_to_peak
+    from calls
+    where entry_mcap_usd >= ${MIN_SCOREBOARD_MCAP_USD}
+      and ath_mcap_usd is not null
+    order by peak_x desc
+    limit ${Math.max(1, Math.min(limit, 60))}
+  `);
+
+  return rows.map((r) => ({
+    tokenAddress: String(r.token_address),
+    tokenSymbol: (r.token_symbol as string | null) ?? null,
+    tokenName: (r.token_name as string | null) ?? null,
+    tokenImageUrl: (r.token_image_url as string | null) ?? null,
+    episode: Number(r.episode),
+    firstTier: Number(r.first_tier),
+    peakTier: Number(r.peak_tier),
+    walletCount: Number(r.wallet_count),
+    entryMcapUsd: Number(r.entry_mcap_usd),
+    athMcapUsd: Number(r.ath_mcap_usd),
+    lowMcapUsd: num(r.low_mcap_usd),
+    lastMcapUsd: num(r.last_mcap_usd),
+    peakX: Number(r.peak_x),
+    drawdownX: num(r.drawdown_x),
+    minutesToPeak: num(r.minutes_to_peak),
+    boughtUsd: num(r.bought_usd),
+    deliveredSteps: Number(r.delivered_steps),
+    suppressedSteps: Number(r.suppressed_steps),
+    createdAt: new Date(r.created_at as string).toISOString(),
+  }));
+}

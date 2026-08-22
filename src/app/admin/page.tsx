@@ -3,6 +3,7 @@ import { fetchAdminStats } from "@/lib/db/adminStats";
 import {
   fetchAlertCuts,
   fetchAlertSuppression,
+  fetchCallCards,
   fetchCallScore,
   fetchTierScoreboard,
 } from "@/lib/db/alerts";
@@ -37,13 +38,14 @@ export default async function AdminPage() {
     );
   }
 
-  // Sequential, never Promise.all — see AGENTS.md. Four statements rather than
-  // two now, which is why each one does all of its grouping in a single pass
-  // instead of a query per dimension.
+  // Sequential, never Promise.all — see AGENTS.md. Five statements now, which
+  // is why each one does all of its grouping in a single pass instead of a
+  // query per dimension.
   const alertScores = await fetchTierScoreboard("solana");
   const callScore = await fetchCallScore("solana");
   const alertCuts = await fetchAlertCuts("solana");
   const alertSuppression = await fetchAlertSuppression("solana");
+  const callCards = await fetchCallCards("solana");
 
   return (
     <AdminDashboard
@@ -52,6 +54,7 @@ export default async function AdminPage() {
       callScore={callScore}
       alertCuts={alertCuts}
       alertSuppression={alertSuppression}
+      callCards={callCards}
     />
   );
 }

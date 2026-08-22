@@ -255,6 +255,14 @@ filter removes is a message. `n/a` in that table is honest and expected: an out-
 superseded step are never tracked, so there is no peak to score them against. The knobs it *can*
 hold to account are the ones that suppress but keep tracking — min tier, min cap, mostly-sold.
 
+**`/admin` shows every scored call as a card, best first, under the tables.** `fetchCallCards` is
+deliberately not `fetchTopCalls`: the pin's query serves Telegram, so it is limited to calls that
+reached the channel and traded above their entry. The operator's has the opposite obligation —
+suppressed calls are IN it and labelled `not sent`, because a call held back that went on to run is
+the only evidence a knob is pointed the wrong way. It also carries the **full contract address**:
+the masking in `fetchAlertFeed` is a business boundary on the public read, and applying it here
+would only stop the owner checking his own call against a chart.
+
 **The scoreboard must never be served by `/api/feed`.** It was, for a while, unread by any caller,
 on the endpoint that goes public with `ALERTS_PUBLIC` — the same mistake as a private page served by
 a public route. Hit rates and hold medians are how the product gets tuned; publishing them invites
