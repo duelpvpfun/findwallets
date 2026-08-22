@@ -136,25 +136,39 @@ interface TokenMarketDataResponse {
   market_cap: number;
 }
 
+/**
+ * Token meta for an EVM chain.
+ *
+ * Both responses are nullable and BOTH ARE NULL for a contract Birdeye does not
+ * index on the selected chain — `{"data": null, "success": true}`, a 200. A 0x
+ * address is valid on every EVM chain, so that is the ordinary shape of a buyer
+ * picking the wrong one, and dereferencing it threw a TypeError that surfaced as
+ * "Failed to fetch trader data." The credit was refunded, but the wrong-chain
+ * hint the caller builds for exactly this case could never be reached, so the
+ * buyer was told nothing about the one thing that would have worked. Falling
+ * back lets the scan reach its zero-trader path and name the other chains.
+ */
 export async function fetchEvmTokenMeta(chain: EvmChain, address: string): Promise<TokenMeta> {
   const [meta, market, nativePriceUsd] = await Promise.all([
-    beFetch<TokenMetadataResponse>(chain, "/defi/v3/token/meta-data/single", { address }),
-    beFetch<TokenMarketDataResponse>(chain, "/defi/v3/token/market-data", { address }),
+    beFetch<TokenMetadataResponse | null>(chain, "/defi/v3/token/meta-data/single", { address }),
+    beFetch<TokenMarketDataResponse | null>(chain, "/defi/v3/token/market-data", { address }),
     fetchNativePriceUsd(chain),
   ]);
 
-  const priceUsd = market.price ?? 0;
-  const marketCapUsd = market.market_cap ?? 0;
+  const priceUsd = market?.price ?? 0;
+  const marketCapUsd = market?.market_cap ?? 0;
   // `||`, not `??`: Birdeye reports 0 (not null) for unindexed circulating
   // supply, and a 0 here zeroes every market cap in the scan.
-  const estimatedSupply = market.circulating_supply || market.total_supply || 0;
+  const estimatedSupply = market?.circulating_supply || market?.total_supply || 0;
 
   return {
     chain,
     address,
-    name: meta.name,
-    symbol: meta.symbol,
-    imageUrl: meta.logo_uri ?? null,
+    // The address, not "Unknown": it is what the buyer pasted, so it reads as
+    // "we found nothing for this" rather than as a token that exists.
+    name: meta?.name ?? `${address.slice(0, 6)}…${address.slice(-4)}`,
+    symbol: meta?.symbol ?? "",
+    imageUrl: meta?.logo_uri ?? null,
     priceUsd,
     marketCapUsd,
     estimatedSupply,
