@@ -591,6 +591,12 @@ export const alertsFired = pgTable(
      * schedule: a candle high cannot be missed by looking late, so the only job
      * of the cadence is display freshness within a free rate limit. */
     athCheckedAt: timestamp("ath_checked_at", { withTimezone: true }),
+    /** This call's peak will not move again, so the candle rotation skips it.
+     * Set once a dead token has been reconciled against candles: 54% of the
+     * rotation was re-reading fixed numbers while live calls waited hours. Only
+     * the CANDLE pass honours it — `applyMcapSample` still raises the peak with
+     * `greatest()`, so a token that somehow trades back up is still caught. */
+    peakFinal: boolean("peak_final").notNull().default(false),
     /** A lower tier claimed in the same instant as the one actually announced,
      * so it can never fire later on a smaller count. Excluded from the feed and
      * from every performance figure. */
@@ -611,6 +617,12 @@ export const alertsFired = pgTable(
     uniqueIndex("alerts_fired_key_idx").on(t.chain, t.tokenAddress, t.tier, t.episode),
     index("alerts_fired_created_idx").on(sql`${t.createdAt} desc`),
     index("alerts_fired_tracking_idx").on(t.trackedUntil, t.lastCheckedAt),
+    index("alerts_fired_peak_rotation_idx").on(
+      t.chain,
+      t.peakFinal,
+      t.trackedUntil,
+      t.athCheckedAt
+    ),
   ]
 );
 

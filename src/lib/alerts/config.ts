@@ -181,17 +181,74 @@ export const SAMPLE_DUE_SLACK_SECONDS = 120;
  * Tokens whose peak is reconciled against candle data per sweep.
  *
  * The rotation, not a schedule. Sized by wall clock rather than by the rate
- * limit: measured against the live API a check costs ~5s once the pool is
- * cached and ~10s when it is not, almost all of it the throttle plus network
- * latency. 25 therefore lands around 125s, comfortably inside the pass's 200s
- * budget, and reconciles ~200 tracked tokens roughly every 80 minutes.
+ * limit: measured against the live API a check costs ~2.8s once the pool is
+ * cached and ~5s when it is not — and almost all of that is `GECKO_MIN_GAP_MS`,
+ * not network. A GeckoTerminal call itself returns in ~200ms, so the throttle is
+ * the entire cost model, and the sixth un-throttled call in a burst got a 429.
+ *
+ * **Raised from 25 to 75, 2026-08-22.** 25 was leaving the pass idle: 75 checks
+ * is ~210s of a 240s budget, still 27 calls a minute, and it is what the queue
+ * actually needs. At the live alert rate ~45 tokens are inside the hot band and
+ * due every sweep on their own, so 25 slots meant a full cycle took 2.3 hours
+ * and the calls currently running were the ones waiting.
  *
  * It can afford to be lazy because **a candle high cannot be missed by looking
  * late**: a spike at 04:29 is in the 04:29 candle forever. Cadence buys display
  * freshness here, never correctness, which is the opposite of how the spot
- * sampling behaves.
+ * sampling behaves. Display freshness is still what the feed is judged on.
  */
-export const PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PEAK_CHECKS_PER_SWEEP", 25);
+export const PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PEAK_CHECKS_PER_SWEEP", 75);
+
+/**
+ * How often a call's candle peak is re-read, by how old the call is.
+ *
+ * The peak pass had no cadence at all — it was a flat "stalest first" rotation,
+ * which spends the same effort on a call whose peak was set six hours ago as on
+ * one that is running right now. Measured over 328 scored calls the average peak
+ * lands **58 minutes** after the alert, so the first hours are the only ones
+ * where a re-read can find anything new.
+ *
+ * Three bands, and the numbers are what a free rate limit can actually sustain
+ * at the live alert rate:
+ *
+ *  - under 6h: every sweep. ~45 tokens, which is most of the budget, and the
+ *    only band where the displayed peak is likely to be wrong.
+ *  - 6-24h: every half hour. The peak is almost certainly already found; this
+ *    is here to catch the late second leg.
+ *  - over 24h: every two hours, purely so nothing is silently abandoned before
+ *    `TRACKING_DAYS` is up.
+ *
+ * A dead token is not in any band — it gets one reconciliation and is then
+ * retired via `peak_final`. See `drizzle/0032_peak_final.sql`.
+ */
+export const PEAK_HOT_HOURS = 6;
+export const PEAK_HOT_SECONDS = 10 * 60;
+export const PEAK_WARM_SECONDS = 30 * 60;
+export const PEAK_COLD_SECONDS = 2 * 60 * 60;
+
+/**
+ * Paid peak reads allowed per sweep, as a fallback only.
+ *
+ * The free candle path fails for real reasons, not just transient ones: a mint
+ * with no GeckoTerminal pool at all (24 of 345 tracked tokens), a pool that
+ * returns an empty candle list, a 429, a timeout. Every one of those currently
+ * ends in `touchAthChecked` and a peak that stays wrong until the token happens
+ * to resolve — which for a mint GeckoTerminal never indexes is never.
+ *
+ * Solana Tracker's `/chart` closes exactly that gap and is the right shape for
+ * it: keyed by MINT so it needs no pool lookup, windowed by `time_from` so it
+ * cannot credit us with somebody else's earlier run, ~230ms with no throttle,
+ * and one credit. So the split is free-first for the bulk and paid for the
+ * holes — which is the opposite of using the paid API for freshness, where it
+ * would cost thousands of credits a day for a number candles already get right.
+ *
+ * The cap is what makes it safe. A GeckoTerminal outage turns every check in the
+ * sweep into a fallback, and without a ceiling that is 75 credits a sweep, 650 a
+ * day, spent on an outage nobody noticed. 15 is more than the measured hole
+ * count and bounded at ~2,100 credits a day worst case — against the ~2,000 a
+ * day that moving the alert snapshot onto DexScreener gives back.
+ */
+export const PAID_PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PAID_PEAK_CHECKS_PER_SWEEP", 15);
 
 /**
  * How far above the best OBSERVED spot market cap a candle peak may sit before
