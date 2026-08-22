@@ -331,6 +331,44 @@ choose the approach himself, so nothing is throttled without him saying so.** Wh
 suppressed alert is still recorded and still tracked, because a suppressed call that turns out to
 have been good is the only evidence the knob is wrong.
 
+**Tracking runs on FREE data. DexScreener for spot, GeckoTerminal for the peak.**
+Solana Tracker stays wired as the fallback for mints the free sources do not know (~a third, mostly
+dying tokens), so it is now the exception rather than every sample. Neither free provider publishes
+an SLA, which is why the paid path is not deleted.
+
+**The peak comes from candle highs, not from a running maximum of spot checks — and that is a
+correctness fix, not a saving.** $Link was recorded at $1.19M because that was the highest of seven
+glances; it actually traded at **$2.22M**, and its entire run above $1.3M lasted thirteen minutes.
+No polling rate catches that. A candle high does, and it does so **retroactively** — a spike at
+04:29 is in the 04:29 candle forever — so `PEAK_CHECKS_PER_SWEEP` is a *rotation*, not a schedule:
+cadence buys display freshness, never correctness. That is the opposite of the spot sampler, where
+a missed tick is a lost observation.
+
+Four things that bit, all of them shipped wrong once:
+
+- **`token=<mint>` on the OHLCV request is not optional.** It defaults to the pool's BASE token, and
+  our mint is regularly the quote side: $ELOTÉ's deepest pool is "ZEC / ELOTÉ", so the default
+  returned ZEC at $834 a unit and multiplying by ELOTÉ's billion-token supply put a **$860 BILLION
+  peak, 8,334,654x, on the public podium**.
+- **`MAX_CANDLE_JUMP_X` (20) is a safety gate, not a knob.** Candle data reaches the podium and the
+  pinned Telegram message with no human in between, so a bad read is fabricated rather than
+  imprecise. It is checked against the best cap a *spot* sample actually observed — a different
+  provider on a different code path, which is what makes it a real check. The largest genuine
+  correction measured is 1.9x, so 20x rejects nonsense by orders of magnitude and never touches a
+  real fix.
+- **A failed peak check backdates its stamp instead of setting `now()`.** $Link was reconciled five
+  minutes before its pool was cached, failed, and went to the back of a full rotation with the wrong
+  number still on the podium. Backdating means a transient failure retries in minutes while a
+  permanently unresolvable token still cannot block the queue.
+- **The peak pass has its own queue and must not be nested inside the spot pass.** It was, and a
+  tick with nothing due for sampling did no peak work at all.
+
+**`SAMPLE_DUE_SLACK_SECONDS` fixes a real aliasing bug.** The cron fires every 10 minutes and the
+due-check was "more than 600 seconds since the last one", so a token checked at 04:10:04 was 9m56s
+old at the 04:20 tick, skipped, and waited for 04:30. Not random either: the sweep walks tokens
+sequentially, so every token is checked past the tick and then misses the next one. Measured on
+$Link the gaps were 18, 22, 19 and 19 minutes against a configured ten.
+
 **Market caps are sampled every 10 minutes for the first 24 hours, then hourly.** A memecoin's peak
 is almost always inside the first day, and the running maximum is only as good as the sampling rate
 around it — but ten-minute resolution for a full week is six times the upstream cost for detail

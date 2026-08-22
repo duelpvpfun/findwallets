@@ -6,6 +6,7 @@ import {
   alertsFired,
   alertWallets,
   botMessages,
+  tokenPools,
   walletEvents,
   type AlertMcapSample,
   type AlertWalletSnapshot,
@@ -25,6 +26,7 @@ import {
   MIN_BUY_USD,
   MIN_SCOREBOARD_MCAP_USD,
   PIN_MIN_MCAP_USD,
+  SAMPLE_DUE_SLACK_SECONDS,
   TRACKING_DAYS,
   type AlertTier,
 } from "../alerts/config";
@@ -487,6 +489,24 @@ export async function markDelivered(
 export interface TrackingTarget {
   tokenAddress: string;
   supplyAtAlert: number | null;
+  /** Cached GeckoTerminal pool, so a peak check costs one call not two. */
+  poolAddress: string | null;
+  /** Oldest alert on this token — the earliest moment a peak may be credited. */
+  firstAlertAt: Date;
+  /** When the candle peak was last reconciled, for the rotation order. */
+  athCheckedAt: Date | null;
+  /**
+   * Highest market cap ever actually OBSERVED by a spot sample, and the entry
+   * cap as a floor.
+   *
+   * The sanity reference for a candle peak. Candle data reaches the public
+   * podium and the pinned Telegram message directly, so a bad read is not a
+   * slightly-wrong number, it is a fabricated one — $ELOTÉ briefly read
+   * 8,334,654x. Spot samples come from a different provider and a different
+   * code path, so they are an independent check that the two agree about the
+   * order of magnitude.
+   */
+  bestSpotMcapUsd: number;
 }
 
 /**
@@ -505,11 +525,31 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
   const db = getDb();
   if (!db) return [];
 
-  const rows = await db.execute<{ token_address: string; supply_at_alert: number | null }>(sql`
+  const rows = await db.execute<{
+    token_address: string;
+    supply_at_alert: number | null;
+    pool_address: string | null;
+    first_alert_at: string;
+    ath_checked_at: string | null;
+    best_spot_mcap: number | null;
+  }>(sql`
     select
       ${alertsFired.tokenAddress} as token_address,
-      max(${alertsFired.supplyAtAlert}) as supply_at_alert
+      max(${alertsFired.supplyAtAlert}) as supply_at_alert,
+      max(${tokenPools.poolAddress}) as pool_address,
+      min(${alertsFired.createdAt}) as first_alert_at,
+      min(${alertsFired.athCheckedAt}) as ath_checked_at,
+      greatest(
+        max(${alertsFired.mcapAtAlertUsd}),
+        max(coalesce((
+          select max((s->>1)::float8)
+          from jsonb_array_elements(${alertsFired.samples}) s
+        ), 0))
+      ) as best_spot_mcap
     from ${alertsFired}
+    left join ${tokenPools}
+      on ${tokenPools.chain} = ${alertsFired.chain}
+     and ${tokenPools.tokenAddress} = ${alertsFired.tokenAddress}
     where ${alertsFired.chain} = ${chain}
       and ${alertsFired.superseded} = false
       and ${alertsFired.outOfBand} = false
@@ -527,8 +567,8 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
              now() - min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt}))
            )) > case
              when max(${alertsFired.createdAt}) > now() - interval '24 hours'
-             then ${FRESH_SAMPLE_SECONDS}::float8
-             else ${AGED_SAMPLE_SECONDS}::float8
+             then ${FRESH_SAMPLE_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
+             else ${AGED_SAMPLE_SECONDS - SAMPLE_DUE_SLACK_SECONDS}::float8
            end
     order by min(coalesce(${alertsFired.lastCheckedAt}, ${alertsFired.createdAt})) asc
     limit ${limit}
@@ -537,7 +577,173 @@ export async function fetchTrackingTokens(chain: string, limit = 400): Promise<T
   return rows.map((r) => ({
     tokenAddress: r.token_address,
     supplyAtAlert: num(r.supply_at_alert),
+    poolAddress: r.pool_address,
+    firstAlertAt: new Date(r.first_alert_at),
+    athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
+    bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
   }));
+}
+
+/**
+ * The peak rotation: tracked tokens whose candle peak is most overdue.
+ *
+ * Deliberately its OWN query rather than a slice of `fetchTrackingTokens`.
+ * That one returns tokens due for a spot sample, which is a different question
+ * with a different cadence — on a tick where few are due the rotation would
+ * have almost nothing to choose from, and the "stalest first" ordering would be
+ * decided by sampling timing rather than by peak staleness.
+ *
+ * **`DEAD_MCAP_USD` is not applied here.** A token that has died still had a
+ * peak, and that peak is exactly what the record needs to be right about — the
+ * check is cheap, it is free, and once done the token falls to the back of the
+ * rotation on its own.
+ */
+export async function fetchPeakRotation(chain: string, limit: number): Promise<TrackingTarget[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute<{
+    token_address: string;
+    supply_at_alert: number | null;
+    pool_address: string | null;
+    first_alert_at: string;
+    ath_checked_at: string | null;
+    best_spot_mcap: number | null;
+  }>(sql`
+    select
+      ${alertsFired.tokenAddress} as token_address,
+      max(${alertsFired.supplyAtAlert}) as supply_at_alert,
+      max(${tokenPools.poolAddress}) as pool_address,
+      min(${alertsFired.createdAt}) as first_alert_at,
+      min(${alertsFired.athCheckedAt}) as ath_checked_at,
+      greatest(
+        max(${alertsFired.mcapAtAlertUsd}),
+        max(coalesce((
+          select max((s->>1)::float8)
+          from jsonb_array_elements(${alertsFired.samples}) s
+        ), 0))
+      ) as best_spot_mcap
+    from ${alertsFired}
+    left join ${tokenPools}
+      on ${tokenPools.chain} = ${alertsFired.chain}
+     and ${tokenPools.tokenAddress} = ${alertsFired.tokenAddress}
+    where ${alertsFired.chain} = ${chain}
+      and ${alertsFired.superseded} = false
+      and ${alertsFired.outOfBand} = false
+      and ${alertsFired.trackedUntil} > now()
+    group by ${alertsFired.tokenAddress}
+    -- Never checked first, then whichever call's peak can still MOVE, then
+    -- longest since. The middle term is the balance that matters: once every
+    -- token has been reconciled once, a plain staleness sort spends the budget
+    -- re-reading dead coins whose peak is fixed forever, starving the ones
+    -- currently running. A call under 24h old is where peaks actually happen.
+    order by
+      (min(${alertsFired.athCheckedAt}) is null) desc,
+      (max(${alertsFired.createdAt}) > now() - interval '24 hours') desc,
+      min(${alertsFired.athCheckedAt}) asc
+    limit ${limit}
+  `);
+
+  return rows.map((r) => ({
+    tokenAddress: r.token_address,
+    supplyAtAlert: num(r.supply_at_alert),
+    poolAddress: r.pool_address,
+    firstAlertAt: new Date(r.first_alert_at),
+    athCheckedAt: r.ath_checked_at ? new Date(r.ath_checked_at) : null,
+    bestSpotMcapUsd: num(r.best_spot_mcap) ?? 0,
+  }));
+}
+
+/** Remember a token's pool so the next peak check costs one call, not two. */
+export async function recordTokenPool(
+  chain: string,
+  tokenAddress: string,
+  poolAddress: string,
+  source: string
+): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .insert(tokenPools)
+    .values({ chain, tokenAddress, poolAddress, source })
+    .onConflictDoUpdate({
+      target: [tokenPools.chain, tokenPools.tokenAddress],
+      set: { poolAddress, source, updatedAt: sql`now()` },
+    });
+}
+
+/**
+ * Reconcile a call's peak against a real candle high.
+ *
+ * Separate from `applyMcapSample` on purpose. That one records a spot
+ * observation and moves `last_mcap_usd`, `low_mcap_usd` and the 1h/6h/24h marks
+ * with it. This one only ever raises the ceiling, from evidence that a trade
+ * genuinely happened at that price — so it must not touch "now", and it must
+ * not touch the drawdown either: a candle high is not a current quote.
+ *
+ * `greatest` still guards it. If a spot sample already caught something higher
+ * than the candle interval reports, the higher figure was still observed and
+ * stands.
+ */
+export async function applyCandlePeak(
+  chain: string,
+  tokenAddress: string,
+  mcapUsd: number,
+  peakAt: Date
+): Promise<number> {
+  const db = getDb();
+  if (!db || !(mcapUsd > 0)) return 0;
+
+  const rows = await db
+    .update(alertsFired)
+    .set({
+      athCheckedAt: new Date(),
+      athMcapUsd: sql`greatest(coalesce(${alertsFired.athMcapUsd}, 0), ${mcapUsd})`,
+      athAt: sql`case
+        when ${mcapUsd} > coalesce(${alertsFired.athMcapUsd}, 0)
+        then ${peakAt.toISOString()}::timestamptz
+        else ${alertsFired.athAt}
+      end`,
+    })
+    .where(
+      and(
+        eq(alertsFired.chain, chain),
+        eq(alertsFired.tokenAddress, tokenAddress),
+        eq(alertsFired.superseded, false),
+        eq(alertsFired.outOfBand, false)
+      )
+    )
+    .returning({ id: alertsFired.id });
+
+  return rows.length;
+}
+
+/**
+ * Mark a peak check attempted when it found nothing.
+ *
+ * Two failure modes with opposite needs, so the stamp is **backdated**. A token
+ * with no pool at all must not sit at the front of the rotation forever
+ * starving everything else — but a token that merely failed *this time* (its
+ * pool was cached a minute later, the API blipped) must not be pushed to the
+ * back for a whole cycle either. $Link was reconciled at 05:54 and its pool
+ * cached at 05:59, so a plain `now()` left the wrong peak on the public podium
+ * for a full rotation.
+ *
+ * Backdating by most of a rotation splits the difference: a transient failure
+ * comes round again in minutes, and a permanently unresolvable token costs one
+ * slot per cycle rather than blocking the queue.
+ */
+const ATH_RETRY_BACKDATE_MINUTES = 40;
+
+export async function touchAthChecked(chain: string, tokenAddress: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .update(alertsFired)
+    .set({
+      athCheckedAt: sql`now() - interval '${sql.raw(String(ATH_RETRY_BACKDATE_MINUTES))} minutes'`,
+    })
+    .where(and(eq(alertsFired.chain, chain), eq(alertsFired.tokenAddress, tokenAddress)));
 }
 
 /**

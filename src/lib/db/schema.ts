@@ -587,6 +587,10 @@ export const alertsFired = pgTable(
     samples: jsonb("samples").$type<AlertMcapSample[]>().notNull().default([]),
     trackedUntil: timestamp("tracked_until", { withTimezone: true }).notNull(),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    /** When the candle-based peak was last reconciled. Drives a rotation, not a
+     * schedule: a candle high cannot be missed by looking late, so the only job
+     * of the cadence is display freshness within a free rate limit. */
+    athCheckedAt: timestamp("ath_checked_at", { withTimezone: true }),
     /** A lower tier claimed in the same instant as the one actually announced,
      * so it can never fire later on a smaller count. Excluded from the feed and
      * from every performance figure. */
@@ -637,3 +641,25 @@ export const botMessages = pgTable("bot_messages", {
   postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * The pool a token trades in, cached.
+ *
+ * GeckoTerminal's OHLCV endpoint is keyed by pool, not by mint, so reading
+ * candles costs a lookup first. The pool does not change, so paying it once per
+ * token instead of once per read halves the cost of every peak check — and on a
+ * ~30-call-a-minute free tier, halving the cost doubles the rotation.
+ */
+export const tokenPools = pgTable(
+  "token_pools",
+  {
+    chain: text("chain").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    poolAddress: text("pool_address").notNull(),
+    /** Which provider resolved it, so a stale pool can be re-resolved without
+     * guessing who wrote it. */
+    source: text("source").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chain, t.tokenAddress] })]
+);

@@ -162,6 +162,59 @@ export const FRESH_SAMPLE_SECONDS = 10 * 60;
 export const AGED_SAMPLE_SECONDS = 60 * 60;
 
 /**
+ * Slack subtracted from the due threshold, and it fixes a real bug.
+ *
+ * The cron fires every 10 minutes and the check was "more than 600 seconds
+ * since the last one". A token checked at 04:10:04 is only 9m56s old at the
+ * 04:20:00 tick, so it was skipped and waited for 04:30 — and it is not random:
+ * the sweep walks tokens sequentially, so every token is checked some seconds
+ * past the tick and then misses the next one. Measured on $Link the gaps were
+ * 18, 22, 19 and 19 minutes against a configured ten.
+ *
+ * Two minutes is comfortably more than a sweep can drift and comfortably less
+ * than the cron period, so a token is always due on the next tick and can never
+ * be sampled twice in one.
+ */
+export const SAMPLE_DUE_SLACK_SECONDS = 120;
+
+/**
+ * Tokens whose peak is reconciled against candle data per sweep.
+ *
+ * The rotation, not a schedule. Sized by wall clock rather than by the rate
+ * limit: measured against the live API a check costs ~5s once the pool is
+ * cached and ~10s when it is not, almost all of it the throttle plus network
+ * latency. 25 therefore lands around 125s, comfortably inside the pass's 200s
+ * budget, and reconciles ~200 tracked tokens roughly every 80 minutes.
+ *
+ * It can afford to be lazy because **a candle high cannot be missed by looking
+ * late**: a spike at 04:29 is in the 04:29 candle forever. Cadence buys display
+ * freshness here, never correctness, which is the opposite of how the spot
+ * sampling behaves.
+ */
+export const PEAK_CHECKS_PER_SWEEP = envNumber("ALERTS_PEAK_CHECKS_PER_SWEEP", 25);
+
+/**
+ * How far above the best OBSERVED spot market cap a candle peak may sit before
+ * it is rejected as a bad read.
+ *
+ * This is a safety gate, not a tuning knob. Candle data lands on the public
+ * podium and in the pinned Telegram message with no human in between, so a
+ * wrong read is not an imprecise number, it is a fabricated one — $ELOTÉ read
+ * **8,334,654x** because its deepest pool is "ZEC / ELOTÉ" and the OHLCV
+ * endpoint defaults to the pool's base token, handing us ZEC at $834 a unit.
+ * That specific bug is fixed by naming the token in the request; this exists
+ * because the next one will be different and must not reach a reader.
+ *
+ * 20x is deliberately loose. The whole point of candles is to catch peaks that
+ * spot sampling missed, and the biggest real gap measured so far is $Link at
+ * 1.9x its best spot sample — so 20x rejects nonsense by orders of magnitude
+ * while never touching a genuine correction. Spot samples come from a different
+ * provider on a different code path, which is what makes them a real check
+ * rather than the same number twice.
+ */
+export const MAX_CANDLE_JUMP_X = envNumber("ALERTS_MAX_CANDLE_JUMP_X", 20);
+
+/**
  * Cap on the stored series: the dense first day (six an hour) plus six more
  * days hourly, plus the alert-time sample. Enough to draw the whole tracked
  * life of a call at the resolution it was actually measured.
