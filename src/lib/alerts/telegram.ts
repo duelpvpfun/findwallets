@@ -382,3 +382,196 @@ export function buildRawLine(event: {
     `<a href="https://solscan.io/tx/${escapeHtml(event.signature)}">tx</a>`
   );
 }
+
+/**
+ * The chat the bot posts to.
+ *
+ * Exposed because the pinned leaderboard stores it next to the message id: an
+ * id is meaningless outside its chat, so a repointed `TELEGRAM_ALERT_CHAT_ID`
+ * has to make the next sweep post a new message rather than edit an id that now
+ * belongs to a different channel.
+ */
+export function telegramChatId(): string | null {
+  return process.env.TELEGRAM_ALERT_CHAT_ID ?? null;
+}
+
+/** "42m ago", "6h ago", "yesterday". Coarse on purpose: a leaderboard row needs
+ * the reader to know whether this is live or stale, not the exact minute. */
+function humanAgo(iso: string, now: number): string {
+  const seconds = Math.max(0, (now - new Date(iso).getTime()) / 1000);
+  if (seconds < 90) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/** "+285%" for 3.85x. The multiple is the number traders think in and the
+ * percentage is the one everyone else does, so both are on the row. */
+function formatGainPercent(multiple: number): string {
+  const pct = (multiple - 1) * 100;
+  return `+${pct >= 100 ? Math.round(pct).toLocaleString("en-US") : pct.toFixed(0)}%`;
+}
+
+const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+
+export interface LeaderboardCall {
+  tokenAddress: string;
+  tokenSymbol: string | null;
+  walletCount: number;
+  entryMcapUsd: number;
+  athMcapUsd: number;
+  peakX: number;
+  createdAt: string;
+}
+
+export interface LeaderboardInput {
+  calls: LeaderboardCall[];
+  chain: Chain;
+  windowHours: number;
+  /** Every call announced in the same window, not just the ones listed. */
+  totalCalls: number;
+  /** Passed in rather than read from the clock, so the message is a pure
+   * function of its input and can be diffed in a test or a script. */
+  now: number;
+}
+
+/**
+ * The pinned message.
+ *
+ * A pin is the one message a stranger who opens the channel is guaranteed to
+ * read, so it answers exactly one question: do these calls go anywhere. Each
+ * row is the whole claim in two lines — the multiple, then the two market caps
+ * it is the ratio of, so nobody has to take the multiple on trust.
+ *
+ * Two things it deliberately does NOT do:
+ *
+ *  - It does not show a hit rate or a median hold. Those live on /admin, and an
+ *    operator's median read as a return somebody made is a claim we cannot
+ *    stand behind.
+ *  - It does not hide the denominator. "Top 3" with no count is a cherry-pick;
+ *    "3 best of 112 calls" is the same three rows and an honest one.
+ */
+export function buildLeaderboardMessage(input: LeaderboardInput): string {
+  const out: string[] = [];
+  out.push(`🏆 <b>BEST CALLS · LAST ${Math.round(input.windowHours)}H</b>`);
+  out.push("");
+
+  if (input.calls.length === 0) {
+    // An empty leaderboard is a real state — a quiet night, or a fresh deploy —
+    // and saying so is better than leaving yesterday's winners pinned above
+    // today's silence.
+    out.push("<i>No call has traded above its entry yet in this window.</i>");
+    out.push("");
+    out.push(`Every call lands in this channel the moment the wallets buy.`);
+    out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
+    return out.join("\n");
+  }
+
+  input.calls.forEach((call, index) => {
+    const rank = RANK_MEDALS[index] ?? `<b>${index + 1}.</b>`;
+    const raw = escapeHtml((call.tokenSymbol || "?").replace(/^\$+/, ""));
+    const symbol = `<a href="${dexScreenerUrl(input.chain, call.tokenAddress)}">${raw}</a>`;
+
+    out.push(
+      `${rank} <b>$${symbol}</b>  ·  <b>${formatMultiple(call.peakX)}</b>` +
+        `  <b>${formatGainPercent(call.peakX)}</b>`
+    );
+    out.push(
+      `<blockquote>called at ${formatUsd(call.entryMcapUsd)}  ·  peak ${formatUsd(call.athMcapUsd)}\n` +
+        `${call.walletCount} smart wallets in  ·  ${humanAgo(call.createdAt, input.now)}</blockquote>`
+    );
+    // Telegram merges two blockquotes that touch into one block, which would
+    // run three calls together into a single unreadable quote.
+    out.push("");
+  });
+
+  // The denominator, then the clock. Both are what stop this reading as a
+  // screenshot somebody kept because it flattered them.
+  out.push(
+    `<i>${input.calls.length} best of ${input.totalCalls} call${input.totalCalls === 1 ? "" : "s"}` +
+      ` · updated ${utcClock(input.now)} UTC</i>`
+  );
+  out.push(`<a href="${brandUrl()}">AlphaWallets.fun</a>`);
+
+  return out.join("\n");
+}
+
+/** "14:05". The pin is edited in place, so a reader needs a way to tell a live
+ * leaderboard from a message that stopped updating three days ago. */
+function utcClock(now: number): string {
+  return new Date(now).toISOString().slice(11, 16);
+}
+
+/**
+ * Rewrite a message already in the channel.
+ *
+ * "message is not modified" is Telegram's answer when the new text is byte
+ * identical to the old, which is a no-op rather than a failure — the pin is
+ * already saying the right thing. Everything else is passed back so the caller
+ * can decide whether the message is gone and a fresh one is needed.
+ */
+export async function editMessage(
+  messageId: number,
+  text: string,
+  buttons?: InlineButton[][]
+): Promise<SendResult> {
+  const result = await callTelegram("editMessageText", {
+    message_id: messageId,
+    text,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
+  });
+  if (!result.ok && result.error?.includes("message is not modified")) {
+    return { ok: true, error: null, messageId };
+  }
+  return result;
+}
+
+/**
+ * Whether an edit failed because the message no longer exists.
+ *
+ * Telegram says this four different ways depending on whether the message was
+ * deleted, was never in this chat, or was posted by somebody else. All four
+ * mean the same thing to the caller: stop trying to edit it and post a new one.
+ */
+export function isMessageGone(error: string | null): boolean {
+  if (!error) return false;
+  const e = error.toLowerCase();
+  return (
+    e.includes("message to edit not found") ||
+    e.includes("message can't be edited") ||
+    e.includes("message_id_invalid") ||
+    e.includes("message to pin not found")
+  );
+}
+
+/**
+ * Pin a message, silently.
+ *
+ * `disable_notification` matters: a pin normally notifies the whole channel,
+ * and doing that once an hour would be a reason to mute the channel — which
+ * would cost every real alert its notification too.
+ */
+export async function pinMessage(messageId: number): Promise<SendResult> {
+  return callTelegram("pinChatMessage", {
+    message_id: messageId,
+    disable_notification: true,
+  });
+}
+
+/** Post a message with no reply threading, for the pin. Separate from
+ * `sendAlertMessage` only so the pin cannot accidentally inherit an alert's
+ * reply parameters. */
+export async function sendPinnedMessage(text: string): Promise<SendResult> {
+  return callTelegram("sendMessage", {
+    text,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    // The pin gets its own notification when it is pinned, and that one is
+    // suppressed too. Two silent operations, one message in the channel.
+    disable_notification: true,
+  });
+}

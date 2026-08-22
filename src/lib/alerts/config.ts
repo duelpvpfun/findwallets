@@ -176,6 +176,29 @@ export const MAX_SAMPLES = 24 * 6 + (TRACKING_DAYS - 1) * 24 + 1;
  */
 export const MIN_SCOREBOARD_MCAP_USD = 10_000;
 
+/**
+ * The pinned leaderboard: how far back it looks, and how many calls it shows.
+ *
+ * Rolling 24 hours, refreshed hourly. A pin is the first thing a stranger who
+ * opens the channel reads, so it has to answer "does this work" with calls they
+ * could still check on a chart — an all-time top 3 would sit on three coins
+ * from weeks ago and read as a screenshot rather than a live record.
+ *
+ * Three, because the pin has to stay short enough that Telegram does not
+ * collapse it behind "show more" in the header preview.
+ */
+export const PIN_WINDOW_HOURS = envNumber("ALERTS_PIN_WINDOW_HOURS", 24);
+export const PIN_TOP_N = envNumber("ALERTS_PIN_TOP_N", 3);
+
+/**
+ * A call needs an entry cap this high before it can appear on the pin.
+ *
+ * Same bar as the scoreboard, and for the same reason: a $3K cap doubling is
+ * one buy, and a leaderboard is exactly where an unearned multiple does the
+ * most damage — it is the number we are asking a stranger to trust.
+ */
+export const PIN_MIN_MCAP_USD = MIN_SCOREBOARD_MCAP_USD;
+
 /** Quote assets. A token leg paired against one of these is a trade; a token
  * moving with no quote leg at all is a transfer or an airdrop and must never
  * count as a buy. */

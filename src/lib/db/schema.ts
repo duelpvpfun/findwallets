@@ -598,3 +598,24 @@ export const alertsFired = pgTable(
     index("alerts_fired_tracking_idx").on(t.trackedUntil, t.lastCheckedAt),
   ]
 );
+
+/**
+ * A Telegram message this bot keeps pinned and rewrites in place.
+ *
+ * One row per kind of pin. The hourly leaderboard is the only one today: it is
+ * a single message edited every hour rather than a fresh post, because 24
+ * leaderboard posts a day would bury the alerts they exist to advertise, and
+ * only one message can be usefully pinned regardless.
+ *
+ * `chatId` is part of the row, not assumed: a message id is meaningless outside
+ * the chat it was posted in, so repointing `TELEGRAM_ALERT_CHAT_ID` has to make
+ * the cron post a new message instead of editing an id that now belongs to
+ * somebody else's channel.
+ */
+export const pinnedMessages = pgTable("pinned_messages", {
+  kind: text("kind").primaryKey(),
+  chatId: text("chat_id").notNull(),
+  messageId: bigint("message_id", { mode: "number" }).notNull(),
+  postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

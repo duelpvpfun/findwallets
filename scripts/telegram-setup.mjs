@@ -91,7 +91,22 @@ if (admins.ok) {
     console.error(`\nThe bot is an admin but lacks "Post Messages". Alerts will fail.`);
     process.exit(1);
   }
-  console.log(`permissions    admin, can post`);
+  // The hourly leaderboard is pinned, and without the right to pin it posts
+  // fine and silently never reaches the top of the channel, which is the whole
+  // point of it. Not fatal: the alerts themselves work regardless.
+  //
+  // Which right that is depends on the chat. A CHANNEL has no separate "Pin
+  // Messages" toggle — pinning there is covered by "Edit Messages", and the API
+  // omits `can_pin_messages` entirely rather than returning false. Reading the
+  // absent field as "denied" would report a working bot as broken.
+  const isChannel = chat.result.type === "channel";
+  const canPin = isChannel ? self.can_edit_messages !== false : self.can_pin_messages === true;
+  const right = isChannel ? "Edit Messages" : "Pin Messages";
+  console.log(`permissions    admin, can post${canPin ? ", can pin" : ""}`);
+  if (!canPin) {
+    console.log(`\nThe bot cannot PIN. The hourly leaderboard will be posted but never`);
+    console.log(`pinned. Settings -> Administrators -> @${me.result.username} -> ${right}.`);
+  }
 }
 
 const sent = await api("sendMessage", {

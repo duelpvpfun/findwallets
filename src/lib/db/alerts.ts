@@ -5,6 +5,7 @@ import {
   alertState,
   alertsFired,
   alertWallets,
+  pinnedMessages,
   walletEvents,
   type AlertMcapSample,
   type AlertWalletSnapshot,
@@ -23,6 +24,7 @@ import {
   MIN_ALERT_MCAP_USD,
   MIN_BUY_USD,
   MIN_SCOREBOARD_MCAP_USD,
+  PIN_MIN_MCAP_USD,
   TRACKING_DAYS,
   type AlertTier,
 } from "../alerts/config";
@@ -1564,4 +1566,217 @@ export async function fetchAlertSummary(chain: string): Promise<AlertSummary> {
     avgPeakX: num(row?.avg_peak_x),
     lastAlertAt: row?.last_alert_at ? new Date(row.last_alert_at).toISOString() : null,
   };
+}
+
+// --- The pinned leaderboard ---
+
+/** One call on the pin: where it was called, where it peaked, and the multiple. */
+export interface TopCall {
+  tokenAddress: string;
+  tokenSymbol: string | null;
+  tokenName: string | null;
+  /** Highest step announced on the call — what the pin credits it as. */
+  peakTier: number;
+  walletCount: number;
+  /** From the FIRST step. Same rule as the feed: crediting ourselves with a
+   * later escalation's entry after announcing at 2 wallets would be marking our
+   * own homework. */
+  entryMcapUsd: number;
+  athMcapUsd: number;
+  peakX: number;
+  athAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * The best calls of the last N hours, for the hourly pin.
+ *
+ * Grouped by `(token, episode)` — ONE call, however many steps it escalated
+ * through. Reading the ungrouped rows here would put one token on the pin three
+ * times, which is the same arithmetic trap that once reported a single
+ * ten-bagger as five.
+ *
+ * `peak_x > 1` is a floor, not a ranking tweak: a pin is a leaderboard, and a
+ * call that never traded above where it was called is not a top call at any
+ * rank. Fewer than N qualifying calls shows fewer rows rather than padding the
+ * list with flat ones.
+ *
+ * This is per-call performance — the same numbers the public feed already puts
+ * on every row — and deliberately NOT the aggregate scoreboard. Hit rates and
+ * hold medians stay on /admin: an operator's median read as a return somebody
+ * made is a claim we cannot stand behind.
+ */
+export async function fetchTopCalls(
+  chain: string,
+  hours: number,
+  limit: number
+): Promise<TopCall[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute<{
+    token_address: string;
+    token_symbol: string | null;
+    token_name: string | null;
+    peak_tier: number;
+    wallet_count: number;
+    entry_mcap_usd: number;
+    ath_mcap_usd: number;
+    peak_x: number;
+    ath_at: string | null;
+    created_at: string;
+  }>(sql`
+    with calls as (
+      select
+        ${alertsFired.tokenAddress} as token_address,
+        (array_agg(${alertsFired.tokenSymbol} order by ${alertsFired.tier} desc))[1] as token_symbol,
+        (array_agg(${alertsFired.tokenName} order by ${alertsFired.tier} desc))[1] as token_name,
+        max(${alertsFired.tier})::int as peak_tier,
+        (array_agg(${alertsFired.walletCount} order by ${alertsFired.tier} desc))[1]::int as wallet_count,
+        (array_agg(${alertsFired.mcapAtAlertUsd} order by ${alertsFired.tier} asc))[1] as entry_mcap_usd,
+        max(${alertsFired.athMcapUsd}) as ath_mcap_usd,
+        max(${alertsFired.athAt}) as ath_at,
+        min(${alertsFired.createdAt}) as created_at
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
+        and ${alertsFired.createdAt} > now() - make_interval(hours => ${Math.max(1, Math.round(hours))})
+      group by ${alertsFired.chain}, ${alertsFired.tokenAddress}, ${alertsFired.episode}
+      -- At least one step of the call actually reached the channel. A pin is
+      -- read by the channel, so headlining a call that was suppressed on its
+      -- way out would be crediting ourselves with a tip nobody was given.
+      having count(${alertsFired.deliveredAt}) > 0
+    )
+    select
+      token_address,
+      token_symbol,
+      token_name,
+      peak_tier,
+      wallet_count,
+      entry_mcap_usd::float8 as entry_mcap_usd,
+      ath_mcap_usd::float8 as ath_mcap_usd,
+      (ath_mcap_usd / entry_mcap_usd)::float8 as peak_x,
+      ath_at,
+      created_at
+    from calls
+    where entry_mcap_usd >= ${PIN_MIN_MCAP_USD}
+      and ath_mcap_usd is not null
+      and ath_mcap_usd > entry_mcap_usd
+    order by peak_x desc
+    limit ${Math.max(1, Math.min(limit, 10))}
+  `);
+
+  return rows.map((r) => ({
+    tokenAddress: r.token_address,
+    tokenSymbol: r.token_symbol,
+    tokenName: r.token_name,
+    peakTier: Number(r.peak_tier),
+    walletCount: Number(r.wallet_count),
+    entryMcapUsd: Number(r.entry_mcap_usd),
+    athMcapUsd: Number(r.ath_mcap_usd),
+    peakX: Number(r.peak_x),
+    athAt: r.ath_at ? new Date(r.ath_at).toISOString() : null,
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
+/** A pinned message we own, as last recorded. */
+export interface PinnedMessage {
+  chatId: string;
+  messageId: number;
+  postedAt: string;
+  updatedAt: string;
+}
+
+export async function fetchPinnedMessage(kind: string): Promise<PinnedMessage | null> {
+  const db = getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({
+      chatId: pinnedMessages.chatId,
+      messageId: pinnedMessages.messageId,
+      postedAt: pinnedMessages.postedAt,
+      updatedAt: pinnedMessages.updatedAt,
+    })
+    .from(pinnedMessages)
+    .where(eq(pinnedMessages.kind, kind))
+    .limit(1);
+  if (!row) return null;
+  return {
+    chatId: row.chatId,
+    messageId: Number(row.messageId),
+    postedAt: row.postedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Remember the message the cron will edit next hour.
+ *
+ * `postedAt` is only set on insert and is left alone by the update, so the gap
+ * between it and `updatedAt` reads as "how long this pin has been live" — which
+ * is how you tell an edit loop that is working from one that silently re-posts
+ * every hour.
+ */
+export async function recordPinnedMessage(
+  kind: string,
+  chatId: string,
+  messageId: number
+): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .insert(pinnedMessages)
+    .values({ kind, chatId, messageId })
+    .onConflictDoUpdate({
+      target: pinnedMessages.kind,
+      set: { chatId, messageId, postedAt: sql`now()`, updatedAt: sql`now()` },
+    });
+}
+
+/** Touch the timestamp after a successful in-place edit. */
+export async function touchPinnedMessage(kind: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db
+    .update(pinnedMessages)
+    .set({ updatedAt: sql`now()` })
+    .where(eq(pinnedMessages.kind, kind));
+}
+
+/** Forget a pin whose message Telegram no longer has, so the next sweep posts
+ * a fresh one instead of editing an id that will never resolve again. */
+export async function clearPinnedMessage(kind: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+  await db.delete(pinnedMessages).where(eq(pinnedMessages.kind, kind));
+}
+
+/**
+ * How many calls actually reached the channel in the same window.
+ *
+ * The denominator for the pin. "Top 3" on its own is a cherry-pick; "3 best of
+ * 112" is the same three rows and an honest claim. Counted in CALLS, grouped by
+ * `(token, episode)` — a token that escalated 2 -> 6 wrote five rows and is one
+ * call, and inflating the denominator would understate ourselves as surely as
+ * omitting it overstates.
+ */
+export async function countDeliveredCalls(chain: string, hours: number): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+  const [row] = await db.execute<{ calls: number }>(sql`
+    select count(*)::int as calls
+    from (
+      select 1
+      from ${alertsFired}
+      where ${alertsFired.chain} = ${chain}
+        and ${alertsFired.superseded} = false
+        and ${alertsFired.outOfBand} = false
+        and ${alertsFired.createdAt} > now() - make_interval(hours => ${Math.max(1, Math.round(hours))})
+      group by ${alertsFired.tokenAddress}, ${alertsFired.episode}
+      having count(${alertsFired.deliveredAt}) > 0
+    ) calls
+  `);
+  return Number(row?.calls ?? 0);
 }

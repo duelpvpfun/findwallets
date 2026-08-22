@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/alert-track",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/alert-pin",
+      "schedule": "5 * * * *"
     }
   ]
 }

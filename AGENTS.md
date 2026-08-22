@@ -387,6 +387,37 @@ npm run alerts:replay -- --wallets 6      # POST them to a running server
 npm run alerts:replay -- --simulate       # force an alert end to end; --undo cleans up
 ```
 
+**A pinned leaderboard sits at the top of the channel, refreshed hourly.**
+`/api/cron/alert-pin` posts ONE message, pins it silently, stores its id in `pinned_messages`, and
+from then on **edits that same message** every hour. Twenty-four leaderboard posts a day would bury
+the alerts the pin exists to advertise, and only one message can usefully be pinned anyway. It runs
+at `:05` so it reads the peaks the `*/10` tracker wrote at `:00`.
+
+- **Per-call results only.** Ticker, the cap it was called at, the peak cap, the multiple and the
+  percentage. These are the same numbers already on every public feed row. **The aggregate
+  scoreboard stays on `/admin`** — a hit rate or a hold median on a pinned message is an operator's
+  statistic being read as a return somebody made.
+- **Only calls that actually reached the channel are eligible**, and they are the denominator too:
+  `having count(delivered_at) > 0`. Headlining a step that mostly-sold suppressed would be crediting
+  ourselves with a tip nobody was given.
+- **The denominator ships with the list.** "3 best of 88 calls" is the same three rows as "Top 3"
+  and an honest version of it.
+- Grouped by `(token, episode)`, entry from the FIRST step, exactly as `fetchAlertFeed` does — the
+  ungrouped rows would put one escalating token on the pin three times.
+- **Only a message Telegram no longer has justifies posting a second one.** A rate limit or a
+  network blip leaves the existing pin alone and retries next hour; re-posting on a transient error
+  is how a channel accumulates six abandoned leaderboards. `isMessageGone` draws that line, and
+  "message is not modified" counts as success — the pin is already correct.
+- The id is recorded **before** the pin call and regardless of whether it succeeds. A bot without the
+  right to pin still posted a real message, and forgetting it would post another every hour.
+- Both operations are `disable_notification`. A pin normally notifies the whole channel, and doing
+  that hourly is a reason to mute the channel, which would cost every real alert its notification.
+- `?dry=1` renders exactly what would be pinned and posts nothing. `ALERTS_PIN_WINDOW_HOURS` (24)
+  and `ALERTS_PIN_TOP_N` (3) are the knobs.
+- **In a channel, pinning is covered by "Edit Messages", not "Pin Messages"** — the API omits
+  `can_pin_messages` for channels rather than returning false, so reading its absence as denied
+  reports a working bot as broken. `npm run alerts:telegram` checks the right one per chat type.
+
 **`ALERTS_RAW_MODE=1` forwards every classified trade to Telegram, unaggregated.** The verification
 gate: buy classification is the one part of this system that cannot be proven correct by reading
 it. Turn it on for a few hours, check the lines against Solscan, turn it off. Never leave it on.
