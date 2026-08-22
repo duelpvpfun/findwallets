@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import WalletConnectButton from "@/components/WalletConnectButton";
 import FeedTerminal from "@/components/feed/FeedTerminal";
-import { fetchAlertFeed, fetchAlertSummary } from "@/lib/db/alerts";
+import { fetchAlertFeed, fetchAlertSummary, fetchCallCards } from "@/lib/db/alerts";
 import { alertsArePublic } from "@/lib/alerts/config";
 import { isAdminRequest } from "@/lib/adminAuth";
 import { isDbConfigured } from "@/lib/db";
@@ -44,6 +44,10 @@ export default async function FeedPage() {
   const configured = isDbConfigured();
   const alerts = configured ? await fetchAlertFeed(CHAIN, INITIAL_ALERTS) : [];
   const summary = configured ? await fetchAlertSummary(CHAIN) : null;
+  // The podium's 24h top three. Resolved once here rather than on every poll:
+  // after this the client re-derives it from the rows it is already fetching,
+  // so the live feed never carries a third query per tick.
+  const podiumSeed = configured ? await fetchCallCards(CHAIN, 1, 3) : [];
 
   const channel = process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL;
   const telegramUrl = channel ? `https://t.me/${channel.replace(/^@/, "")}` : null;
@@ -83,7 +87,11 @@ export default async function FeedPage() {
 
       <main className="relative mx-auto w-full max-w-6xl flex-1 px-3 py-4 sm:px-6 sm:py-6">
         {configured ? (
-          <FeedTerminal initialAlerts={alerts} trackedWallets={summary?.trackedWallets ?? 0} />
+          <FeedTerminal
+            initialAlerts={alerts}
+            trackedWallets={summary?.trackedWallets ?? 0}
+            podiumSeed={podiumSeed}
+          />
         ) : (
           <p className="rounded-xl border border-dashed border-neutral-800 bg-neutral-900/20 px-4 py-10 text-center text-sm text-neutral-400">
             Not configured on this deployment.

@@ -352,6 +352,21 @@ a preview of it, and shipping is an env var rather than a diff. **The gate cover
 JSON feed and the sitemap together** — a private page served by a public endpoint is a public page
 with extra steps, and the three must flip in one move.
 
+**Nothing in a Telegram message may link at `/feed` while `ALERTS_PUBLIC` is off.** The page and
+its JSON endpoint both `notFound()` for anyone without the `/admin` cookie, so every alert in the
+channel was sending every subscriber to "Page not found" — and it was invisible to the owner,
+because his own browser carries the cookie and the link worked for him. `brandUrl()` now resolves
+to `/` until the feed is public and `brandLabel()` renames the button to match. Setting
+`ALERTS_PUBLIC=1` is still the real fix; this is what stops the gate from producing a dead link in
+the meantime.
+
+**A podium of the 24h top three sits above the feed, and it costs no extra query.** The server
+renders the real top three (`fetchCallCards(chain, 1, 3)`); after that the client re-derives it from
+the rows `FeedTerminal` already polls every eight seconds, so a call overtaking rank 3 is promoted
+on the next tick and a growing peak is re-ranked. A second endpoint would have put a third
+sequential query on a hot path for data the page already has. The 24h window is re-checked on the
+client, or a tab left open overnight would keep yesterday's winner up forever.
+
 **The public feed masks wallet addresses, and that is a business boundary.** The curated list of
 proven wallets IS the paid product — it is what a scan sells and what every paid upstream call in
 the database went into assembling. `fetchAlertFeed` truncates to `abcd…wxyz` at the read that

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RadarSweep from "@/components/RadarSweep";
 import { useReducedMotion } from "@/lib/useReducedMotion";
-import type { AlertFeedRow } from "@/lib/db/alerts";
+import type { AlertFeedRow, CallCard } from "@/lib/db/alerts";
 import FeedRow from "./FeedRow";
+import Podium from "./Podium";
 
 /**
  * The live feed.
@@ -32,6 +33,9 @@ const FRESH_MS = 20_000;
 interface Props {
   initialAlerts: AlertFeedRow[];
   trackedWallets: number;
+  /** The real 24h top three, resolved on the server. The podium re-derives
+   * itself from the polled rows after that, so it needs no request of its own. */
+  podiumSeed: CallCard[];
 }
 
 /** A market cap typed in thousands, e.g. `20` meaning $20K. Empty means "no
@@ -48,7 +52,7 @@ function parseCount(raw: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-export default function FeedTerminal({ initialAlerts, trackedWallets }: Props) {
+export default function FeedTerminal({ initialAlerts, trackedWallets, podiumSeed }: Props) {
   const [alerts, setAlerts] = useState(initialAlerts);
   const [paused, setPaused] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -66,6 +70,11 @@ export default function FeedTerminal({ initialAlerts, trackedWallets }: Props) {
   const seen = useRef<Set<number>>(new Set(initialAlerts.map((a) => a.id)));
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
 
+  // The podium's 24h window. Advanced by the poll rather than by a timer of its
+  // own — the window only needs to move when the data does, and a second
+  // interval running against a paused feed is a clock nobody is reading.
+  const [podiumNow, setPodiumNow] = useState(() => Date.now());
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/feed?limit=60", { cache: "no-store" });
@@ -74,6 +83,7 @@ export default function FeedTerminal({ initialAlerts, trackedWallets }: Props) {
       if (!Array.isArray(data.alerts)) return;
 
       const incoming: AlertFeedRow[] = data.alerts;
+      setPodiumNow(Date.now());
       const arrived = incoming.filter((a) => !seen.current.has(a.id)).map((a) => a.id);
       for (const a of incoming) seen.current.add(a.id);
 
@@ -158,6 +168,12 @@ export default function FeedTerminal({ initialAlerts, trackedWallets }: Props) {
 
   return (
     <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      {/* Above the terminal, because the feed is chronological and cannot
+          answer "does this work" — and deliberately short, because the feed is
+          the product. It rides the same poll as the rows, so a call that
+          overtakes rank 3 is promoted within eight seconds. */}
+      <Podium seed={podiumSeed} live={alerts} now={podiumNow} />
+
       <header className="relative overflow-hidden rounded-t-xl border border-b-0 border-neutral-800/80 bg-neutral-900/40 px-3 py-3">
         {/* The scanning metaphor, same as the wallet finder. Low opacity so it
             reads as depth rather than decoration. */}

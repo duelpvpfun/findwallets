@@ -1,7 +1,7 @@
 import "server-only";
 import { SITE_URL } from "../siteUrl";
 import { formatUsd } from "../format";
-import { dexScreenerUrl, tradeLinksFor, type AlertTier } from "./config";
+import { alertsArePublic, dexScreenerUrl, tradeLinksFor, type AlertTier } from "./config";
 import type { Chain } from "../types";
 import type { AlertWalletSnapshot } from "../db/schema";
 
@@ -26,7 +26,18 @@ const API_BASE = "https://api.telegram.org";
  * instead of the domain.
  */
 function brandUrl(): string {
-  return new URL("/feed", SITE_URL).toString();
+  // **Never link at /feed while it is gated.** The page and its JSON endpoint
+  // both `notFound()` for anyone without the /admin cookie until
+  // `ALERTS_PUBLIC=1`, so every alert in a public channel was sending every
+  // subscriber to "Page not found" — and the owner could not see it, because
+  // his own browser carries the cookie. A link that works for exactly one
+  // person is worse than no link.
+  return new URL(alertsArePublic() ? "/feed" : "/", SITE_URL).toString();
+}
+
+/** What the brand link is pointing at, so the button can say so. */
+function brandLabel(): string {
+  return alertsArePublic() ? "🔎 Live feed" : "🔎 Scan a token";
 }
 
 export function isTelegramConfigured(): boolean {
@@ -265,7 +276,7 @@ export function buildAlertButtons(chain: Chain, tokenAddress: string): InlineBut
 
   rows.push([
     { text: "📈 Chart", url: dexScreenerUrl(chain, tokenAddress) },
-    { text: "🔎 Live feed", url: brandUrl() },
+    { text: brandLabel(), url: brandUrl() },
   ]);
   return rows;
 }

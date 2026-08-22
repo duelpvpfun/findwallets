@@ -301,3 +301,32 @@ textarea:focus-visible {
 .animate-live-pulse {
   animation: livePulse 1.8s ease-in-out infinite;
 }
+
+/* The podium on /feed. Plays once per occupant: the step is keyed by the call,
+   so React remounts it when a different token takes the place and the animation
+   marks exactly that — a new call arriving, not the same three re-rendering
+   every eight seconds. transform and opacity only. Its reduced-motion opt-out
+   is directly below, not in the block at the top of this file, because it was
+   added later and splitting them is how one gets forgotten. */
+@keyframes podiumRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.podium-step {
+  animation: podiumRise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Resolves to its finished state: reduced motion means no movement, not a
+     podium that never appears. */
+  .podium-step {
+    animation: none;
+  }
+}
